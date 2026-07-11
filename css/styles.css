@@ -1,4 +1,5 @@
-:root {
+:root,
+:root[data-theme="light"] {
   --bg: #eef1f8;
   --panel: #ffffff;
   --ink: #1f2544;
@@ -12,6 +13,8 @@
   --cell-line-strong: #1f2544;
 }
 
+/* Dark tokens: the OS preference by default, then the viewer's explicit toggle
+   (data-theme) which must win over the media query in both directions. */
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #171a2b;
@@ -25,6 +28,19 @@
     --cell-line: rgba(0, 0, 0, 0.3);
     --cell-line-strong: #0f1220;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #171a2b;
+  --panel: #21263d;
+  --ink: #eef1f8;
+  --muted: #a4abd0;
+  --line: #cdd5f5;
+  --accent: #6f8bff;
+  --accent-ink: #0f1220;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  --cell-line: rgba(0, 0, 0, 0.3);
+  --cell-line-strong: #0f1220;
 }
 
 * {
