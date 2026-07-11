@@ -219,13 +219,6 @@ body {
   background: rgba(31, 37, 68, 0.5);
 }
 
-.cell .x {
-  font-size: min(6vw, 34px);
-  line-height: 1;
-  color: rgba(31, 37, 68, 0.72);
-  font-weight: 700;
-}
-
 .cell.conflict {
   box-shadow: inset 0 0 0 3px var(--danger);
 }

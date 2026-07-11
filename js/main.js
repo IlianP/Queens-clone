@@ -23,7 +23,6 @@ const dom = {
   newGame: el('new-game'),
   openSettings: el('open-settings'),
   undo: el('undo'),
-  clearMarks: el('clear-marks'),
   resetBoard: el('reset-board'),
   loading: el('loading'),
   winOverlay: el('win-overlay'),
@@ -135,24 +134,18 @@ function updateBoard() {
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N; c++) {
       const cell = cells[r][c];
-      // The base state drives the cell's contents. Conflict is handled purely by
-      // a CSS class so a queen never gets its SVG re-parsed (which caused the
-      // brief flicker) when only a dot elsewhere or its conflict status changes.
+      // The base state drives the cell's contents. Manual marks and quick-mode
+      // auto-marks look identical (a dot). Conflict is handled purely by a CSS
+      // class so a queen never gets its SVG re-parsed (which caused the brief
+      // flicker) when a dot elsewhere or its conflict status changes.
       let state = 'empty';
       if (game.queen[r][c]) state = 'queen';
-      else if (game.mark[r][c]) state = 'mark';
-      else if (auto[r][c]) state = 'dot';
+      else if (game.mark[r][c] || auto[r][c]) state = 'dot';
 
       if (cell.dataset.state !== state) {
         cell.dataset.state = state;
         cell.innerHTML =
-          state === 'queen'
-            ? CROWN
-            : state === 'mark'
-            ? '<span class="x">✕</span>'
-            : state === 'dot'
-            ? '<span class="dot"></span>'
-            : '';
+          state === 'queen' ? CROWN : state === 'dot' ? '<span class="dot"></span>' : '';
       }
       cell.classList.toggle('conflict', conflicts.has(`${r},${c}`));
     }
@@ -311,12 +304,6 @@ window.addEventListener('pointercancel', endDrag);
 dom.newGame.addEventListener('click', newGame);
 dom.winNewGame.addEventListener('click', newGame);
 dom.undo.addEventListener('click', doUndo);
-dom.clearMarks.addEventListener('click', () => {
-  if (!game) return;
-  pushUndo();
-  game.clearMarks();
-  updateBoard();
-});
 dom.resetBoard.addEventListener('click', () => {
   if (!game) return;
   pushUndo();

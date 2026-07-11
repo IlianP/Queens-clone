@@ -22,11 +22,7 @@ export class Game {
     this.queenCount = 0;
   }
 
-  clearMarks() {
-    this.mark = grid(this.N, false);
-  }
-
-  // Cycle a cell: empty -> mark (X) -> queen -> empty.
+  // Cycle a cell: empty -> dot (mark) -> queen -> empty.
   // In quick mode an auto-dotted (but unmarked) cell jumps straight to a queen,
   // so you don't have to tap past the dot.
   tap(r, c) {
