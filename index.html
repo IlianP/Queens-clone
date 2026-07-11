@@ -33,6 +33,7 @@
       </main>
 
       <div class="actions">
+        <button class="btn subtle" id="hint" type="button">💡 Hinweis</button>
         <button class="btn subtle" id="undo" type="button" disabled>↶ Rückgängig</button>
         <button class="btn subtle" id="reset-board" type="button">Zurücksetzen</button>
       </div>
@@ -89,6 +90,17 @@
           <button class="btn primary" id="settings-apply" type="button">Übernehmen &amp; neues Spiel</button>
           <button class="btn subtle" id="settings-close" type="button">Schließen</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Hint explanation card (non-modal; the board stays visible & dimmed) -->
+    <div class="hint-card" id="hint-card" hidden>
+      <div class="hint-card-title" id="hint-title"></div>
+      <p class="hint-card-text" id="hint-text"></p>
+      <div class="hint-legend" id="hint-legend"></div>
+      <div class="hint-card-buttons">
+        <button class="btn primary" id="hint-apply" type="button">Übernehmen</button>
+        <button class="btn subtle" id="hint-close" type="button">Schließen</button>
       </div>
     </div>
 

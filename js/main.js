@@ -1,6 +1,7 @@
 // main.js — wires the puzzle generator, game logic and DOM together.
 import { generatePuzzle } from './generator.js';
 import { Game } from './game.js';
+import { computeHint } from './hint.js';
 import { loadSettings, saveSettings, clampSize } from './settings.js';
 
 // Distinct, mildly pastel region colours (supports up to 11 regions).
@@ -23,7 +24,14 @@ const dom = {
   newGame: el('new-game'),
   openSettings: el('open-settings'),
   undo: el('undo'),
+  hint: el('hint'),
   resetBoard: el('reset-board'),
+  hintCard: el('hint-card'),
+  hintTitle: el('hint-title'),
+  hintText: el('hint-text'),
+  hintLegend: el('hint-legend'),
+  hintApply: el('hint-apply'),
+  hintClose: el('hint-close'),
   loading: el('loading'),
   winOverlay: el('win-overlay'),
   winTime: el('win-time'),
@@ -39,9 +47,12 @@ const dom = {
 
 let settings = loadSettings();
 let game = null;
+let currentSolution = null; // cols[r] of the unique solution (for hints)
 let cells = []; // cells[r][c] -> HTMLElement
 let colorMap = []; // color for each region id
 let lastPlaced = null;
+let hintActive = false;
+let currentHint = null;
 
 // ---------- Timer ----------
 let timerId = null;
@@ -82,6 +93,8 @@ function newGame() {
     const puzzle = generatePuzzle(N, difficulty, { budgetMs });
     buildBoard(N, puzzle.region);
     game = new Game(N, puzzle.region, settings.quickMode);
+    currentSolution = puzzle.solution;
+    clearHint();
     undoStack = [];
     updateUndoButton();
     updateBoard();
@@ -179,6 +192,7 @@ function updateMessage() {
 }
 
 function onWin() {
+  clearHint();
   stopTimer();
   elapsedFrozen = currentElapsed();
   const m = Math.floor(elapsedFrozen / 60);
@@ -251,7 +265,7 @@ function cellAtPoint(x, y) {
 }
 
 dom.board.addEventListener('pointerdown', (e) => {
-  if (!game) return;
+  if (!game || hintActive) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const cell = e.target.closest('.cell');
   if (!cell) return;
@@ -300,12 +314,108 @@ function endDrag(e) {
 window.addEventListener('pointerup', endDrag);
 window.addEventListener('pointercancel', endDrag);
 
+// ---------- Hints ----------
+function collectQueens() {
+  const out = [];
+  for (let r = 0; r < game.N; r++)
+    for (let c = 0; c < game.N; c++) if (game.queen[r][c]) out.push([r, c]);
+  return out;
+}
+
+function showHint() {
+  if (!game || hintActive) return;
+  const hint = computeHint(game.N, game.region, currentSolution, collectQueens(), game.mark);
+  renderHint(hint);
+}
+
+const LEGEND = {
+  reason: '<span><i class="lg-reason"></i>Begründung</span>',
+  target: '<span><i class="lg-target"></i>hier setzen</span>',
+  x: '<span><i class="lg-x"></i>scheidet aus</span>',
+};
+
+function renderHint(hint) {
+  currentHint = hint;
+  hintActive = true;
+  clearHintClasses();
+  dom.board.classList.add('hinting');
+
+  for (const [r, c] of hint.lineCells || []) cells[r][c].classList.add('hint-line');
+  for (const [r, c] of hint.reasonCells || []) cells[r][c].classList.add('hint-reason');
+  const targetClass =
+    hint.kind === 'place' ? 'hint-target' : hint.kind === 'mistake' ? 'hint-bad' : 'hint-x';
+  for (const [r, c] of hint.targetCells || []) {
+    cells[r][c].classList.remove('hint-reason');
+    cells[r][c].classList.add(targetClass);
+  }
+
+  dom.hintTitle.textContent = hint.title;
+  dom.hintText.textContent = hint.text;
+
+  const legend = [];
+  if (hint.reasonCells && hint.reasonCells.length) legend.push(LEGEND.reason);
+  if (hint.kind === 'place') legend.push(LEGEND.target);
+  if (hint.kind === 'eliminate') legend.push(LEGEND.x);
+  dom.hintLegend.innerHTML = legend.join('');
+
+  dom.hintApply.hidden = !hint.applyLabel;
+  if (hint.applyLabel) dom.hintApply.textContent = hint.applyLabel;
+  show(dom.hintCard);
+}
+
+function clearHintClasses() {
+  for (const row of cells)
+    for (const cell of row)
+      cell.classList.remove('hint-reason', 'hint-line', 'hint-target', 'hint-x', 'hint-bad');
+}
+
+function clearHint() {
+  hintActive = false;
+  currentHint = null;
+  dom.board.classList.remove('hinting');
+  if (cells.length) clearHintClasses();
+  hide(dom.hintCard);
+}
+
+function applyHint() {
+  if (!currentHint) return;
+  const h = currentHint;
+  pushUndo();
+  if (h.kind === 'place') {
+    const [r, c] = h.targetCells[0];
+    if (!game.queen[r][c]) {
+      game.queen[r][c] = true;
+      game.queenCount++;
+      game.mark[r][c] = false;
+      lastPlaced = { r, c };
+    }
+  } else if (h.kind === 'eliminate') {
+    for (const [r, c] of h.targetCells) if (!game.queen[r][c]) game.mark[r][c] = true;
+  } else if (h.kind === 'mistake') {
+    const [r, c] = h.targetCells[0];
+    if (game.queen[r][c]) {
+      game.queen[r][c] = false;
+      game.queenCount--;
+    }
+  }
+  clearHint();
+  updateBoard();
+}
+
+dom.hint.addEventListener('click', showHint);
+dom.hintApply.addEventListener('click', applyHint);
+dom.hintClose.addEventListener('click', clearHint);
+
 // ---------- Controls ----------
 dom.newGame.addEventListener('click', newGame);
 dom.winNewGame.addEventListener('click', newGame);
-dom.undo.addEventListener('click', doUndo);
+dom.undo.addEventListener('click', () => {
+  clearHint();
+  doUndo();
+});
 dom.resetBoard.addEventListener('click', () => {
   if (!game) return;
+  clearHint();
   pushUndo();
   game.reset();
   hide(dom.winOverlay);
@@ -321,6 +431,7 @@ dom.settingsOverlay.addEventListener('click', (e) => {
 });
 
 function openSettings() {
+  clearHint();
   dom.sizeRange.value = settings.size;
   dom.sizeValue.textContent = settings.size;
   setDifficultyUI(settings.difficulty);
@@ -367,7 +478,10 @@ dom.settingsApply.addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hide(dom.settingsOverlay);
+  if (e.key === 'Escape') {
+    hide(dom.settingsOverlay);
+    clearHint();
+  }
 });
 
 // ---------- helpers ----------
