@@ -22,6 +22,7 @@ const dom = {
   message: el('message'),
   newGame: el('new-game'),
   openSettings: el('open-settings'),
+  undo: el('undo'),
   clearMarks: el('clear-marks'),
   resetBoard: el('reset-board'),
   loading: el('loading'),
@@ -82,6 +83,8 @@ function newGame() {
     const puzzle = generatePuzzle(N, difficulty, { budgetMs });
     buildBoard(N, puzzle.region);
     game = new Game(N, puzzle.region, settings.quickMode);
+    undoStack = [];
+    updateUndoButton();
     updateBoard();
     startTimer();
     hide(dom.loading);
@@ -132,13 +135,26 @@ function updateBoard() {
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N; c++) {
       const cell = cells[r][c];
-      const isConflict = conflicts.has(`${r},${c}`);
-      cell.classList.toggle('conflict', isConflict);
-      let html = '';
-      if (game.queen[r][c]) html = CROWN;
-      else if (game.mark[r][c]) html = '<span class="x">✕</span>';
-      else if (auto[r][c]) html = '<span class="dot"></span>';
-      if (cell.innerHTML !== html) cell.innerHTML = html;
+      // The base state drives the cell's contents. Conflict is handled purely by
+      // a CSS class so a queen never gets its SVG re-parsed (which caused the
+      // brief flicker) when only a dot elsewhere or its conflict status changes.
+      let state = 'empty';
+      if (game.queen[r][c]) state = 'queen';
+      else if (game.mark[r][c]) state = 'mark';
+      else if (auto[r][c]) state = 'dot';
+
+      if (cell.dataset.state !== state) {
+        cell.dataset.state = state;
+        cell.innerHTML =
+          state === 'queen'
+            ? CROWN
+            : state === 'mark'
+            ? '<span class="x">✕</span>'
+            : state === 'dot'
+            ? '<span class="dot"></span>'
+            : '';
+      }
+      cell.classList.toggle('conflict', conflicts.has(`${r},${c}`));
     }
   }
 
@@ -178,31 +194,135 @@ function onWin() {
   show(dom.winOverlay);
 }
 
-// ---------- Interaction ----------
-dom.board.addEventListener('click', (e) => {
-  const cell = e.target.closest('.cell');
-  if (!cell || !game) return;
-  const r = +cell.dataset.r;
-  const c = +cell.dataset.c;
-  const wasQueen = game.queen[r][c];
-  game.tap(r, c);
-  if (!wasQueen && game.queen[r][c]) lastPlaced = { r, c };
+// ---------- Undo ----------
+// Each user gesture (a tap, a whole swipe stroke, or a Clear/Reset) snapshots
+// the board first. Because quick-mode dots are derived from the queens, undoing
+// a queen automatically removes every dot it produced.
+let undoStack = [];
+
+function snapshot() {
+  return {
+    mark: game.mark.map((row) => row.slice()),
+    queen: game.queen.map((row) => row.slice()),
+    queenCount: game.queenCount,
+  };
+}
+function pushUndo() {
+  undoStack.push(snapshot());
+  if (undoStack.length > 500) undoStack.shift();
+  updateUndoButton();
+}
+function updateUndoButton() {
+  dom.undo.disabled = undoStack.length === 0;
+}
+function doUndo() {
+  if (!game || undoStack.length === 0) return;
+  const s = undoStack.pop();
+  game.mark = s.mark;
+  game.queen = s.queen;
+  game.queenCount = s.queenCount;
+  hide(dom.winOverlay);
+  if (!timerId) startTimer(); // resume if a win had stopped the clock
+  lastPlaced = null;
   updateBoard();
+  updateUndoButton();
+}
+
+// ---------- Interaction (tap + swipe) ----------
+// A tap cycles a single cell. Press-and-drag paints: the first cell decides
+// whether the stroke adds dots (started on an empty cell) or erases them
+// (started on a marked cell); queens are never touched by a swipe.
+let drag = null;
+
+function paintModeForStart(r, c) {
+  if (game.queen[r][c]) return null; // queens are tap-only
+  return game.mark[r][c] ? 'clear' : 'mark';
+}
+
+function paintCell(r, c) {
+  if (game.queen[r][c]) return false;
+  const want = drag.mode === 'mark';
+  if (game.mark[r][c] === want) return false;
+  if (!drag.snapshotted) {
+    pushUndo();
+    drag.snapshotted = true;
+  }
+  game.mark[r][c] = want;
+  return true;
+}
+
+function cellAtPoint(x, y) {
+  const el = document.elementFromPoint(x, y);
+  const cell = el && el.closest ? el.closest('.cell') : null;
+  return cell && dom.board.contains(cell) ? cell : null;
+}
+
+dom.board.addEventListener('pointerdown', (e) => {
+  if (!game) return;
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  const cell = e.target.closest('.cell');
+  if (!cell) return;
+  e.preventDefault();
+  drag = {
+    id: e.pointerId,
+    startR: +cell.dataset.r,
+    startC: +cell.dataset.c,
+    mode: paintModeForStart(+cell.dataset.r, +cell.dataset.c),
+    moved: false,
+    snapshotted: false,
+    lastKey: `${cell.dataset.r},${cell.dataset.c}`,
+  };
 });
+
+dom.board.addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const cell = cellAtPoint(e.clientX, e.clientY);
+  if (!cell) return;
+  const key = `${cell.dataset.r},${cell.dataset.c}`;
+  if (key === drag.lastKey) return; // still on the last-processed cell
+  drag.lastKey = key;
+
+  let changed = false;
+  if (!drag.moved) {
+    drag.moved = true;
+    changed = paintCell(drag.startR, drag.startC); // include the start cell
+  }
+  if (paintCell(+cell.dataset.r, +cell.dataset.c)) changed = true;
+  if (changed) updateBoard();
+});
+
+function endDrag(e) {
+  if (!drag || (e && e.pointerId !== drag.id)) return;
+  if (!drag.moved) {
+    // A plain tap: cycle the single cell (empty → dot → queen → empty).
+    const { startR: r, startC: c } = drag;
+    pushUndo();
+    const wasQueen = game.queen[r][c];
+    game.tap(r, c);
+    if (!wasQueen && game.queen[r][c]) lastPlaced = { r, c };
+    updateBoard();
+  }
+  drag = null;
+}
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
 
 // ---------- Controls ----------
 dom.newGame.addEventListener('click', newGame);
 dom.winNewGame.addEventListener('click', newGame);
+dom.undo.addEventListener('click', doUndo);
 dom.clearMarks.addEventListener('click', () => {
   if (!game) return;
+  pushUndo();
   game.clearMarks();
   updateBoard();
 });
 dom.resetBoard.addEventListener('click', () => {
   if (!game) return;
+  pushUndo();
   game.reset();
   hide(dom.winOverlay);
-  startTimer();
+  if (!timerId) startTimer();
   updateBoard();
 });
 

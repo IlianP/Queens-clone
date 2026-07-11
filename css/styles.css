@@ -138,6 +138,14 @@ body {
 .btn:hover {
   filter: brightness(1.03);
 }
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  box-shadow: none;
+}
+.btn:disabled:hover {
+  filter: none;
+}
 
 /* ---------- Board ---------- */
 .board-wrap {
@@ -160,7 +168,9 @@ body {
   border-radius: 10px;
   overflow: hidden;
   box-shadow: var(--shadow);
-  touch-action: manipulation;
+  /* Custom tap + swipe handling: stop the browser scrolling/zooming on the
+     board so a finger drag paints cells instead. */
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -172,7 +182,13 @@ body {
   justify-content: center;
   border: 0.5px solid var(--cell-line);
   cursor: pointer;
-  touch-action: manipulation;
+  touch-action: none;
+}
+
+/* Children never intercept hit-testing, so elementFromPoint during a swipe
+   always resolves to the cell itself. */
+.cell > * {
+  pointer-events: none;
 }
 
 /* Thicker borders on region boundaries */
