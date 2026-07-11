@@ -1,0 +1,282 @@
+// generator.js
+// Produces solvable Queens puzzles with a UNIQUE solution and a target
+// difficulty. Strategy:
+//   1. Place N non-touching queens (one per row & column) — the intended
+//      solution S1.
+//   2. Grow N contiguous colour regions outward from each queen (flood fill).
+//   3. Repair the board until the puzzle has exactly one solution, by moving a
+//      cell that only an alternate solution uses into a neighbouring region.
+//   4. Rate the puzzle and prefer one matching the requested difficulty.
+
+import { solveUpTo2, logicSolves, difficultyLevel } from './solver.js';
+
+// Cap for the definitive uniqueness verdict. A board that needs more nodes than
+// this to settle is abandoned — we'd only keep it if it were logic-solvable
+// (checked first, cheaply), so a slow verdict means "reject" anyway.
+const NODE_CAP = 150000;
+// Cheap per-iteration cap: enough to instantly find a 2nd solution on a loose
+// board, small enough that the repair loop stays fast.
+const SMALL_CAP = 40000;
+
+const LEVELS = { easy: 0, medium: 1, hard: 2 };
+
+function shuffle(arr, rng) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// A permutation cols[r] = queen column in row r, where consecutive rows differ
+// by >= 2 so no two queens touch (non-adjacent rows are >= 2 apart already).
+function generatePlacement(N, rng) {
+  const cols = new Array(N).fill(-1);
+  const used = new Array(N).fill(false);
+
+  function rec(r) {
+    if (r === N) return true;
+    const order = shuffle([...Array(N).keys()], rng);
+    for (const c of order) {
+      if (used[c]) continue;
+      if (r > 0 && Math.abs(c - cols[r - 1]) <= 1) continue;
+      cols[r] = c;
+      used[c] = true;
+      if (rec(r + 1)) return true;
+      used[c] = false;
+      cols[r] = -1;
+    }
+    return false;
+  }
+
+  return rec(0) ? cols : null;
+}
+
+// Grow regions from the queen seeds via randomized multi-source flood fill.
+// Random frontier selection yields organic, varied region shapes; contiguity
+// is guaranteed because a cell is only claimed when adjacent to its region.
+function growRegions(N, cols, rng) {
+  const region = Array.from({ length: N }, () => new Array(N).fill(-1));
+  const frontier = [];
+  const dirs = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ];
+
+  const addNeighbours = (r, c, reg) => {
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
+      if (region[nr][nc] === -1) frontier.push({ r: nr, c: nc, reg });
+    }
+  };
+
+  for (let i = 0; i < N; i++) {
+    region[i][cols[i]] = i;
+    addNeighbours(i, cols[i], i);
+  }
+
+  let remaining = N * N - N;
+  while (remaining > 0 && frontier.length) {
+    const k = Math.floor(rng() * frontier.length);
+    const f = frontier[k];
+    frontier[k] = frontier[frontier.length - 1];
+    frontier.pop();
+    if (region[f.r][f.c] !== -1) continue;
+    region[f.r][f.c] = f.reg;
+    remaining--;
+    addNeighbours(f.r, f.c, f.reg);
+  }
+
+  if (remaining > 0) return null; // board is connected, so this shouldn't happen
+  return region;
+}
+
+function sameSolution(a, b, N) {
+  for (let r = 0; r < N; r++) if (a[r] !== b[r]) return false;
+  return true;
+}
+
+// True if colour region `reg` stays connected after removing cell (ar,ac).
+function contiguousWithout(N, region, reg, ar, ac) {
+  const cells = [];
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      if (region[r][c] === reg && !(r === ar && c === ac)) cells.push(r * N + c);
+  if (cells.length === 0) return false;
+
+  const seen = new Set([cells[0]]);
+  const stack = [cells[0]];
+  const dirs = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ];
+  while (stack.length) {
+    const idx = stack.pop();
+    const r = (idx / N) | 0;
+    const c = idx % N;
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
+      if (nr === ar && nc === ac) continue;
+      if (region[nr][nc] !== reg) continue;
+      const ni = nr * N + nc;
+      if (seen.has(ni)) continue;
+      seen.add(ni);
+      stack.push(ni);
+    }
+  }
+  return seen.size === cells.length;
+}
+
+// Mutate `region` until the puzzle is solvable by pure deduction — which makes
+// it both UNIQUE and fair (no guessing needed). Each step removes one alternate
+// solution S2 by moving an "S2-only" queen cell into a neighbouring region
+// (which already contains an S2 queen, so S2 becomes invalid), while the
+// intended solution S1 is preserved because we never touch an S1 queen cell.
+// Returns true on success, false if it could not converge / stayed unfair.
+function makeUnique(N, region, S1, rng, deadline) {
+  const maxIters = N * N * 6;
+  for (let iter = 0; iter < maxIters; iter++) {
+    if (now() > deadline) return false;
+
+    // While the board is still loose it has many solutions, so a cheap bounded
+    // search finds a second one almost immediately. Only when it can't (the
+    // board looks near-unique) do we pay for the heavier checks below.
+    let res = solveUpTo2(N, region, SMALL_CAP);
+    if (res.count < 2) {
+      // Deduction certificate: a full logic solve proves uniqueness AND fairness
+      // without an exhaustive search.
+      if (logicSolves(N, region, 2)) return true;
+      // Not logic-solvable — get a definitive verdict with the full node budget.
+      res = solveUpTo2(N, region, NODE_CAP);
+      if (res.aborted) return false; // too slow to verify — abandon this board
+      if (res.count < 2) return false; // unique but needs guessing — reject as unfair
+    }
+    const S2 = sameSolution(res.first, S1, N) ? res.second : res.first;
+
+    // Cells that are queens in S2 but not in S1.
+    const cands = [];
+    for (let r = 0; r < N; r++) if (S2[r] !== S1[r]) cands.push(r * N + S2[r]);
+    shuffle(cands, rng);
+
+    let moved = false;
+    for (const A of cands) {
+      const ar = (A / N) | 0;
+      const ac = A % N;
+      const curReg = region[ar][ac];
+
+      const ngRegs = new Set();
+      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const nr = ar + dr;
+        const nc = ac + dc;
+        if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
+        const rg = region[nr][nc];
+        if (rg !== curReg) ngRegs.add(rg);
+      }
+      if (ngRegs.size === 0) continue;
+      if (!contiguousWithout(N, region, curReg, ar, ac)) continue;
+
+      // Any neighbouring region works: S2 has a queen there already, so adding A
+      // to it gives that region two S2 queens.
+      const ng = [...ngRegs][Math.floor(rng() * ngRegs.size)];
+      region[ar][ac] = ng;
+      moved = true;
+      break;
+    }
+    if (!moved) return false;
+  }
+  return logicSolves(N, region, 2);
+}
+
+/**
+ * Generate a puzzle.
+ * @param {number} N board size
+ * @param {'easy'|'medium'|'hard'} difficulty target difficulty
+ * @param {object} [opts] { budgetMs, rng }
+ * @returns {{ region:number[][], solution:number[], level:number, attempts:number }}
+ */
+export function generatePuzzle(N, difficulty, opts = {}) {
+  const rng = opts.rng || Math.random;
+  const budgetMs = opts.budgetMs ?? 1500;
+  const target = LEVELS[difficulty] ?? 1;
+  const start = now();
+
+  let best = null; // closest match so far
+  let attempts = 0;
+
+  while (now() - start < budgetMs) {
+    attempts++;
+    const cols = generatePlacement(N, rng);
+    if (!cols) continue;
+    const region = growRegions(N, cols, rng);
+    if (!region) continue;
+    if (!makeUnique(N, region, cols, rng, start + budgetMs)) continue;
+
+    const level = difficultyLevel(N, region);
+    const result = { region, solution: cols.slice(), level, attempts };
+    const dist = Math.abs(level - target);
+    if (best === null || dist < best._dist) {
+      best = result;
+      best._dist = dist;
+    }
+    if (dist === 0) {
+      delete result._dist;
+      return result;
+    }
+    // A close-enough match (off by one level) is accepted once we've spent part
+    // of the budget, so large boards — where an exact easy/medium is rare —
+    // don't always burn the full time looking for a perfect match.
+    if (best._dist <= 1 && now() - start > budgetMs * 0.4) {
+      delete best._dist;
+      return best;
+    }
+  }
+
+  if (best) {
+    delete best._dist;
+    return best;
+  }
+
+  // No unique board within the budget (only happens for the largest sizes on an
+  // unlucky run): keep trying with short per-attempt limits so we converge on a
+  // unique board quickly, rather than one slow attempt blowing the time.
+  // Keep trying until the repair converges. makeUnique is fast and succeeds
+  // within a few tries in practice, so we never hand back a non-unique board.
+  for (let tries = 0; tries < 500; tries++) {
+    attempts++;
+    const cols = generatePlacement(N, rng);
+    if (!cols) continue;
+    const region = growRegions(N, cols, rng);
+    if (!region) continue;
+    if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
+    return { region, solution: cols.slice(), level: difficultyLevel(N, region), attempts };
+  }
+
+  // Astronomically-unlikely last resort: a valid board even if uniqueness could
+  // not be secured. Kept so the game always has something to render.
+  const cols = generatePlacement(N, rng) || defaultPlacement(N);
+  const region = growRegions(N, cols, rng) || trivialRegions(N);
+  return { region, solution: cols.slice(), level: difficultyLevel(N, region), attempts };
+}
+
+function now() {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+function defaultPlacement(N) {
+  const evens = [];
+  const odds = [];
+  for (let c = 0; c < N; c++) (c % 2 === 0 ? evens : odds).push(c);
+  return evens.concat(odds).slice(0, N);
+}
+
+function trivialRegions(N) {
+  return Array.from({ length: N }, (_, r) => new Array(N).fill(r));
+}
