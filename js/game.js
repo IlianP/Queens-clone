@@ -111,32 +111,44 @@ export class Game {
     return bad;
   }
 
-  // Region ids that can no longer receive a queen: they hold no queen and every
-  // one of their cells is already dotted (a manual mark or a quick-mode
-  // auto-mark). Such a region is a dead end — the puzzle can't be finished while
-  // it stays this way — so the UI outlines it in red, mirroring how impossible
-  // queens are flagged.
-  deadRegions(auto = this.autoMarkGrid()) {
+  // Units (colour regions, rows and columns) that can no longer receive a
+  // queen: they hold no queen and every one of their cells is already dotted (a
+  // manual mark or a quick-mode auto-mark). Such a unit is a dead end — the
+  // puzzle can't be finished while it stays this way — so the UI outlines it in
+  // red, mirroring how impossible queens are flagged. A queen belongs to exactly
+  // one row, column and region, so the same "no queen + nothing open" test
+  // applies to all three unit kinds.
+  deadUnits(auto = this.autoMarkGrid()) {
     const N = this.N;
-    const withQueen = new Set();
-    const withOpen = new Set(); // regions that still have a placeable cell
-    const all = new Set();
+    const regQueen = new Set();
+    const regOpen = new Set(); // units that still have a placeable cell
+    const allReg = new Set();
+    const rowQueen = new Array(N).fill(false);
+    const rowOpen = new Array(N).fill(false);
+    const colQueen = new Array(N).fill(false);
+    const colOpen = new Array(N).fill(false);
     for (let r = 0; r < N; r++) {
       for (let c = 0; c < N; c++) {
         const reg = this.region[r][c];
-        all.add(reg);
+        allReg.add(reg);
         if (this.queen[r][c]) {
-          withQueen.add(reg);
+          regQueen.add(reg);
+          rowQueen[r] = colQueen[c] = true;
         } else if (!this.mark[r][c] && !auto[r][c]) {
-          withOpen.add(reg);
+          regOpen.add(reg);
+          rowOpen[r] = colOpen[c] = true;
         }
       }
     }
-    const dead = new Set();
-    for (const reg of all) {
-      if (!withQueen.has(reg) && !withOpen.has(reg)) dead.add(reg);
+    const regions = new Set();
+    for (const reg of allReg) if (!regQueen.has(reg) && !regOpen.has(reg)) regions.add(reg);
+    const rows = new Set();
+    const cols = new Set();
+    for (let i = 0; i < N; i++) {
+      if (!rowQueen[i] && !rowOpen[i]) rows.add(i);
+      if (!colQueen[i] && !colOpen[i]) cols.add(i);
     }
-    return dead;
+    return { regions, rows, cols };
   }
 
   isWon() {

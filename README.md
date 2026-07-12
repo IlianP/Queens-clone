@@ -24,6 +24,9 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 - **Markierungen löschen** entfernt nur deine Punkte, die Damen bleiben.
 - **Zurücksetzen** leert das aktuelle Feld.
 - Fehler (sich berührende / kollidierende Damen) werden rot markiert.
+- Eine Zeile, Spalte oder Farbregion, in der jedes Feld ausgeschlossen ist und
+  keine Dame steht, wird rot pulsierend umrandet – dort ist keine Dame mehr
+  möglich, also stimmt etwas nicht.
 
 ## Einstellungen (⚙)
 

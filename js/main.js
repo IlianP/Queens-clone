@@ -189,7 +189,7 @@ function updateBoard() {
   const N = game.N;
   const auto = game.autoMarkGrid();
   const conflicts = game.conflicts();
-  const dead = game.deadRegions(auto);
+  const dead = game.deadUnits(auto);
   const region = game.region;
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N; c++) {
@@ -209,16 +209,34 @@ function updateBoard() {
       }
       cell.classList.toggle('conflict', conflicts.has(`${r},${c}`));
 
-      // Outline a region in red once it's a dead end (fully dotted, no queen).
-      // The red edges are drawn only on the region's outer sides — where it
-      // meets another region or the board edge — so they form one clean border.
+      // Outline a unit in red once it's a dead end (fully dotted, no queen).
+      // This covers colour regions as well as whole rows and columns. The red
+      // edges are drawn only on a unit's outer sides — where it meets another
+      // unit or the board edge — so each dead unit forms one clean border. A
+      // cell may sit in several dead units at once; a side goes red if it's an
+      // outer edge of any of them.
       const reg = region[r][c];
-      const isDead = dead.has(reg);
+      const regDead = dead.regions.has(reg);
+      const rowDead = dead.rows.has(r);
+      const colDead = dead.cols.has(c);
+      const isDead = regDead || rowDead || colDead;
       cell.classList.toggle('dead', isDead);
-      cell.classList.toggle('dt', isDead && (r === 0 || region[r - 1][c] !== reg));
-      cell.classList.toggle('dr', isDead && (c === N - 1 || region[r][c + 1] !== reg));
-      cell.classList.toggle('db', isDead && (r === N - 1 || region[r + 1][c] !== reg));
-      cell.classList.toggle('dl', isDead && (c === 0 || region[r][c - 1] !== reg));
+      cell.classList.toggle(
+        'dt',
+        (regDead && (r === 0 || region[r - 1][c] !== reg)) || rowDead || (colDead && r === 0)
+      );
+      cell.classList.toggle(
+        'dr',
+        (regDead && (c === N - 1 || region[r][c + 1] !== reg)) || colDead || (rowDead && c === N - 1)
+      );
+      cell.classList.toggle(
+        'db',
+        (regDead && (r === N - 1 || region[r + 1][c] !== reg)) || rowDead || (colDead && r === N - 1)
+      );
+      cell.classList.toggle(
+        'dl',
+        (regDead && (c === 0 || region[r][c - 1] !== reg)) || colDead || (rowDead && c === 0)
+      );
     }
   }
 
@@ -463,6 +481,8 @@ function applyHint() {
     if (game.queen[r][c]) {
       game.queen[r][c] = false;
       game.queenCount--;
+    } else if (game.mark[r][c]) {
+      game.mark[r][c] = false;
     }
   }
   clearHint();
@@ -528,10 +548,43 @@ function buildDebugInfo() {
   };
 }
 
+// Pretty-print the debug JSON without exploding every number onto its own line.
+// Arrays of primitives — and arrays of short primitive-arrays like coordinate
+// pairs or a single region row — collapse onto one line when they fit;
+// everything else still nests, so the structure stays scannable (e.g. the
+// region prints as one line per row instead of one line per cell).
+function formatDebug(value, indent = '') {
+  const step = '  ';
+  const isPrimitive = (v) => v === null || typeof v !== 'object';
+  if (Array.isArray(value)) {
+    if (value.length === 0) return '[]';
+    const allPrim = value.every(isPrimitive);
+    const allPrimArrays =
+      !allPrim && value.every((v) => Array.isArray(v) && v.every(isPrimitive));
+    if (allPrim || allPrimArrays) {
+      const inline = '[' + value.map((v) => formatDebug(v)).join(', ') + ']';
+      if (inline.length <= 100) return inline;
+    }
+    const inner = indent + step;
+    return '[\n' + value.map((v) => inner + formatDebug(v, inner)).join(',\n') + '\n' + indent + ']';
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (keys.length === 0) return '{}';
+    const inner = indent + step;
+    return (
+      '{\n' +
+      keys.map((k) => inner + JSON.stringify(k) + ': ' + formatDebug(value[k], inner)).join(',\n') +
+      '\n' + indent + '}'
+    );
+  }
+  return JSON.stringify(value);
+}
+
 async function copyDebug() {
   if (!game) return;
   const info = buildDebugInfo();
-  const text = JSON.stringify(info, null, 2);
+  const text = formatDebug(info);
   let ok = false;
   try {
     await navigator.clipboard.writeText(text);

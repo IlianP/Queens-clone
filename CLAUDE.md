@@ -46,7 +46,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `css/styles.css` | Layout, responsive/mobile design |
 | `js/solver.js` | Rules, unit lists, solution counting (uniqueness), human-style deduction solver + difficulty rating |
 | `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty |
-| `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-region + win detection (pure logic) |
+| `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection (pure logic) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/settings.js` | Preferences (size/difficulty/quick mode/debug) in `localStorage` — no game state or scores are persisted |
 | `js/main.js` | Wires generator + game + hint to the DOM: rendering, input, timer, hint card, debug export |
