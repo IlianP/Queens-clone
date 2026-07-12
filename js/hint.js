@@ -221,7 +221,7 @@ function findCrowding(st, N, region, regionCells) {
     return n;
   };
 
-  const run = (primCells, primHasQ, primOf, secOf, describe) => {
+  const run = (primCells, primHasQ, primOf, secOf, primIsLine, describe) => {
     const masks = new Array(N).fill(0);
     const active = [];
     for (let p = 0; p < N; p++) {
@@ -232,41 +232,53 @@ function findCrowding(st, N, region, regionCells) {
       if (any) { masks[p] = m; active.push(p); }
     }
     const CAP = 4;
-    const combo = [];
-    let found = null;
-    const rec = (start, orMask) => {
-      if (found) return;
-      if (combo.length >= 2 && popcount(orMask) === combo.length) {
-        let sMask = 0;
-        for (const p of combo) sMask |= 1 << p;
-        const elim = [];
-        const reason = [];
-        for (const p of combo) for (const idx of primCells[p]) if (cand(idx)) reason.push([(idx / N) | 0, idx % N]);
-        for (let idx = 0; idx < N * N; idx++) {
-          if (!cand(idx)) continue;
-          if (((orMask >> secOf(idx)) & 1) && !((sMask >> primOf(idx)) & 1)) elim.push([(idx / N) | 0, idx % N]);
-        }
-        if (elim.length) { found = { elim, reason, k: combo.length, describe }; return; }
+
+    const build = (combo, orMask) => {
+      let sMask = 0;
+      for (const p of combo) sMask |= 1 << p;
+      const elim = [];
+      for (let idx = 0; idx < N * N; idx++) {
+        if (!cand(idx)) continue;
+        if (((orMask >> secOf(idx)) & 1) && !((sMask >> primOf(idx)) & 1)) elim.push([(idx / N) | 0, idx % N]);
       }
-      if (combo.length === CAP) return;
-      for (let i = start; i < active.length; i++) {
-        const nm = orMask | masks[active[i]];
-        if (popcount(nm) > CAP) continue;
-        combo.push(active[i]);
-        rec(i + 1, nm);
-        combo.pop();
-        if (found) return;
-      }
+      if (!elim.length) return null;
+      // Reason = the k full primary units (rows/cols shown as bands, regions as
+      // their whole colour), so "these k rows/colours" reads clearly.
+      const reason = [];
+      for (const p of combo)
+        for (const idx of primCells[p]) reason.push([(idx / N) | 0, idx % N]);
+      return { elim, reason, k: combo.length, describe };
     };
-    rec(0, 0);
+
+    // Prefer the smallest Hall set (2 before 3 before 4): far easier to grasp.
+    let found = null;
+    const combo = [];
+    const search = (target) => {
+      const rec = (start, orMask) => {
+        if (found) return;
+        if (combo.length === target) {
+          if (popcount(orMask) === target) found = build(combo, orMask);
+          return;
+        }
+        for (let i = start; i < active.length && !found; i++) {
+          const nm = orMask | masks[active[i]];
+          if (popcount(nm) > target) continue;
+          combo.push(active[i]);
+          rec(i + 1, nm);
+          combo.pop();
+        }
+      };
+      rec(0, 0);
+    };
+    for (let size = 2; size <= CAP && !found; size++) search(size);
     return found;
   };
 
   const f =
-    run(rowsCellsAll, st.rowQ, rowOf, regionOf, (k) => [`${k} Farben, ${k} Zeilen`, `In diesen ${k} hervorgehobenen Zeilen kommen nur ${k} Farben vor. Diese Farben müssen also in genau diese Zeilen – ihre Felder in anderen Zeilen scheiden aus.`]) ||
-    run(colsCellsAll, st.colQ, colOf, regionOf, (k) => [`${k} Farben, ${k} Spalten`, `In diesen ${k} hervorgehobenen Spalten kommen nur ${k} Farben vor. Diese Farben müssen also in genau diese Spalten – ihre Felder in anderen Spalten scheiden aus.`]) ||
-    run(regCellsIdx, st.regQ, regionOf, rowOf, (k) => [`${k} Farben, ${k} Zeilen`, `Diese ${k} hervorgehobenen Farben passen nur in ${k} Zeilen. Diese Zeilen gehören also diesen Farben – andere Farben scheiden in diesen Zeilen aus.`]) ||
-    run(regCellsIdx, st.regQ, regionOf, colOf, (k) => [`${k} Farben, ${k} Spalten`, `Diese ${k} hervorgehobenen Farben passen nur in ${k} Spalten. Diese Spalten gehören also diesen Farben – andere Farben scheiden in diesen Spalten aus.`]);
+    run(rowsCellsAll, st.rowQ, rowOf, regionOf, true, (k) => [`${k} Farben passen nur in ${k} Zeilen`, `In den ${k} hervorgehobenen Zeilen kommen nur ${k} Farben vor. Diese ${k} Farben müssen also in genau diese Zeilen – dieselben Farben scheiden in allen anderen Zeilen aus (schraffiert).`]) ||
+    run(colsCellsAll, st.colQ, colOf, regionOf, true, (k) => [`${k} Farben passen nur in ${k} Spalten`, `In den ${k} hervorgehobenen Spalten kommen nur ${k} Farben vor. Diese ${k} Farben müssen also in genau diese Spalten – dieselben Farben scheiden in allen anderen Spalten aus (schraffiert).`]) ||
+    run(regCellsIdx, st.regQ, regionOf, rowOf, false, (k) => [`${k} Farben belegen ${k} Zeilen`, `Die ${k} hervorgehobenen Farben passen nur in ${k} Zeilen. Diese Zeilen gehören also diesen Farben – andere Farben scheiden in diesen Zeilen aus (schraffiert).`]) ||
+    run(regCellsIdx, st.regQ, regionOf, colOf, false, (k) => [`${k} Farben belegen ${k} Spalten`, `Die ${k} hervorgehobenen Farben passen nur in ${k} Spalten. Diese Spalten gehören also diesen Farben – andere Farben scheiden in diesen Spalten aus (schraffiert).`]);
 
   if (!f) return null;
   const [title, text] = f.describe(f.k);
