@@ -11,6 +11,12 @@
   --shadow: 0 10px 30px rgba(31, 37, 68, 0.14);
   --cell-line: rgba(31, 37, 68, 0.28);
   --cell-line-strong: #1f2544;
+  /* Dead-region outline. Deliberately more saturated than --danger so it
+     stays legible on top of a reddish region. Shared across themes because
+     the region palette is identical in light and dark. */
+  --dead-bright: #ff2d43;
+  --dead-deep: #7a0016;
+  --dead-static: #e00027;
 }
 
 /* Dark tokens: the OS preference by default, then the viewer's explicit toggle
@@ -253,16 +259,16 @@ body {
 @keyframes dead-pulse {
   0%,
   100% {
-    --dead-c: #ff2d43;
+    --dead-c: var(--dead-bright);
   }
   50% {
-    --dead-c: #7a0016;
+    --dead-c: var(--dead-deep);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .cell.dead {
     animation: none;
-    --dead-c: #e00027;
+    --dead-c: var(--dead-static);
   }
 }
 
