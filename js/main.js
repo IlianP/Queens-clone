@@ -57,29 +57,70 @@ let hintActive = false;
 let currentHint = null;
 
 // ---------- Timer ----------
+// Only counts while the window is focused/visible. Time is accumulated across
+// active segments so switching away and back never advances the clock.
 let timerId = null;
-let startTime = 0;
-let elapsedFrozen = 0;
+let timerAccumMs = 0; // time from completed active segments
+let timerRunStart = 0; // start of the current active segment (0 = not counting)
+let timerDone = false; // puzzle solved -> frozen for good
 
-function startTimer() {
-  stopTimer();
-  startTime = Date.now();
-  elapsedFrozen = 0;
-  renderTime();
-  timerId = setInterval(renderTime, 1000);
-}
-function stopTimer() {
-  if (timerId) clearInterval(timerId);
-  timerId = null;
+function isWindowActive() {
+  return !document.hidden && document.hasFocus();
 }
 function currentElapsed() {
-  return elapsedFrozen || Math.floor((Date.now() - startTime) / 1000);
+  const ms = timerAccumMs + (timerRunStart ? Date.now() - timerRunStart : 0);
+  return Math.floor(ms / 1000);
 }
 function renderTime() {
   const s = currentElapsed();
-  const m = Math.floor(s / 60);
-  dom.timer.textContent = `${m}:${String(s % 60).padStart(2, '0')}`;
+  dom.timer.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+function tick() {
+  if (!timerId) timerId = setInterval(renderTime, 1000);
+}
+function untick() {
+  if (timerId) clearInterval(timerId);
+  timerId = null;
+}
+function startTimer() {
+  // Fresh clock for a new/reset board.
+  untick();
+  timerAccumMs = 0;
+  timerRunStart = isWindowActive() ? Date.now() : 0;
+  timerDone = false;
+  if (timerRunStart) tick();
+  renderTime();
+}
+function pauseTimer() {
+  if (timerDone || !timerRunStart) return;
+  timerAccumMs += Date.now() - timerRunStart;
+  timerRunStart = 0;
+  untick();
+  renderTime();
+}
+function resumeTimer() {
+  if (timerDone || timerRunStart || !game || !isWindowActive()) return;
+  timerRunStart = Date.now();
+  tick();
+  renderTime();
+}
+function stopTimer() {
+  // Puzzle solved: freeze the final time.
+  if (timerRunStart) {
+    timerAccumMs += Date.now() - timerRunStart;
+    timerRunStart = 0;
+  }
+  timerDone = true;
+  untick();
+  renderTime();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseTimer();
+  else resumeTimer();
+});
+window.addEventListener('blur', pauseTimer);
+window.addEventListener('focus', resumeTimer);
 
 // ---------- New game / generation ----------
 function newGame() {
@@ -198,9 +239,9 @@ function updateMessage() {
 function onWin() {
   clearHint();
   stopTimer();
-  elapsedFrozen = currentElapsed();
-  const m = Math.floor(elapsedFrozen / 60);
-  const s = String(elapsedFrozen % 60).padStart(2, '0');
+  const total = currentElapsed();
+  const m = Math.floor(total / 60);
+  const s = String(total % 60).padStart(2, '0');
   dom.winTime.textContent = `Zeit: ${m}:${s}`;
   show(dom.winOverlay);
 }
@@ -233,7 +274,11 @@ function doUndo() {
   game.queen = s.queen;
   game.queenCount = s.queenCount;
   hide(dom.winOverlay);
-  if (!timerId) startTimer(); // resume if a win had stopped the clock
+  if (timerDone) {
+    // A win had frozen the clock; undoing means play continues.
+    timerDone = false;
+    resumeTimer();
+  }
   lastPlaced = null;
   updateBoard();
   updateUndoButton();
@@ -518,7 +563,7 @@ dom.resetBoard.addEventListener('click', () => {
   pushUndo();
   game.reset();
   hide(dom.winOverlay);
-  if (!timerId) startTimer();
+  startTimer(); // clear the board -> clean clock
   updateBoard();
 });
 
