@@ -336,36 +336,57 @@ export function computeHint(N, region, solution, queens, marks) {
     }
   }
 
-  // A dot on a cell that must hold a queen (a solution cell) is a mistake: it
-  // leaves that cell's row, column and colour region no place for their queen.
-  // Pointing this out has to come before any placement hint — telling the
-  // player they've boxed a unit in matters more than the next deduction, and
-  // otherwise the hint would happily suggest placing a queen on a field the
-  // player has already (wrongly) excluded.
+  const correct = queens.filter(([r, c]) => solution[r] === c);
+  const regionCells = groupRegions(N, region);
+  const st = deriveState(N, region, regionCells, correct, marks, solution);
+
+  // A dot on a cell that must hold a queen (a solution cell) is a mistake, and
+  // pointing it out comes before any deduction elsewhere. When that cell is the
+  // last free cell of its row, column or colour region, "unmark it" isn't the
+  // whole story — the queen belongs there — so we offer the placement directly
+  // (applying it clears the dot and sets the queen), rather than telling the
+  // player to undo a dot only to be told to place that very queen on the next
+  // hint. Otherwise we just ask for the dot to be removed. deriveState already
+  // ignores a dot sitting on a solution cell, so `st` reflects the board as if
+  // the wrong dot weren't there.
   if (marks) {
     for (let r = 0; r < N; r++) {
       const c = solution[r];
-      if (marks[r][c]) {
+      if (!marks[r][c]) continue;
+      const reg = region[r][c];
+      const soleUnit =
+        (unitCandidates(regionCells[reg], st).length === 1 && 'Farbregion') ||
+        (unitCandidates(rowCells(N, r), st).length === 1 && 'Zeile') ||
+        (unitCandidates(colCells(N, c), st).length === 1 && 'Spalte');
+      if (soleUnit) {
+        const unitCells =
+          soleUnit === 'Farbregion' ? regionCells[reg] : soleUnit === 'Zeile' ? rowCells(N, r) : colCells(N, c);
         return {
-          kind: 'mistake',
-          title: 'Hier muss eine Dame stehen',
-          text: 'Dieses Feld ist als Ausschluss markiert, obwohl hier eine Dame stehen muss – dadurch bleibt für seine Zeile, Spalte und Farbe kein Platz mehr. Entferne die Markierung.',
-          reasonCells: [],
+          kind: 'place',
+          title: 'Hier muss die Dame stehen',
+          text: `Dieses Feld ist als Ausschluss markiert – dabei ist es das einzige noch freie Feld seiner ${soleUnit}. Entferne die Markierung und setze hier die Dame.`,
+          reasonCells: unitCells,
           lineCells: [],
           excludedCells: [],
           targetCells: [[r, c]],
-          applyLabel: 'Markierung entfernen',
+          applyLabel: 'Dame setzen',
         };
       }
+      return {
+        kind: 'mistake',
+        title: 'Hier muss eine Dame stehen',
+        text: 'Dieses Feld ist als Ausschluss markiert, obwohl hier eine Dame stehen muss. Entferne die Markierung.',
+        reasonCells: [],
+        lineCells: [],
+        excludedCells: [],
+        targetCells: [[r, c]],
+        applyLabel: 'Markierung entfernen',
+      };
     }
   }
 
-  const correct = queens.filter(([r, c]) => solution[r] === c);
   if (correct.length === N)
     return { kind: 'none', title: 'Alles gelöst', text: 'Alle Damen stehen richtig – gut gemacht!' };
-
-  const regionCells = groupRegions(N, region);
-  const st = deriveState(N, region, regionCells, correct, marks, solution);
 
   return (
     findNakedSingle(st, N, regionCells) ||
