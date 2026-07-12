@@ -159,8 +159,42 @@ function findConfinement(st, N, region, regionCells) {
 }
 
 // Direct dead-end: a queen on X would wipe out every remaining cell of some
-// other unit U, so X is impossible. Highlights X (out) and U (its free cells).
+// other unit U, so X is impossible. Highlights the blocked cells (out) and U
+// (its free cells).
+//
+// Any cell whose queen would attack every free cell of U is impossible for the
+// exact same reason, so we gather them all and eliminate them together in one
+// hint — otherwise the player gets a string of near-identical hints for cells
+// that (often literally next to each other) all fail against the same unit.
 function findDeadEnd(st, N, region, regionCells) {
+  // Every candidate cell (outside U) whose queen would attack all of U's free
+  // cells. X isn't a member of U precisely when it isn't one of those cells.
+  const blockersOf = (cs) => {
+    const out = [];
+    for (let xr = 0; xr < N; xr++)
+      for (let xc = 0; xc < N; xc++) {
+        if (!st.cand[xr][xc]) continue;
+        if (cs.some(([r, c]) => r === xr && c === xc)) continue;
+        const xg = region[xr][xc];
+        const attacks = (r, c) =>
+          r === xr || c === xc || region[r][c] === xg || (Math.abs(r - xr) <= 1 && Math.abs(c - xc) <= 1);
+        if (cs.every(([r, c]) => attacks(r, c))) out.push([xr, xc]);
+      }
+    return out;
+  };
+
+  const make = (cs, unitWord) => {
+    const elim = blockersOf(cs);
+    if (!elim.length) return null;
+    const many = elim.length > 1;
+    return elimHint(
+      `Würde eine ${unitWord} blockieren`,
+      `Eine Dame auf ${many ? 'einem dieser Felder' : 'diesem Feld'} würde jedes noch freie Feld dieser ${unitWord} ausschließen (gleiche Zeile, Spalte, Farbe oder direkt daneben). Da die ${unitWord} aber eine Dame braucht, ${many ? 'scheiden diese Felder aus' : 'scheidet dieses Feld aus'}.`,
+      cs,
+      elim
+    );
+  };
+
   for (let xr = 0; xr < N; xr++) {
     for (let xc = 0; xc < N; xc++) {
       if (!st.cand[xr][xc]) continue;
@@ -171,13 +205,7 @@ function findDeadEnd(st, N, region, regionCells) {
       const check = (cells, unitWord) => {
         const cs = unitCandidates(cells, st);
         if (!cs.length) return null;
-        if (cs.every(([r, c]) => attacks(r, c)))
-          return elimHint(
-            `Würde eine ${unitWord} blockieren`,
-            `Eine Dame hier würde jedes noch freie Feld dieser ${unitWord} ausschließen (gleiche Zeile, Spalte, Farbe oder direkt daneben). Da die ${unitWord} aber eine Dame braucht, scheidet dieses Feld aus.`,
-            cs,
-            [[xr, xc]]
-          );
+        if (cs.every(([r, c]) => attacks(r, c))) return make(cs, unitWord);
         return null;
       };
 
