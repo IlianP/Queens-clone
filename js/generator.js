@@ -151,13 +151,13 @@ function makeUnique(N, region, S1, rng, deadline) {
     // board looks near-unique) do we pay for the heavier checks below.
     let res = solveUpTo2(N, region, SMALL_CAP);
     if (res.count < 2) {
-      // Deduction certificate: a full logic solve proves uniqueness AND fairness
-      // without an exhaustive search.
+      // Deduction certificate: a full logic solve proves uniqueness without an
+      // exhaustive search.
       if (logicSolves(N, region, 2)) return true;
-      // Not logic-solvable — get a definitive verdict with the full node budget.
+      // Not logic-solvable by our techniques — settle uniqueness exhaustively.
       res = solveUpTo2(N, region, NODE_CAP);
       if (res.aborted) return false; // too slow to verify — abandon this board
-      if (res.count < 2) return false; // unique but needs guessing — reject as unfair
+      if (res.count < 2) return true; // unique (difficulty/explainability rated later)
     }
     const S2 = sameSolution(res.first, S1, N) ? res.second : res.first;
 
@@ -192,7 +192,9 @@ function makeUnique(N, region, S1, rng, deadline) {
     }
     if (!moved) return false;
   }
-  return logicSolves(N, region, 2);
+  if (logicSolves(N, region, 2)) return true;
+  const res = solveUpTo2(N, region, NODE_CAP);
+  return !res.aborted && res.count < 2;
 }
 
 /**
@@ -221,7 +223,10 @@ export function generatePuzzle(N, difficulty, opts = {}) {
 
     const level = difficultyLevel(N, region);
     const result = { region, solution: cols.slice(), level, attempts };
-    const dist = Math.abs(level - target);
+    // Levels 0-2 are solvable (and explainable in hints) by naked single /
+    // confinement / dead-end. Level 3 needs deeper logic our hints can't explain,
+    // so penalise it heavily: only used if nothing better turns up.
+    const dist = Math.abs(level - target) + (level >= 3 ? 100 : 0);
     if (best === null || dist < best._dist) {
       best = result;
       best._dist = dist;
@@ -230,9 +235,9 @@ export function generatePuzzle(N, difficulty, opts = {}) {
       delete result._dist;
       return result;
     }
-    // A close-enough match (off by one level) is accepted once we've spent part
-    // of the budget, so large boards — where an exact easy/medium is rare —
-    // don't always burn the full time looking for a perfect match.
+    // A close-enough match (off by one level, still explainable) is accepted
+    // once we've spent part of the budget, so large boards — where an exact
+    // easy/medium is rare — don't always burn the full time.
     if (best._dist <= 1 && now() - start > budgetMs * 0.4) {
       delete best._dist;
       return best;

@@ -1,6 +1,7 @@
 // main.js — wires the puzzle generator, game logic and DOM together.
 import { generatePuzzle } from './generator.js';
 import { Game } from './game.js';
+import { computeHint } from './hint.js';
 import { loadSettings, saveSettings, clampSize } from './settings.js';
 
 // Distinct, mildly pastel region colours (supports up to 11 regions).
@@ -23,7 +24,16 @@ const dom = {
   newGame: el('new-game'),
   openSettings: el('open-settings'),
   undo: el('undo'),
+  hint: el('hint'),
   resetBoard: el('reset-board'),
+  hintCard: el('hint-card'),
+  hintTitle: el('hint-title'),
+  hintText: el('hint-text'),
+  hintLegend: el('hint-legend'),
+  hintApply: el('hint-apply'),
+  hintClose: el('hint-close'),
+  debugMode: el('debug-mode'),
+  debugCopy: el('debug-copy'),
   loading: el('loading'),
   winOverlay: el('win-overlay'),
   winTime: el('win-time'),
@@ -39,34 +49,78 @@ const dom = {
 
 let settings = loadSettings();
 let game = null;
+let currentSolution = null; // cols[r] of the unique solution (for hints)
 let cells = []; // cells[r][c] -> HTMLElement
 let colorMap = []; // color for each region id
 let lastPlaced = null;
+let hintActive = false;
+let currentHint = null;
 
 // ---------- Timer ----------
+// Only counts while the window is focused/visible. Time is accumulated across
+// active segments so switching away and back never advances the clock.
 let timerId = null;
-let startTime = 0;
-let elapsedFrozen = 0;
+let timerAccumMs = 0; // time from completed active segments
+let timerRunStart = 0; // start of the current active segment (0 = not counting)
+let timerDone = false; // puzzle solved -> frozen for good
 
-function startTimer() {
-  stopTimer();
-  startTime = Date.now();
-  elapsedFrozen = 0;
-  renderTime();
-  timerId = setInterval(renderTime, 1000);
-}
-function stopTimer() {
-  if (timerId) clearInterval(timerId);
-  timerId = null;
+function isWindowActive() {
+  return !document.hidden && document.hasFocus();
 }
 function currentElapsed() {
-  return elapsedFrozen || Math.floor((Date.now() - startTime) / 1000);
+  const ms = timerAccumMs + (timerRunStart ? Date.now() - timerRunStart : 0);
+  return Math.floor(ms / 1000);
 }
 function renderTime() {
   const s = currentElapsed();
-  const m = Math.floor(s / 60);
-  dom.timer.textContent = `${m}:${String(s % 60).padStart(2, '0')}`;
+  dom.timer.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+function tick() {
+  if (!timerId) timerId = setInterval(renderTime, 1000);
+}
+function untick() {
+  if (timerId) clearInterval(timerId);
+  timerId = null;
+}
+function startTimer() {
+  // Fresh clock for a new/reset board.
+  untick();
+  timerAccumMs = 0;
+  timerRunStart = isWindowActive() ? Date.now() : 0;
+  timerDone = false;
+  if (timerRunStart) tick();
+  renderTime();
+}
+function pauseTimer() {
+  if (timerDone || !timerRunStart) return;
+  timerAccumMs += Date.now() - timerRunStart;
+  timerRunStart = 0;
+  untick();
+  renderTime();
+}
+function resumeTimer() {
+  if (timerDone || timerRunStart || !game || !isWindowActive()) return;
+  timerRunStart = Date.now();
+  tick();
+  renderTime();
+}
+function stopTimer() {
+  // Puzzle solved: freeze the final time.
+  if (timerRunStart) {
+    timerAccumMs += Date.now() - timerRunStart;
+    timerRunStart = 0;
+  }
+  timerDone = true;
+  untick();
+  renderTime();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseTimer();
+  else resumeTimer();
+});
+window.addEventListener('blur', pauseTimer);
+window.addEventListener('focus', resumeTimer);
 
 // ---------- New game / generation ----------
 function newGame() {
@@ -75,13 +129,15 @@ function newGame() {
   show(dom.loading);
   const N = settings.size;
   const difficulty = settings.difficulty;
-  const budgetMs = N >= 11 ? 2600 : N >= 10 ? 2000 : N >= 8 ? 1300 : 800;
+  const budgetMs = N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
 
   // Yield a frame so the spinner paints before the (synchronous) generator runs.
   setTimeout(() => {
     const puzzle = generatePuzzle(N, difficulty, { budgetMs });
     buildBoard(N, puzzle.region);
     game = new Game(N, puzzle.region, settings.quickMode);
+    currentSolution = puzzle.solution;
+    clearHint();
     undoStack = [];
     updateUndoButton();
     updateBoard();
@@ -104,7 +160,9 @@ function buildBoard(N, region) {
       div.className = 'cell';
       div.dataset.r = r;
       div.dataset.c = c;
-      div.style.background = colorMap[region[r][c]];
+      // Use background-COLOR (not the `background` shorthand) so a hint's
+      // hatch (a background-image) can layer on top instead of being reset.
+      div.style.backgroundColor = colorMap[region[r][c]];
       // Strong borders on region boundaries.
       if (r > 0 && region[r - 1][c] !== region[r][c]) div.classList.add('bt');
       if (r < N - 1 && region[r + 1][c] !== region[r][c]) div.classList.add('bb');
@@ -192,10 +250,11 @@ function updateMessage() {
 }
 
 function onWin() {
+  clearHint();
   stopTimer();
-  elapsedFrozen = currentElapsed();
-  const m = Math.floor(elapsedFrozen / 60);
-  const s = String(elapsedFrozen % 60).padStart(2, '0');
+  const total = currentElapsed();
+  const m = Math.floor(total / 60);
+  const s = String(total % 60).padStart(2, '0');
   dom.winTime.textContent = `Zeit: ${m}:${s}`;
   show(dom.winOverlay);
 }
@@ -228,7 +287,11 @@ function doUndo() {
   game.queen = s.queen;
   game.queenCount = s.queenCount;
   hide(dom.winOverlay);
-  if (!timerId) startTimer(); // resume if a win had stopped the clock
+  if (timerDone) {
+    // A win had frozen the clock; undoing means play continues.
+    timerDone = false;
+    resumeTimer();
+  }
   lastPlaced = null;
   updateBoard();
   updateUndoButton();
@@ -264,7 +327,7 @@ function cellAtPoint(x, y) {
 }
 
 dom.board.addEventListener('pointerdown', (e) => {
-  if (!game) return;
+  if (!game || hintActive) return;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const cell = e.target.closest('.cell');
   if (!cell) return;
@@ -313,16 +376,207 @@ function endDrag(e) {
 window.addEventListener('pointerup', endDrag);
 window.addEventListener('pointercancel', endDrag);
 
+// ---------- Hints ----------
+function collectQueens() {
+  const out = [];
+  for (let r = 0; r < game.N; r++)
+    for (let c = 0; c < game.N; c++) if (game.queen[r][c]) out.push([r, c]);
+  return out;
+}
+
+function showHint() {
+  if (!game || hintActive) return;
+  const hint = computeHint(game.N, game.region, currentSolution, collectQueens(), game.mark);
+  renderHint(hint);
+}
+
+const LEGEND = {
+  reason: '<span><i class="lg-reason"></i>Begründung</span>',
+  target: '<span><i class="lg-target"></i>hier setzen</span>',
+  x: '<span><i class="lg-x"></i>scheidet aus</span>',
+};
+
+function renderHint(hint) {
+  currentHint = hint;
+  hintActive = true;
+  clearHintClasses();
+  dom.board.classList.add('hinting');
+
+  for (const [r, c] of hint.lineCells || []) cells[r][c].classList.add('hint-line');
+  for (const [r, c] of hint.reasonCells || []) cells[r][c].classList.add('hint-reason');
+  for (const [r, c] of hint.excludedCells || []) {
+    cells[r][c].classList.remove('hint-reason');
+    cells[r][c].classList.add('hint-x');
+  }
+  const targetClass =
+    hint.kind === 'place' ? 'hint-target' : hint.kind === 'mistake' ? 'hint-bad' : 'hint-x';
+  for (const [r, c] of hint.targetCells || []) {
+    cells[r][c].classList.remove('hint-reason', 'hint-x');
+    cells[r][c].classList.add(targetClass);
+  }
+
+  dom.hintTitle.textContent = hint.title;
+  dom.hintText.textContent = hint.text;
+
+  const legend = [];
+  if (hint.reasonCells && hint.reasonCells.length) legend.push(LEGEND.reason);
+  if (hint.kind === 'place') legend.push(LEGEND.target);
+  if (hint.kind === 'eliminate' || (hint.excludedCells && hint.excludedCells.length))
+    legend.push(LEGEND.x);
+  dom.hintLegend.innerHTML = legend.join('');
+
+  dom.hintApply.hidden = !hint.applyLabel;
+  if (hint.applyLabel) dom.hintApply.textContent = hint.applyLabel;
+  show(dom.hintCard);
+}
+
+function clearHintClasses() {
+  for (const row of cells)
+    for (const cell of row)
+      cell.classList.remove('hint-reason', 'hint-line', 'hint-target', 'hint-x', 'hint-bad');
+}
+
+function clearHint() {
+  hintActive = false;
+  currentHint = null;
+  dom.board.classList.remove('hinting');
+  if (cells.length) clearHintClasses();
+  hide(dom.hintCard);
+}
+
+function applyHint() {
+  if (!currentHint) return;
+  const h = currentHint;
+  pushUndo();
+  if (h.kind === 'place') {
+    const [r, c] = h.targetCells[0];
+    if (!game.queen[r][c]) {
+      game.queen[r][c] = true;
+      game.queenCount++;
+      game.mark[r][c] = false;
+      lastPlaced = { r, c };
+    }
+  } else if (h.kind === 'eliminate') {
+    for (const [r, c] of h.targetCells) if (!game.queen[r][c]) game.mark[r][c] = true;
+  } else if (h.kind === 'mistake') {
+    const [r, c] = h.targetCells[0];
+    if (game.queen[r][c]) {
+      game.queen[r][c] = false;
+      game.queenCount--;
+    }
+  }
+  clearHint();
+  updateBoard();
+}
+
+dom.hint.addEventListener('click', showHint);
+dom.hintApply.addEventListener('click', applyHint);
+dom.hintClose.addEventListener('click', clearHint);
+
+// ---------- Debug ----------
+function updateDebugButton() {
+  dom.debugCopy.hidden = !settings.debug;
+}
+
+function cellList(pred) {
+  const out = [];
+  for (let r = 0; r < game.N; r++)
+    for (let c = 0; c < game.N; c++) if (pred(r, c)) out.push([r, c]);
+  return out;
+}
+
+// A compact ASCII board: region letters, [Q]ueen, . dot, · empty.
+function asciiBoard() {
+  const lines = [];
+  for (let r = 0; r < game.N; r++) {
+    let line = '';
+    for (let c = 0; c < game.N; c++) {
+      if (game.queen[r][c]) line += ' Q';
+      else {
+        const letter = String.fromCharCode(65 + game.region[r][c]);
+        line += (game.mark[r][c] ? '.' : ' ') + letter;
+      }
+    }
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
+function buildDebugInfo() {
+  const hint = computeHint(game.N, game.region, currentSolution, collectQueens(), game.mark);
+  return {
+    app: 'queens-debug/1',
+    when: new Date().toISOString(),
+    size: game.N,
+    difficulty: settings.difficulty,
+    quickMode: settings.quickMode,
+    region: game.region,
+    solution: currentSolution,
+    queens: collectQueens(),
+    marks: cellList((r, c) => game.mark[r][c]),
+    conflicts: [...game.conflicts()].map((s) => s.split(',').map(Number)),
+    won: game.isWon(),
+    hint: {
+      kind: hint.kind,
+      title: hint.title,
+      text: hint.text,
+      targetCells: hint.targetCells || [],
+      reasonCells: hint.reasonCells || [],
+      excludedCells: hint.excludedCells || [],
+    },
+    board: asciiBoard(),
+  };
+}
+
+async function copyDebug() {
+  if (!game) return;
+  const info = buildDebugInfo();
+  const text = JSON.stringify(info, null, 2);
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch (e) {
+    // Fallback for browsers/contexts without the async clipboard API.
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      ok = document.execCommand('copy');
+    } catch (_) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+  }
+  const label = dom.debugCopy.textContent;
+  dom.debugCopy.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
+  setTimeout(() => (dom.debugCopy.textContent = label), 1500);
+}
+
+dom.debugCopy.addEventListener('click', copyDebug);
+dom.debugMode.addEventListener('change', () => {
+  settings.debug = dom.debugMode.checked;
+  saveSettings(settings);
+  updateDebugButton();
+});
+
 // ---------- Controls ----------
 dom.newGame.addEventListener('click', newGame);
 dom.winNewGame.addEventListener('click', newGame);
-dom.undo.addEventListener('click', doUndo);
+dom.undo.addEventListener('click', () => {
+  clearHint();
+  doUndo();
+});
 dom.resetBoard.addEventListener('click', () => {
   if (!game) return;
+  clearHint();
   pushUndo();
   game.reset();
   hide(dom.winOverlay);
-  if (!timerId) startTimer();
+  startTimer(); // clear the board -> clean clock
   updateBoard();
 });
 
@@ -334,10 +588,12 @@ dom.settingsOverlay.addEventListener('click', (e) => {
 });
 
 function openSettings() {
+  clearHint();
   dom.sizeRange.value = settings.size;
   dom.sizeValue.textContent = settings.size;
   setDifficultyUI(settings.difficulty);
   dom.quickMode.checked = settings.quickMode;
+  dom.debugMode.checked = settings.debug;
   show(dom.settingsOverlay);
 }
 
@@ -380,7 +636,10 @@ dom.settingsApply.addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') hide(dom.settingsOverlay);
+  if (e.key === 'Escape') {
+    hide(dom.settingsOverlay);
+    clearHint();
+  }
 });
 
 // ---------- helpers ----------
@@ -392,4 +651,5 @@ function hide(node) {
 }
 
 // ---------- boot ----------
+updateDebugButton();
 newGame();

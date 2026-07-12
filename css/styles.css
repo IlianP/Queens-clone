@@ -287,6 +287,138 @@ body {
   }
 }
 
+/* ---------- Hint mode ---------- */
+/* Grey everything out, then let the highlighted cells shine through. */
+.board.hinting .cell {
+  opacity: 0.45;
+  filter: grayscale(1);
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+.board.hinting .cell.hint-reason,
+.board.hinting .cell.hint-line,
+.board.hinting .cell.hint-target,
+.board.hinting .cell.hint-x,
+.board.hinting .cell.hint-bad {
+  opacity: 1;
+  filter: none;
+}
+
+.cell.hint-line {
+  opacity: 0.75 !important;
+}
+.cell.hint-reason {
+  box-shadow: inset 0 0 0 3px rgba(43, 58, 103, 0.85);
+  animation: hint-pulse 1.3s ease-in-out infinite;
+}
+.cell.hint-target {
+  box-shadow: inset 0 0 0 4px #17a06a;
+  animation: hint-pulse 1.3s ease-in-out infinite;
+}
+/* Ghost queen on the target cell so the suggested placement reads clearly. */
+.cell.hint-target::after {
+  content: "";
+  position: absolute;
+  inset: 17%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(23, 160, 106, 0.55), rgba(23, 160, 106, 0));
+}
+.cell.hint-x {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(31, 37, 68, 0.6) 0 3px,
+    transparent 3px 8px
+  );
+  box-shadow: inset 0 0 0 2px rgba(224, 64, 94, 0.75);
+}
+.cell.hint-bad {
+  box-shadow: inset 0 0 0 4px var(--danger);
+  animation: hint-pulse 1.1s ease-in-out infinite;
+}
+@keyframes hint-pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.18);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.hint-reason,
+  .cell.hint-target,
+  .cell.hint-bad {
+    animation: none;
+  }
+}
+
+.hint-card {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 14px);
+  transform: translateX(-50%);
+  width: min(460px, calc(100vw - 24px));
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 16px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+  z-index: 25;
+  animation: rise 0.2s ease;
+}
+.hint-card[hidden] {
+  display: none;
+}
+.hint-card-title {
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+}
+.hint-card-text {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.hint-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.hint-legend:empty {
+  display: none;
+}
+.hint-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.hint-legend i {
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.hint-legend i.lg-reason {
+  box-shadow: inset 0 0 0 3px rgba(43, 58, 103, 0.85);
+}
+.hint-legend i.lg-target {
+  box-shadow: inset 0 0 0 3px #17a06a;
+}
+.hint-legend i.lg-x {
+  background-color: #cfd3de;
+  background-image: repeating-linear-gradient(45deg, rgba(31, 37, 68, 0.55) 0 2px, transparent 2px 5px);
+}
+.hint-card-buttons {
+  display: flex;
+  gap: 8px;
+}
+.hint-card-buttons .btn {
+  flex: 1;
+}
+
 /* ---------- Messages / actions ---------- */
 .message {
   min-height: 1.4em;
