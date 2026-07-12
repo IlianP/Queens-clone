@@ -131,6 +131,8 @@ function updateBoard() {
   const N = game.N;
   const auto = game.autoMarkGrid();
   const conflicts = game.conflicts();
+  const dead = game.deadRegions(auto);
+  const region = game.region;
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N; c++) {
       const cell = cells[r][c];
@@ -148,6 +150,17 @@ function updateBoard() {
           state === 'queen' ? CROWN : state === 'dot' ? '<span class="dot"></span>' : '';
       }
       cell.classList.toggle('conflict', conflicts.has(`${r},${c}`));
+
+      // Outline a region in red once it's a dead end (fully dotted, no queen).
+      // The red edges are drawn only on the region's outer sides — where it
+      // meets another region or the board edge — so they form one clean border.
+      const reg = region[r][c];
+      const isDead = dead.has(reg);
+      cell.classList.toggle('dead', isDead);
+      cell.classList.toggle('dt', isDead && (r === 0 || region[r - 1][c] !== reg));
+      cell.classList.toggle('dr', isDead && (c === N - 1 || region[r][c + 1] !== reg));
+      cell.classList.toggle('db', isDead && (r === N - 1 || region[r + 1][c] !== reg));
+      cell.classList.toggle('dl', isDead && (c === 0 || region[r][c - 1] !== reg));
     }
   }
 
