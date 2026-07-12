@@ -242,11 +242,11 @@ function findCrowding(st, N, region, regionCells) {
         if (((orMask >> secOf(idx)) & 1) && !((sMask >> primOf(idx)) & 1)) elim.push([(idx / N) | 0, idx % N]);
       }
       if (!elim.length) return null;
-      // Reason = the k full primary units (rows/cols shown as bands, regions as
-      // their whole colour), so "these k rows/colours" reads clearly.
+      // Reason = only the candidate cells in the k units — exactly the k colours
+      // involved, so nothing misleading of another colour gets highlighted.
       const reason = [];
       for (const p of combo)
-        for (const idx of primCells[p]) reason.push([(idx / N) | 0, idx % N]);
+        for (const idx of primCells[p]) if (cand(idx)) reason.push([(idx / N) | 0, idx % N]);
       return { elim, reason, k: combo.length, describe };
     };
 

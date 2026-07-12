@@ -119,7 +119,9 @@ function buildBoard(N, region) {
       div.className = 'cell';
       div.dataset.r = r;
       div.dataset.c = c;
-      div.style.background = colorMap[region[r][c]];
+      // Use background-COLOR (not the `background` shorthand) so a hint's
+      // hatch (a background-image) can layer on top instead of being reset.
+      div.style.backgroundColor = colorMap[region[r][c]];
       // Strong borders on region boundaries.
       if (r > 0 && region[r - 1][c] !== region[r][c]) div.classList.add('bt');
       if (r < N - 1 && region[r + 1][c] !== region[r][c]) div.classList.add('bb');
