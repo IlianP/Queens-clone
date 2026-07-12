@@ -111,6 +111,34 @@ export class Game {
     return bad;
   }
 
+  // Region ids that can no longer receive a queen: they hold no queen and every
+  // one of their cells is already dotted (a manual mark or a quick-mode
+  // auto-mark). Such a region is a dead end — the puzzle can't be finished while
+  // it stays this way — so the UI outlines it in red, mirroring how impossible
+  // queens are flagged.
+  deadRegions(auto = this.autoMarkGrid()) {
+    const N = this.N;
+    const withQueen = new Set();
+    const withOpen = new Set(); // regions that still have a placeable cell
+    const all = new Set();
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        const reg = this.region[r][c];
+        all.add(reg);
+        if (this.queen[r][c]) {
+          withQueen.add(reg);
+        } else if (!this.mark[r][c] && !auto[r][c]) {
+          withOpen.add(reg);
+        }
+      }
+    }
+    const dead = new Set();
+    for (const reg of all) {
+      if (!withQueen.has(reg) && !withOpen.has(reg)) dead.add(reg);
+    }
+    return dead;
+  }
+
   isWon() {
     return this.queenCount === this.N && this.conflicts().size === 0;
   }

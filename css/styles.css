@@ -226,6 +226,46 @@ body {
   color: var(--danger);
 }
 
+/* Dead region: fully dotted with no queen, so it can never hold one. Draw a
+   bold red outline around it. The colour pulses between a bright and a deep
+   red so the outline stays unmistakable even on top of a reddish region. */
+@property --dead-c {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #ff2d43;
+}
+.cell.dead {
+  animation: dead-pulse 1.15s ease-in-out infinite;
+  z-index: 1; /* keep the red edges above neighbours' region borders */
+}
+.cell.dead.dt {
+  border-top: 3.5px solid var(--dead-c);
+}
+.cell.dead.dr {
+  border-right: 3.5px solid var(--dead-c);
+}
+.cell.dead.db {
+  border-bottom: 3.5px solid var(--dead-c);
+}
+.cell.dead.dl {
+  border-left: 3.5px solid var(--dead-c);
+}
+@keyframes dead-pulse {
+  0%,
+  100% {
+    --dead-c: #ff2d43;
+  }
+  50% {
+    --dead-c: #7a0016;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.dead {
+    animation: none;
+    --dead-c: #e00027;
+  }
+}
+
 .cell.pop .queen {
   animation: pop 0.18s ease;
 }
