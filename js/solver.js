@@ -520,6 +520,20 @@ export function logicSolves(N, region, maxLevel = 2) {
 }
 
 /**
+ * "Openness" of a puzzle: how many queens fall out of the empty board using
+ * naked singles alone (the T0 cascade). This is what makes a start feel trivial
+ * — every such queen is forced with zero real reasoning. A genuinely hard board
+ * should keep this low so the player has to reason before anything is forced.
+ * Returns a count in 0..N.
+ */
+export function nakedSingleReach(N, region) {
+  const units = makeUnits(N, region);
+  const s = new LogicState(N, region, units);
+  while (!s.invalid && s.applyT0());
+  return s.queenCount;
+}
+
+/**
  * Rate a puzzle by the simplest deduction level that fully solves it:
  *   0 = easy   (naked singles only)
  *   1 = medium (needs line/region intersections)
