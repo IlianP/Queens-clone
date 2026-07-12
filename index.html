@@ -36,6 +36,7 @@
         <button class="btn subtle" id="hint" type="button">💡 Hinweis</button>
         <button class="btn subtle" id="undo" type="button" disabled>↶ Rückgängig</button>
         <button class="btn subtle" id="reset-board" type="button">Zurücksetzen</button>
+        <button class="btn subtle" id="debug-copy" type="button" hidden>🐞 Debug kopieren</button>
       </div>
 
       <footer class="hint">
@@ -82,6 +83,14 @@
             <span class="field-hint">Beim Setzen einer Dame werden Zeile, Spalte, Farbregion und angrenzende Felder automatisch gepunktet.</span>
           </span>
           <input type="checkbox" id="quick-mode" class="switch" />
+        </label>
+
+        <label class="field toggle-field">
+          <span>
+            <span class="field-label">Debug-Modus</span>
+            <span class="field-hint">Zeigt einen Button, der alle Infos zum aktuellen Spielstand (inkl. Hinweis) in die Zwischenablage kopiert – hilfreich beim Melden von Problemen.</span>
+          </span>
+          <input type="checkbox" id="debug-mode" class="switch" />
         </label>
 
         <p class="settings-note">Änderungen an Größe oder Schwierigkeit gelten für das nächste neue Spiel.</p>

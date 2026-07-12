@@ -32,6 +32,8 @@ const dom = {
   hintLegend: el('hint-legend'),
   hintApply: el('hint-apply'),
   hintClose: el('hint-close'),
+  debugMode: el('debug-mode'),
+  debugCopy: el('debug-copy'),
   loading: el('loading'),
   winOverlay: el('win-overlay'),
   winTime: el('win-time'),
@@ -342,10 +344,14 @@ function renderHint(hint) {
 
   for (const [r, c] of hint.lineCells || []) cells[r][c].classList.add('hint-line');
   for (const [r, c] of hint.reasonCells || []) cells[r][c].classList.add('hint-reason');
+  for (const [r, c] of hint.excludedCells || []) {
+    cells[r][c].classList.remove('hint-reason');
+    cells[r][c].classList.add('hint-x');
+  }
   const targetClass =
     hint.kind === 'place' ? 'hint-target' : hint.kind === 'mistake' ? 'hint-bad' : 'hint-x';
   for (const [r, c] of hint.targetCells || []) {
-    cells[r][c].classList.remove('hint-reason');
+    cells[r][c].classList.remove('hint-reason', 'hint-x');
     cells[r][c].classList.add(targetClass);
   }
 
@@ -355,7 +361,8 @@ function renderHint(hint) {
   const legend = [];
   if (hint.reasonCells && hint.reasonCells.length) legend.push(LEGEND.reason);
   if (hint.kind === 'place') legend.push(LEGEND.target);
-  if (hint.kind === 'eliminate') legend.push(LEGEND.x);
+  if (hint.kind === 'eliminate' || (hint.excludedCells && hint.excludedCells.length))
+    legend.push(LEGEND.x);
   dom.hintLegend.innerHTML = legend.join('');
 
   dom.hintApply.hidden = !hint.applyLabel;
@@ -406,6 +413,96 @@ dom.hint.addEventListener('click', showHint);
 dom.hintApply.addEventListener('click', applyHint);
 dom.hintClose.addEventListener('click', clearHint);
 
+// ---------- Debug ----------
+function updateDebugButton() {
+  dom.debugCopy.hidden = !settings.debug;
+}
+
+function cellList(pred) {
+  const out = [];
+  for (let r = 0; r < game.N; r++)
+    for (let c = 0; c < game.N; c++) if (pred(r, c)) out.push([r, c]);
+  return out;
+}
+
+// A compact ASCII board: region letters, [Q]ueen, . dot, · empty.
+function asciiBoard() {
+  const lines = [];
+  for (let r = 0; r < game.N; r++) {
+    let line = '';
+    for (let c = 0; c < game.N; c++) {
+      if (game.queen[r][c]) line += ' Q';
+      else {
+        const letter = String.fromCharCode(65 + game.region[r][c]);
+        line += (game.mark[r][c] ? '.' : ' ') + letter;
+      }
+    }
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
+function buildDebugInfo() {
+  const hint = computeHint(game.N, game.region, currentSolution, collectQueens(), game.mark);
+  return {
+    app: 'queens-debug/1',
+    when: new Date().toISOString(),
+    size: game.N,
+    difficulty: settings.difficulty,
+    quickMode: settings.quickMode,
+    region: game.region,
+    solution: currentSolution,
+    queens: collectQueens(),
+    marks: cellList((r, c) => game.mark[r][c]),
+    conflicts: [...game.conflicts()].map((s) => s.split(',').map(Number)),
+    won: game.isWon(),
+    hint: {
+      kind: hint.kind,
+      title: hint.title,
+      text: hint.text,
+      targetCells: hint.targetCells || [],
+      reasonCells: hint.reasonCells || [],
+      excludedCells: hint.excludedCells || [],
+    },
+    board: asciiBoard(),
+  };
+}
+
+async function copyDebug() {
+  if (!game) return;
+  const info = buildDebugInfo();
+  const text = JSON.stringify(info, null, 2);
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch (e) {
+    // Fallback for browsers/contexts without the async clipboard API.
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      ok = document.execCommand('copy');
+    } catch (_) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+  }
+  const label = dom.debugCopy.textContent;
+  dom.debugCopy.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
+  setTimeout(() => (dom.debugCopy.textContent = label), 1500);
+}
+
+dom.debugCopy.addEventListener('click', copyDebug);
+dom.debugMode.addEventListener('change', () => {
+  settings.debug = dom.debugMode.checked;
+  saveSettings(settings);
+  updateDebugButton();
+});
+
 // ---------- Controls ----------
 dom.newGame.addEventListener('click', newGame);
 dom.winNewGame.addEventListener('click', newGame);
@@ -436,6 +533,7 @@ function openSettings() {
   dom.sizeValue.textContent = settings.size;
   setDifficultyUI(settings.difficulty);
   dom.quickMode.checked = settings.quickMode;
+  dom.debugMode.checked = settings.debug;
   show(dom.settingsOverlay);
 }
 
@@ -493,4 +591,5 @@ function hide(node) {
 }
 
 // ---------- boot ----------
+updateDebugButton();
 newGame();

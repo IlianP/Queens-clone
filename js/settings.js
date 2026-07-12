@@ -6,7 +6,7 @@ const KEY = 'queens-clone-settings';
 
 export const MIN_SIZE = 5;
 export const MAX_SIZE = 11;
-export const DEFAULTS = { size: 8, difficulty: 'medium', quickMode: true };
+export const DEFAULTS = { size: 8, difficulty: 'medium', quickMode: true, debug: false };
 
 export function clampSize(n) {
   n = parseInt(n, 10);
@@ -23,6 +23,7 @@ export function loadSettings() {
       size: clampSize(s.size),
       difficulty: ['easy', 'medium', 'hard'].includes(s.difficulty) ? s.difficulty : DEFAULTS.difficulty,
       quickMode: typeof s.quickMode === 'boolean' ? s.quickMode : DEFAULTS.quickMode,
+      debug: typeof s.debug === 'boolean' ? s.debug : DEFAULTS.debug,
     };
   } catch (e) {
     return { ...DEFAULTS };
