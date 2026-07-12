@@ -1,9 +1,9 @@
 # Queens
 
+### ▶️ Jetzt spielen: **<https://ilianp.github.io/Queens-clone/>**
+
 Ein Klon des LinkedIn-Spiels **Queens** – reines HTML/CSS/JavaScript, kein Build-Schritt,
 läuft direkt auf GitHub Pages und ist für Handy und Desktop optimiert.
-
-👉 **Live:** nach dem ersten Deploy unter `https://<dein-user>.github.io/<repo>/`
 
 ## Spielregeln
 
