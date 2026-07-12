@@ -337,23 +337,159 @@ class LogicState {
     return changed;
   }
 
-  // Technique 2: single-cell contradiction ("what if"). Hypothesize a queen on
-  // each candidate and propagate with T0+T1; if that forces a contradiction, the
-  // cell cannot hold a queen, so eliminate it. This is a bounded (depth-1)
-  // lookahead — still pure deduction, never a blind guess.
-  applyT2() {
+  // Would a queen on (xr,xc) directly wipe out every remaining cell of some
+  // other unit (row / column / region that still needs a queen)? If so that
+  // unit could never get its queen, so (xr,xc) is impossible. This is a single,
+  // fully explainable step — no hidden multi-step look-ahead.
+  _emptiesSomeUnit(xr, xc, xg) {
+    const N = this.N;
+    const attacks = (r, c) =>
+      r === xr ||
+      c === xc ||
+      this.region[r][c] === xg ||
+      (Math.abs(r - xr) <= 1 && Math.abs(c - xc) <= 1);
+
+    for (let r = 0; r < N; r++) {
+      if (this.rowQ[r] || r === xr) continue;
+      let any = false;
+      let all = true;
+      for (let c = 0; c < N; c++) {
+        if (this.cand[r * N + c]) {
+          any = true;
+          if (!attacks(r, c)) {
+            all = false;
+            break;
+          }
+        }
+      }
+      if (any && all) return true;
+    }
+    for (let c = 0; c < N; c++) {
+      if (this.colQ[c] || c === xc) continue;
+      let any = false;
+      let all = true;
+      for (let r = 0; r < N; r++) {
+        if (this.cand[r * N + c]) {
+          any = true;
+          if (!attacks(r, c)) {
+            all = false;
+            break;
+          }
+        }
+      }
+      if (any && all) return true;
+    }
+    for (let g = 0; g < N; g++) {
+      if (this.regQ[g] || g === xg) continue;
+      let any = false;
+      let all = true;
+      for (const i of this.regions[g]) {
+        if (this.cand[i]) {
+          any = true;
+          if (!attacks((i / N) | 0, i % N)) {
+            all = false;
+            break;
+          }
+        }
+      }
+      if (any && all) return true;
+    }
+    return false;
+  }
+
+  // Technique 2: direct dead-end. Eliminate any candidate whose queen would
+  // empty a whole other unit (see _emptiesSomeUnit). Explainable and visual.
+  applyDeadEnd() {
     const N = this.N;
     for (let idx = 0; idx < N * N; idx++) {
       if (!this.cand[idx]) continue;
-      const trial = this.clone();
-      trial.placeQueen(idx);
-      if (!trial.invalid) trial.propagate(1);
-      if (trial.invalid) {
+      const r = (idx / N) | 0;
+      const c = idx % N;
+      if (this._emptiesSomeUnit(r, c, this.region[r][c])) {
         this.eliminate(idx);
-        return true; // re-run cheaper techniques before the next lookahead
+        return true;
       }
     }
     return false;
+  }
+
+  // Technique 3: crowding (Hall sets). If the candidates of some k units on one
+  // side (say k rows) only ever touch k units on the other side (k regions),
+  // those k regions are used up by those k rows — so their cells in any OTHER
+  // row can be eliminated. Covers rows<->regions and columns<->regions, in both
+  // directions. Explainable: "these k colours only fit in these k rows".
+  applyCrowding() {
+    const N = this.N;
+    const regionOf = (idx) => this.region[(idx / N) | 0][idx % N];
+    const rowOf = (idx) => (idx / N) | 0;
+    const colOf = (idx) => idx % N;
+    return (
+      this._hall(this.rows, this.rowQ, rowOf, regionOf) ||
+      this._hall(this.cols, this.colQ, colOf, regionOf) ||
+      this._hall(this.regions, this.regQ, regionOf, rowOf) ||
+      this._hall(this.regions, this.regQ, regionOf, colOf)
+    );
+  }
+
+  _hall(primCells, primHasQ, primOf, secOf) {
+    const N = this.N;
+    const CAP = 4;
+    const popcount = (x) => {
+      let n = 0;
+      while (x) {
+        x &= x - 1;
+        n++;
+      }
+      return n;
+    };
+    const masks = new Array(N).fill(0);
+    const active = [];
+    for (let p = 0; p < N; p++) {
+      if (primHasQ[p]) continue;
+      let m = 0;
+      let any = false;
+      for (const idx of primCells[p])
+        if (this.cand[idx]) {
+          m |= 1 << secOf(idx);
+          any = true;
+        }
+      if (any) {
+        masks[p] = m;
+        active.push(p);
+      }
+    }
+    const combo = [];
+    let changed = false;
+    const tryLock = (orMask, size) => {
+      if (popcount(orMask) !== size) return false;
+      let sMask = 0;
+      for (const p of combo) sMask |= 1 << p;
+      let did = false;
+      for (let idx = 0; idx < N * N; idx++) {
+        if (!this.cand[idx]) continue;
+        if (((orMask >> secOf(idx)) & 1) && !((sMask >> primOf(idx)) & 1) && this.eliminate(idx))
+          did = true;
+      }
+      return did;
+    };
+    const rec = (start, orMask) => {
+      if (changed) return;
+      if (combo.length >= 2 && tryLock(orMask, combo.length)) {
+        changed = true;
+        return;
+      }
+      if (combo.length === CAP) return;
+      for (let i = start; i < active.length; i++) {
+        const nm = orMask | masks[active[i]];
+        if (popcount(nm) > CAP) continue;
+        combo.push(active[i]);
+        rec(i + 1, nm);
+        combo.pop();
+        if (changed) return;
+      }
+    };
+    rec(0, 0);
+    return changed;
   }
 
   // Run propagation to a fixed point using techniques up to `maxLevel`.
@@ -363,7 +499,9 @@ class LogicState {
       if (this.invalid) break;
       if (maxLevel >= 1 && this.applyT1()) continue;
       if (this.invalid) break;
-      if (maxLevel >= 2 && this.applyT2()) continue;
+      if (maxLevel >= 2 && this.applyDeadEnd()) continue;
+      if (this.invalid) break;
+      if (maxLevel >= 2 && this.applyCrowding()) continue;
       break;
     }
   }

@@ -88,7 +88,7 @@ function newGame() {
   show(dom.loading);
   const N = settings.size;
   const difficulty = settings.difficulty;
-  const budgetMs = N >= 11 ? 2600 : N >= 10 ? 2000 : N >= 8 ? 1300 : 800;
+  const budgetMs = N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
 
   // Yield a frame so the spinner paints before the (synchronous) generator runs.
   setTimeout(() => {

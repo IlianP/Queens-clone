@@ -1,16 +1,15 @@
 // hint.js
 // Finds the simplest next logical deduction for the current board and returns
 // it as structured data the UI can visualise and explain — never just "the
-// answer", but reasoning a person can follow.
+// answer", but reasoning a person can follow on the board.
 //
-// Design goal: every hint must be understandable. We therefore only ever show:
-//   - a wrong queen (mistake),
-//   - a naked single: only one cell left in a region / row / column (place),
-//   - a line <-> region confinement (eliminate),
-//   - otherwise, the next FORCED placement found by full internal deduction,
-//     presented as "only one cell remains here" with the surprising exclusions
-//     hatched. We never surface raw multi-step "look-ahead contradiction"
-//     reasoning, which is correct but impossible to follow.
+// It uses exactly the techniques the generator guarantees a puzzle is solvable
+// with, so a comprehensible hint always exists:
+//   - mistake:     a queen that isn't part of the solution,
+//   - naked single: only one cell left in a region / row / column (place),
+//   - confinement:  a colour confined to one line, or a line to one colour (X),
+//   - dead-end:     a queen here would wipe out a whole other unit, so it's out.
+// A reveal fallback exists but is essentially never needed.
 
 function emptyGrid(N, v) {
   return Array.from({ length: N }, () => new Array(N).fill(v));
@@ -25,86 +24,92 @@ function groupRegions(N, region) {
 const rowCells = (N, r) => Array.from({ length: N }, (_, c) => [r, c]);
 const colCells = (N, c) => Array.from({ length: N }, (_, r) => [r, c]);
 
-// ---- Mutable deduction state -------------------------------------------------
-
-function makeState(N) {
-  return {
-    cand: emptyGrid(N, true),
-    rowQ: new Array(N).fill(false),
-    colQ: new Array(N).fill(false),
-    regQ: new Array(N).fill(false),
-  };
-}
-
-function cloneState(st) {
-  return {
-    cand: st.cand.map((row) => row.slice()),
-    rowQ: st.rowQ.slice(),
-    colQ: st.colQ.slice(),
-    regQ: st.regQ.slice(),
-  };
-}
-
-function placeInState(st, N, region, regionCells, r, c) {
-  const reg = region[r][c];
-  st.rowQ[r] = true;
-  st.colQ[c] = true;
-  st.regQ[reg] = true;
-  for (let i = 0; i < N; i++) {
-    st.cand[r][i] = false;
-    st.cand[i][c] = false;
-  }
-  for (const [rr, cc] of regionCells[reg]) st.cand[rr][cc] = false;
-  for (let dr = -1; dr <= 1; dr++)
-    for (let dc = -1; dc <= 1; dc++) {
-      const nr = r + dr;
-      const nc = c + dc;
-      if (nr >= 0 && nr < N && nc >= 0 && nc < N) st.cand[nr][nc] = false;
-    }
-}
-
 // Candidate state implied by the player's correct queens, plus their own dots
 // (honoured only where they agree with the solution, so a wrong dot can never
 // mislead a hint).
 function deriveState(N, region, regionCells, queens, marks, solution) {
-  const st = makeState(N);
-  for (const [r, c] of queens) placeInState(st, N, region, regionCells, r, c);
+  const cand = emptyGrid(N, true);
+  const rowQ = new Array(N).fill(false);
+  const colQ = new Array(N).fill(false);
+  const regQ = new Array(N).fill(false);
+  const place = (r, c) => {
+    const reg = region[r][c];
+    rowQ[r] = colQ[c] = regQ[reg] = true;
+    for (let i = 0; i < N; i++) {
+      cand[r][i] = false;
+      cand[i][c] = false;
+    }
+    for (const [rr, cc] of regionCells[reg]) cand[rr][cc] = false;
+    for (let dr = -1; dr <= 1; dr++)
+      for (let dc = -1; dc <= 1; dc++) {
+        const nr = r + dr;
+        const nc = c + dc;
+        if (nr >= 0 && nr < N && nc >= 0 && nc < N) cand[nr][nc] = false;
+      }
+  };
+  for (const [r, c] of queens) place(r, c);
   if (marks) {
     for (let r = 0; r < N; r++)
-      for (let c = 0; c < N; c++) if (marks[r][c] && solution[r] !== c) st.cand[r][c] = false;
+      for (let c = 0; c < N; c++) if (marks[r][c] && solution[r] !== c) cand[r][c] = false;
   }
-  return st;
+  return { cand, rowQ, colQ, regQ };
 }
 
-// Candidate cells of a unit that still needs a queen.
 function unitCandidates(cells, st) {
   const out = [];
   for (const [r, c] of cells) if (st.cand[r][c]) out.push([r, c]);
   return out;
 }
 
-// First naked single: a unit with no queen and exactly one candidate. Regions
-// first (most intuitive), then rows, then columns. Returns null if none.
-function firstNakedSingle(st, N, regionCells) {
-  for (let reg = 0; reg < N; reg++) {
-    if (st.regQ[reg]) continue;
-    const cs = unitCandidates(regionCells[reg], st);
-    if (cs.length === 1) return { target: cs[0], unitKind: 'region', unitCells: regionCells[reg] };
-  }
-  for (let r = 0; r < N; r++) {
-    if (st.rowQ[r]) continue;
-    const cs = unitCandidates(rowCells(N, r), st);
-    if (cs.length === 1) return { target: cs[0], unitKind: 'row', unitCells: rowCells(N, r) };
-  }
-  for (let c = 0; c < N; c++) {
-    if (st.colQ[c]) continue;
-    const cs = unitCandidates(colCells(N, c), st);
-    if (cs.length === 1) return { target: cs[0], unitKind: 'col', unitCells: colCells(N, c) };
-  }
+const UNIT_WORD = { region: 'Farbregion', row: 'Zeile', col: 'Spalte' };
+
+function placeHint(unitKind, target, unitCells) {
+  return {
+    kind: 'place',
+    title: `Nur ein Feld in der ${UNIT_WORD[unitKind]}`,
+    text: `In dieser ${UNIT_WORD[unitKind]} ist nur noch dieses eine Feld frei – alle anderen sind ausgeschlossen. Hier muss die Dame stehen.`,
+    reasonCells: unitCells,
+    lineCells: [],
+    excludedCells: [],
+    targetCells: [target],
+    applyLabel: 'Dame setzen',
+  };
+}
+
+function elimHint(title, text, reasonCells, elim) {
+  return {
+    kind: 'eliminate',
+    title,
+    text,
+    reasonCells,
+    lineCells: [],
+    excludedCells: [],
+    targetCells: elim,
+    applyLabel: elim.length > 1 ? 'Felder markieren' : 'Feld markieren',
+  };
+}
+
+// Naked single: a unit with no queen and exactly one candidate.
+function findNakedSingle(st, N, regionCells) {
+  for (let reg = 0; reg < N; reg++)
+    if (!st.regQ[reg]) {
+      const cs = unitCandidates(regionCells[reg], st);
+      if (cs.length === 1) return placeHint('region', cs[0], regionCells[reg]);
+    }
+  for (let r = 0; r < N; r++)
+    if (!st.rowQ[r]) {
+      const cs = unitCandidates(rowCells(N, r), st);
+      if (cs.length === 1) return placeHint('row', cs[0], rowCells(N, r));
+    }
+  for (let c = 0; c < N; c++)
+    if (!st.colQ[c]) {
+      const cs = unitCandidates(colCells(N, c), st);
+      if (cs.length === 1) return placeHint('col', cs[0], colCells(N, c));
+    }
   return null;
 }
 
-// Line <-> region confinement. Returns an eliminate descriptor or null.
+// Line <-> region confinement.
 function findConfinement(st, N, region, regionCells) {
   for (let reg = 0; reg < N; reg++) {
     if (st.regQ[reg]) continue;
@@ -153,129 +158,120 @@ function findConfinement(st, N, region, regionCells) {
   return lineToRegion(true) || lineToRegion(false);
 }
 
-// Apply one round of confinement eliminations in place. Returns true if changed.
-function applyConfinement(st, N, region, regionCells) {
-  let changed = false;
-  const kill = (r, c) => {
-    if (st.cand[r][c]) {
-      st.cand[r][c] = false;
-      changed = true;
-    }
-  };
-  for (let reg = 0; reg < N; reg++) {
-    if (st.regQ[reg]) continue;
-    const cs = unitCandidates(regionCells[reg], st);
-    if (cs.length < 2) continue;
-    const rows = new Set(cs.map(([r]) => r));
-    const cols = new Set(cs.map(([, c]) => c));
-    if (rows.size === 1) {
-      const r = cs[0][0];
-      for (let c = 0; c < N; c++) if (region[r][c] !== reg) kill(r, c);
-    }
-    if (cols.size === 1) {
-      const c = cs[0][1];
-      for (let r = 0; r < N; r++) if (region[r][c] !== reg) kill(r, c);
-    }
-  }
-  const lineToRegion = (isRow) => {
-    for (let u = 0; u < N; u++) {
-      if ((isRow ? st.rowQ : st.colQ)[u]) continue;
-      const line = isRow ? rowCells(N, u) : colCells(N, u);
-      const cs = unitCandidates(line, st);
-      if (cs.length < 2) continue;
-      const regs = new Set(cs.map(([r, c]) => region[r][c]));
-      if (regs.size === 1) {
-        const reg = region[cs[0][0]][cs[0][1]];
-        for (const [r, c] of regionCells[reg]) if (isRow ? r !== u : c !== u) kill(r, c);
+// Direct dead-end: a queen on X would wipe out every remaining cell of some
+// other unit U, so X is impossible. Highlights X (out) and U (its free cells).
+function findDeadEnd(st, N, region, regionCells) {
+  for (let xr = 0; xr < N; xr++) {
+    for (let xc = 0; xc < N; xc++) {
+      if (!st.cand[xr][xc]) continue;
+      const xg = region[xr][xc];
+      const attacks = (r, c) =>
+        r === xr || c === xc || region[r][c] === xg || (Math.abs(r - xr) <= 1 && Math.abs(c - xc) <= 1);
+
+      const check = (cells, unitWord) => {
+        const cs = unitCandidates(cells, st);
+        if (!cs.length) return null;
+        if (cs.every(([r, c]) => attacks(r, c)))
+          return elimHint(
+            `Würde eine ${unitWord} blockieren`,
+            `Eine Dame hier würde jedes noch freie Feld dieser ${unitWord} ausschließen (gleiche Zeile, Spalte, Farbe oder direkt daneben). Da die ${unitWord} aber eine Dame braucht, scheidet dieses Feld aus.`,
+            cs,
+            [[xr, xc]]
+          );
+        return null;
+      };
+
+      for (let r = 0; r < N; r++) {
+        if (st.rowQ[r] || r === xr) continue;
+        const h = check(rowCells(N, r), 'Zeile');
+        if (h) return h;
+      }
+      for (let c = 0; c < N; c++) {
+        if (st.colQ[c] || c === xc) continue;
+        const h = check(colCells(N, c), 'Spalte');
+        if (h) return h;
+      }
+      for (let g = 0; g < N; g++) {
+        if (st.regQ[g] || g === xg) continue;
+        const h = check(regionCells[g], 'Farbregion');
+        if (h) return h;
       }
     }
-  };
-  lineToRegion(true);
-  lineToRegion(false);
-  return changed;
-}
-
-// Basic propagation (place naked singles + confinement) to a fixed point.
-// Returns { contradiction } — a unit with no queen and no candidate.
-function propagateBasic(st, N, region, regionCells) {
-  for (;;) {
-    // contradiction?
-    for (let reg = 0; reg < N; reg++)
-      if (!st.regQ[reg] && unitCandidates(regionCells[reg], st).length === 0) return { contradiction: true };
-    for (let r = 0; r < N; r++)
-      if (!st.rowQ[r] && unitCandidates(rowCells(N, r), st).length === 0) return { contradiction: true };
-    for (let c = 0; c < N; c++)
-      if (!st.colQ[c] && unitCandidates(colCells(N, c), st).length === 0) return { contradiction: true };
-
-    const ns = firstNakedSingle(st, N, regionCells);
-    if (ns) {
-      placeInState(st, N, region, regionCells, ns.target[0], ns.target[1]);
-      continue;
-    }
-    if (applyConfinement(st, N, region, regionCells)) continue;
-    return { contradiction: false };
-  }
-}
-
-// One round of single-cell look-ahead eliminations (used only internally to
-// reach the next forced placement — never surfaced to the player). Returns true
-// if any candidate was eliminated.
-function applyLookaheadOnce(st, N, region, regionCells) {
-  for (let r = 0; r < N; r++) {
-    for (let c = 0; c < N; c++) {
-      if (!st.cand[r][c]) continue;
-      const trial = cloneState(st);
-      placeInState(trial, N, region, regionCells, r, c);
-      if (propagateBasic(trial, N, region, regionCells).contradiction) {
-        st.cand[r][c] = false;
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-// The next queen that pure deduction forces, and the unit that forces it. Runs
-// confinement + look-ahead internally until some unit is down to one candidate.
-function nextForcedPlacement(playerState, N, region, regionCells) {
-  const st = cloneState(playerState);
-  for (let guard = 0; guard < N * N * 4; guard++) {
-    const ns = firstNakedSingle(st, N, regionCells);
-    if (ns) return ns;
-    if (applyConfinement(st, N, region, regionCells)) continue;
-    if (applyLookaheadOnce(st, N, region, regionCells)) continue;
-    return null;
   }
   return null;
 }
 
-function placeHint(title, text, unitCells, target, excludedCells) {
-  return {
-    kind: 'place',
-    title,
-    text,
-    reasonCells: unitCells,
-    lineCells: [],
-    excludedCells: excludedCells || [],
-    targetCells: [target],
-    applyLabel: 'Dame setzen',
+// Crowding (Hall sets): if the candidates of k units on one side only touch k
+// units on the other side, those k are locked together — cells of those units
+// elsewhere are eliminated. Mirrors solver._hall but returns an explained hint.
+function findCrowding(st, N, region, regionCells) {
+  const rowsCellsAll = Array.from({ length: N }, (_, r) => rowCells(N, r).map(([rr, cc]) => rr * N + cc));
+  const colsCellsAll = Array.from({ length: N }, (_, c) => colCells(N, c).map(([rr, cc]) => rr * N + cc));
+  const regCellsIdx = Array.from({ length: N }, (_, g) => regionCells[g].map(([r, c]) => r * N + c));
+  const cand = (idx) => st.cand[(idx / N) | 0][idx % N];
+  const rowOf = (idx) => (idx / N) | 0;
+  const colOf = (idx) => idx % N;
+  const regionOf = (idx) => region[(idx / N) | 0][idx % N];
+  const popcount = (x) => {
+    let n = 0;
+    while (x) {
+      x &= x - 1;
+      n++;
+    }
+    return n;
   };
-}
 
-function elimHint(title, text, reasonCells, elim) {
-  return {
-    kind: 'eliminate',
-    title,
-    text,
-    reasonCells,
-    lineCells: [],
-    excludedCells: [],
-    targetCells: elim,
-    applyLabel: 'Felder markieren',
+  const run = (primCells, primHasQ, primOf, secOf, describe) => {
+    const masks = new Array(N).fill(0);
+    const active = [];
+    for (let p = 0; p < N; p++) {
+      if (primHasQ[p]) continue;
+      let m = 0;
+      let any = false;
+      for (const idx of primCells[p]) if (cand(idx)) { m |= 1 << secOf(idx); any = true; }
+      if (any) { masks[p] = m; active.push(p); }
+    }
+    const CAP = 4;
+    const combo = [];
+    let found = null;
+    const rec = (start, orMask) => {
+      if (found) return;
+      if (combo.length >= 2 && popcount(orMask) === combo.length) {
+        let sMask = 0;
+        for (const p of combo) sMask |= 1 << p;
+        const elim = [];
+        const reason = [];
+        for (const p of combo) for (const idx of primCells[p]) if (cand(idx)) reason.push([(idx / N) | 0, idx % N]);
+        for (let idx = 0; idx < N * N; idx++) {
+          if (!cand(idx)) continue;
+          if (((orMask >> secOf(idx)) & 1) && !((sMask >> primOf(idx)) & 1)) elim.push([(idx / N) | 0, idx % N]);
+        }
+        if (elim.length) { found = { elim, reason, k: combo.length, describe }; return; }
+      }
+      if (combo.length === CAP) return;
+      for (let i = start; i < active.length; i++) {
+        const nm = orMask | masks[active[i]];
+        if (popcount(nm) > CAP) continue;
+        combo.push(active[i]);
+        rec(i + 1, nm);
+        combo.pop();
+        if (found) return;
+      }
+    };
+    rec(0, 0);
+    return found;
   };
-}
 
-const UNIT_WORD = { region: 'Farbregion', row: 'Zeile', col: 'Spalte' };
+  const f =
+    run(rowsCellsAll, st.rowQ, rowOf, regionOf, (k) => [`${k} Farben, ${k} Zeilen`, `In diesen ${k} hervorgehobenen Zeilen kommen nur ${k} Farben vor. Diese Farben müssen also in genau diese Zeilen – ihre Felder in anderen Zeilen scheiden aus.`]) ||
+    run(colsCellsAll, st.colQ, colOf, regionOf, (k) => [`${k} Farben, ${k} Spalten`, `In diesen ${k} hervorgehobenen Spalten kommen nur ${k} Farben vor. Diese Farben müssen also in genau diese Spalten – ihre Felder in anderen Spalten scheiden aus.`]) ||
+    run(regCellsIdx, st.regQ, regionOf, rowOf, (k) => [`${k} Farben, ${k} Zeilen`, `Diese ${k} hervorgehobenen Farben passen nur in ${k} Zeilen. Diese Zeilen gehören also diesen Farben – andere Farben scheiden in diesen Zeilen aus.`]) ||
+    run(regCellsIdx, st.regQ, regionOf, colOf, (k) => [`${k} Farben, ${k} Spalten`, `Diese ${k} hervorgehobenen Farben passen nur in ${k} Spalten. Diese Spalten gehören also diesen Farben – andere Farben scheiden in diesen Spalten aus.`]);
+
+  if (!f) return null;
+  const [title, text] = f.describe(f.k);
+  return elimHint(title, text, f.reason, f.elim);
+}
 
 /**
  * @param {number} N
@@ -285,7 +281,6 @@ const UNIT_WORD = { region: 'Farbregion', row: 'Zeile', col: 'Spalte' };
  * @param {boolean[][]} [marks] the player's manual dots (optional)
  */
 export function computeHint(N, region, solution, queens, marks) {
-  // 1. A wrong queen: point it out before anything else.
   for (const [r, c] of queens) {
     if (solution[r] !== c) {
       return {
@@ -302,58 +297,40 @@ export function computeHint(N, region, solution, queens, marks) {
   }
 
   const correct = queens.filter(([r, c]) => solution[r] === c);
-  if (correct.length === N) {
+  if (correct.length === N)
     return { kind: 'none', title: 'Alles gelöst', text: 'Alle Damen stehen richtig – gut gemacht!' };
-  }
 
   const regionCells = groupRegions(N, region);
-  const playerState = deriveState(N, region, regionCells, correct, marks, solution);
+  const st = deriveState(N, region, regionCells, correct, marks, solution);
 
-  // 2. Naked single visible right now.
-  const ns = firstNakedSingle(playerState, N, regionCells);
-  if (ns) {
-    return placeHint(
-      `Nur ein Feld in der ${UNIT_WORD[ns.unitKind]}`,
-      `In dieser ${UNIT_WORD[ns.unitKind]} ist nur noch dieses eine Feld frei – alle anderen sind ausgeschlossen. Hier muss die Dame stehen.`,
-      ns.unitCells,
-      ns.target
-    );
-  }
+  return (
+    findNakedSingle(st, N, regionCells) ||
+    findConfinement(st, N, region, regionCells) ||
+    findDeadEnd(st, N, region, regionCells) ||
+    findCrowding(st, N, region, regionCells) ||
+    revealFallback(st, N, region, regionCells, solution)
+  );
+}
 
-  // 3. Line <-> region confinement (a clear elimination).
-  const conf = findConfinement(playerState, N, region, regionCells);
-  if (conf) return conf;
-
-  // 4. Otherwise reach the next forced placement by full internal deduction and
-  //    present it plainly. The cells the player still sees as "open" but that
-  //    deduction has ruled out are hatched, so "only one remains" is visible.
-  const forced = nextForcedPlacement(playerState, N, region, regionCells);
-  if (forced) {
-    const [tr, tc] = forced.target;
-    const excluded = forced.unitCells.filter(
-      ([r, c]) => playerState.cand[r][c] && !(r === tr && c === tc)
-    );
-    return placeHint(
-      `Nur ein Feld in der ${UNIT_WORD[forced.unitKind]}`,
-      `In dieser ${UNIT_WORD[forced.unitKind]} bleibt am Ende nur dieses Feld möglich – die schraffierten Felder sind ausgeschlossen. Hier muss die Dame stehen.`,
-      forced.unitCells,
-      forced.target,
-      excluded
-    );
-  }
-
-  // 5. Fallback (essentially never hit): reveal the next queen directly.
+// Only reached for a puzzle that isn't solvable by the explainable techniques
+// (shouldn't happen for freshly generated puzzles): honestly reveal the next
+// queen rather than inventing a bogus reason.
+function revealFallback(st, N, region, regionCells, solution) {
   let best = null;
   for (let reg = 0; reg < N; reg++) {
-    if (playerState.regQ[reg]) continue;
-    const cs = unitCandidates(regionCells[reg], playerState);
+    if (st.regQ[reg]) continue;
+    const cs = unitCandidates(regionCells[reg], st);
     if (!best || cs.length < best.count) best = { reg, count: cs.length };
   }
   if (best) {
     let target = null;
     for (let r = 0; r < N; r++) if (region[r][solution[r]] === best.reg) target = [r, solution[r]];
-    if (target)
-      return placeHint('Nächste Dame', 'Hier gehört die nächste Dame hin.', regionCells[best.reg], target);
+    if (target) {
+      const h = placeHint('region', target, regionCells[best.reg]);
+      h.title = 'Nächste Dame';
+      h.text = 'Hier gehört die nächste Dame hin.';
+      return h;
+    }
   }
   return { kind: 'none', title: 'Kein Hinweis', text: 'Gerade ist kein einfacher Hinweis verfügbar.' };
 }
