@@ -336,6 +336,30 @@ export function computeHint(N, region, solution, queens, marks) {
     }
   }
 
+  // A dot on a cell that must hold a queen (a solution cell) is a mistake: it
+  // leaves that cell's row, column and colour region no place for their queen.
+  // Pointing this out has to come before any placement hint — telling the
+  // player they've boxed a unit in matters more than the next deduction, and
+  // otherwise the hint would happily suggest placing a queen on a field the
+  // player has already (wrongly) excluded.
+  if (marks) {
+    for (let r = 0; r < N; r++) {
+      const c = solution[r];
+      if (marks[r][c]) {
+        return {
+          kind: 'mistake',
+          title: 'Hier muss eine Dame stehen',
+          text: 'Dieses Feld ist als Ausschluss markiert, obwohl hier eine Dame stehen muss – dadurch bleibt für seine Zeile, Spalte und Farbe kein Platz mehr. Entferne die Markierung.',
+          reasonCells: [],
+          lineCells: [],
+          excludedCells: [],
+          targetCells: [[r, c]],
+          applyLabel: 'Markierung entfernen',
+        };
+      }
+    }
+  }
+
   const correct = queens.filter(([r, c]) => solution[r] === c);
   if (correct.length === N)
     return { kind: 'none', title: 'Alles gelöst', text: 'Alle Damen stehen richtig – gut gemacht!' };
