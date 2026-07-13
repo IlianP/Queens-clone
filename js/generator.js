@@ -8,7 +8,7 @@
 //      cell that only an alternate solution uses into a neighbouring region.
 //   4. Rate the puzzle and prefer one matching the requested difficulty.
 
-import { solveUpTo2, logicSolves, difficultyLevel } from './solver.js';
+import { solveUpTo2, logicSolves, difficultyLevel, nakedSingleReach } from './solver.js';
 
 // Cap for the definitive uniqueness verdict. A board that needs more nodes than
 // this to settle is abandoned — we'd only keep it if it were logic-solvable
@@ -52,11 +52,21 @@ function generatePlacement(N, rng) {
   return rec(0) ? cols : null;
 }
 
-// Grow regions from the queen seeds via randomized multi-source flood fill.
-// Random frontier selection yields organic, varied region shapes; contiguity
-// is guaranteed because a cell is only claimed when adjacent to its region.
-function growRegions(N, cols, rng) {
+// Grow regions from the queen seeds via multi-source flood fill, biased so the
+// currently-smallest region grows first. Balanced growth stops a seed from
+// being starved into a tiny (size-1) region — a single-cell region is a free
+// "only cell of this colour" queen that trivialises the opening (the exact
+// complaint that motivated this). Contiguity is guaranteed because a cell is
+// only ever claimed when adjacent to its region.
+//
+// `balance` (0..1) is the fraction of picks that use the smallest-region bias;
+// the rest are free/random. It is difficulty-tuned by the caller: easy/medium
+// pass 0 (pure random, organic and open — their gentle openings want the tiny
+// regions), while hard passes a strong bias to suppress them. Even at a high
+// balance a slice of randomness remains, so region shapes stay irregular.
+function growRegions(N, cols, rng, balance = 0.85) {
   const region = Array.from({ length: N }, () => new Array(N).fill(-1));
+  const size = new Array(N).fill(1); // every region starts as its single seed
   const frontier = [];
   const dirs = [
     [-1, 0],
@@ -81,12 +91,31 @@ function growRegions(N, cols, rng) {
 
   let remaining = N * N - N;
   while (remaining > 0 && frontier.length) {
-    const k = Math.floor(rng() * frontier.length);
+    let k;
+    if (rng() >= balance) {
+      // Free choice keeps the borders irregular (and, at low balance, lets tiny
+      // regions form on purpose for easier boards).
+      k = Math.floor(rng() * frontier.length);
+    } else {
+      // Otherwise expand whichever still-open frontier cell belongs to the
+      // smallest region, breaking ties at random. Stale entries (their cell was
+      // already claimed) are skipped.
+      let bestSize = Infinity;
+      for (const f of frontier)
+        if (region[f.r][f.c] === -1 && size[f.reg] < bestSize) bestSize = size[f.reg];
+      const pick = [];
+      for (let i = 0; i < frontier.length; i++) {
+        const f = frontier[i];
+        if (region[f.r][f.c] === -1 && size[f.reg] <= bestSize) pick.push(i);
+      }
+      k = pick.length ? pick[Math.floor(rng() * pick.length)] : Math.floor(rng() * frontier.length);
+    }
     const f = frontier[k];
     frontier[k] = frontier[frontier.length - 1];
     frontier.pop();
     if (region[f.r][f.c] !== -1) continue;
     region[f.r][f.c] = f.reg;
+    size[f.reg]++;
     remaining--;
     addNeighbours(f.r, f.c, f.reg);
   }
@@ -208,25 +237,41 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   const rng = opts.rng || Math.random;
   const budgetMs = opts.budgetMs ?? 1500;
   const target = LEVELS[difficulty] ?? 1;
+  // How many "free" naked-single queens we tolerate for this difficulty before a
+  // board counts as too open (it plays easier than its technique rating claims).
+  // Easy IS naked singles, so it has no cap; medium allows a handful; hard wants
+  // the opening to demand real reasoning, so only a couple of forced queens.
+  const reachBudget = target <= 0 ? N : target === 1 ? Math.round(N / 2) : Math.max(1, Math.round(N / 5));
+  // Region-growth balancing: ONLY hard suppresses tiny (near-trivial) regions.
+  // Any balancing makes boards harder, which starves easy/medium of the low
+  // level-0/1 boards they need at large N — and only hard drew the "too many
+  // free single-cell regions" complaint. So easy/medium keep the unbiased growth
+  // (their openings are meant to be gentle); hard gets a strong bias.
+  const balance = target >= 2 ? 0.85 : 0;
   const start = now();
 
   let best = null; // closest match so far
   let attempts = 0;
 
+  // Score a board: matching the target technique level dominates (×100 so it can
+  // never be outweighed), then among equally-rated boards prefer the one with
+  // the fewest free naked singles beyond the budget — i.e. the least trivial
+  // opening. Level 3 is unexplainable by our hints, so it's penalised heavily.
+  const scoreOf = (level, reach) =>
+    (Math.abs(level - target) + (level >= 3 ? 100 : 0)) * 100 + Math.max(0, reach - reachBudget);
+
   while (now() - start < budgetMs) {
     attempts++;
     const cols = generatePlacement(N, rng);
     if (!cols) continue;
-    const region = growRegions(N, cols, rng);
+    const region = growRegions(N, cols, rng, balance);
     if (!region) continue;
     if (!makeUnique(N, region, cols, rng, start + budgetMs)) continue;
 
     const level = difficultyLevel(N, region);
+    const reach = nakedSingleReach(N, region);
     const result = { region, solution: cols.slice(), level, attempts };
-    // Levels 0-2 are solvable (and explainable in hints) by naked single /
-    // confinement / dead-end. Level 3 needs deeper logic our hints can't explain,
-    // so penalise it heavily: only used if nothing better turns up.
-    const dist = Math.abs(level - target) + (level >= 3 ? 100 : 0);
+    const dist = scoreOf(level, reach);
     if (best === null || dist < best._dist) {
       best = result;
       best._dist = dist;
@@ -235,10 +280,11 @@ export function generatePuzzle(N, difficulty, opts = {}) {
       delete result._dist;
       return result;
     }
-    // A close-enough match (off by one level, still explainable) is accepted
-    // once we've spent part of the budget, so large boards — where an exact
-    // easy/medium is rare — don't always burn the full time.
-    if (best._dist <= 1 && now() - start > budgetMs * 0.4) {
+    // A right-level board (dist < 100) with only a couple of extra free queens
+    // is accepted once we've spent part of the budget, so large boards — where a
+    // perfectly-closed opening is rare — don't always burn the full time. Boards
+    // below/above the target level (dist >= 100) never qualify here.
+    if (best._dist < 100 && now() - start > budgetMs * 0.5) {
       delete best._dist;
       return best;
     }
@@ -258,7 +304,7 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     attempts++;
     const cols = generatePlacement(N, rng);
     if (!cols) continue;
-    const region = growRegions(N, cols, rng);
+    const region = growRegions(N, cols, rng, balance);
     if (!region) continue;
     if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
     return { region, solution: cols.slice(), level: difficultyLevel(N, region), attempts };
@@ -267,7 +313,7 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   // Astronomically-unlikely last resort: a valid board even if uniqueness could
   // not be secured. Kept so the game always has something to render.
   const cols = generatePlacement(N, rng) || defaultPlacement(N);
-  const region = growRegions(N, cols, rng) || trivialRegions(N);
+  const region = growRegions(N, cols, rng, balance) || trivialRegions(N);
   return { region, solution: cols.slice(), level: difficultyLevel(N, region), attempts };
 }
 
