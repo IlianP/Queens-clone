@@ -113,6 +113,26 @@
       </div>
     </div>
 
+    <!-- Party mode Easter egg: fires when every cell is dotted (no queens). -->
+    <div class="party" id="party-overlay" hidden>
+      <div class="party-lights" aria-hidden="true">
+        <div class="blaulicht left"></div>
+        <div class="blaulicht right"></div>
+      </div>
+      <div class="confetti" id="confetti" aria-hidden="true"></div>
+      <div class="party-card" role="alertdialog" aria-labelledby="party-title">
+        <div class="party-beacon" aria-hidden="true">🚨</div>
+        <div class="party-kicker">Achievement freigeschaltet</div>
+        <h2 class="party-title" id="party-title">Partymodus</h2>
+        <p class="party-text">
+          Du hast tatsächlich <strong>jedes einzelne Feld</strong> ausgepunktet –
+          keine einzige Dame weit und breit. Absolutes Chaos. Wir sind zutiefst
+          beeindruckt. 🎉
+        </p>
+        <button class="btn primary" id="party-close" type="button">Party beenden</button>
+      </div>
+    </div>
+
     <div class="loading" id="loading" hidden><div class="spinner"></div></div>
 
     <script type="module" src="./js/main.js"></script>

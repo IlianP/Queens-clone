@@ -154,6 +154,18 @@ export class Game {
   isWon() {
     return this.queenCount === this.N && this.conflicts().size === 0;
   }
+
+  // Easter-egg check: the player has dotted every single cell and placed no
+  // queen at all, so the whole board is "eliminated" (every region, row and
+  // column is a dead unit at once). A deliberately absurd state the UI rewards
+  // with a party. Quick-mode auto-marks require a queen, so with no queens on
+  // the board every dot must be a manual mark — checking `mark` alone suffices.
+  isFullyDotted() {
+    if (this.queenCount !== 0) return false;
+    for (let r = 0; r < this.N; r++)
+      for (let c = 0; c < this.N; c++) if (!this.mark[r][c]) return false;
+    return true;
+  }
 }
 
 function grid(N, val) {
