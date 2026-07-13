@@ -232,6 +232,14 @@ function findDeadEnd(st, N, region, regionCells) {
 // Crowding (Hall sets): if the candidates of k units on one side only touch k
 // units on the other side, those k are locked together — cells of those units
 // elsewhere are eliminated. Mirrors solver._hall but returns an explained hint.
+//
+// Returns { k, hint } (or null) so the caller can rank by set size: a k=2 set is
+// "just read it off the board" and belongs before the harder dead-end look-ahead,
+// while larger sets are harder to see and stay after it. We therefore pick the
+// globally smallest k across all four orientations — not the first orientation
+// that happens to match — so a tight k=2 in one direction always beats a k=4 in
+// another (each `run` already returns its own smallest, so min over the four is
+// the global min).
 function findCrowding(st, N, region, regionCells) {
   const rowsCellsAll = Array.from({ length: N }, (_, r) => rowCells(N, r).map(([rr, cc]) => rr * N + cc));
   const colsCellsAll = Array.from({ length: N }, (_, c) => colCells(N, c).map(([rr, cc]) => rr * N + cc));
@@ -302,15 +310,23 @@ function findCrowding(st, N, region, regionCells) {
     return found;
   };
 
-  const f =
-    run(rowsCellsAll, st.rowQ, rowOf, regionOf, true, (k) => [`${k} Farben passen nur in ${k} Zeilen`, `In den ${k} hervorgehobenen Zeilen kommen nur ${k} Farben vor. Diese ${k} Farben müssen also in genau diese Zeilen – dieselben Farben scheiden in allen anderen Zeilen aus (schraffiert).`]) ||
-    run(colsCellsAll, st.colQ, colOf, regionOf, true, (k) => [`${k} Farben passen nur in ${k} Spalten`, `In den ${k} hervorgehobenen Spalten kommen nur ${k} Farben vor. Diese ${k} Farben müssen also in genau diese Spalten – dieselben Farben scheiden in allen anderen Spalten aus (schraffiert).`]) ||
-    run(regCellsIdx, st.regQ, regionOf, rowOf, false, (k) => [`${k} Farben belegen ${k} Zeilen`, `Die ${k} hervorgehobenen Farben passen nur in ${k} Zeilen. Diese Zeilen gehören also diesen Farben – andere Farben scheiden in diesen Zeilen aus (schraffiert).`]) ||
-    run(regCellsIdx, st.regQ, regionOf, colOf, false, (k) => [`${k} Farben belegen ${k} Spalten`, `Die ${k} hervorgehobenen Farben passen nur in ${k} Spalten. Diese Spalten gehören also diesen Farben – andere Farben scheiden in diesen Spalten aus (schraffiert).`]);
+  const orientations = [
+    () => run(rowsCellsAll, st.rowQ, rowOf, regionOf, true, (k) => [`${k} Farben passen nur in ${k} Zeilen`, `In den ${k} hervorgehobenen Zeilen kommen nur ${k} Farben vor. Diese ${k} Farben müssen also in genau diese Zeilen – dieselben Farben scheiden in allen anderen Zeilen aus (schraffiert).`]),
+    () => run(colsCellsAll, st.colQ, colOf, regionOf, true, (k) => [`${k} Farben passen nur in ${k} Spalten`, `In den ${k} hervorgehobenen Spalten kommen nur ${k} Farben vor. Diese ${k} Farben müssen also in genau diese Spalten – dieselben Farben scheiden in allen anderen Spalten aus (schraffiert).`]),
+    () => run(regCellsIdx, st.regQ, regionOf, rowOf, false, (k) => [`${k} Farben belegen ${k} Zeilen`, `Die ${k} hervorgehobenen Farben passen nur in ${k} Zeilen. Diese Zeilen gehören also diesen Farben – andere Farben scheiden in diesen Zeilen aus (schraffiert).`]),
+    () => run(regCellsIdx, st.regQ, regionOf, colOf, false, (k) => [`${k} Farben belegen ${k} Spalten`, `Die ${k} hervorgehobenen Farben passen nur in ${k} Spalten. Diese Spalten gehören also diesen Farben – andere Farben scheiden in diesen Spalten aus (schraffiert).`]),
+  ];
 
+  // Keep the smallest-k Hall set across all orientations (a k=2 can't be beaten).
+  let f = null;
+  for (const orient of orientations) {
+    const cand = orient();
+    if (cand && (!f || cand.k < f.k)) f = cand;
+    if (f && f.k === 2) break;
+  }
   if (!f) return null;
   const [title, text] = f.describe(f.k);
-  return elimHint(title, text, f.reason, f.elim);
+  return { k: f.k, hint: elimHint(title, text, f.reason, f.elim) };
 }
 
 /**
@@ -388,11 +404,20 @@ export function computeHint(N, region, solution, queens, marks) {
   if (correct.length === N)
     return { kind: 'none', title: 'Alles gelöst', text: 'Alle Damen stehen richtig – gut gemacht!' };
 
+  const simple =
+    findNakedSingle(st, N, regionCells) || findConfinement(st, N, region, regionCells);
+  if (simple) return simple;
+
+  // Crowding is ranked by set size against the dead-end look-ahead: a k=2 Hall
+  // set is read straight off the board and is easier than "try a queen here and
+  // see which unit collapses", so it comes first; larger sets (k>=3) are harder
+  // to spot and stay after the dead-end step.
+  const crowd = findCrowding(st, N, region, regionCells);
+  if (crowd && crowd.k === 2) return crowd.hint;
+
   return (
-    findNakedSingle(st, N, regionCells) ||
-    findConfinement(st, N, region, regionCells) ||
     findDeadEnd(st, N, region, regionCells) ||
-    findCrowding(st, N, region, regionCells) ||
+    (crowd && crowd.hint) ||
     revealFallback(st, N, region, regionCells, solution)
   );
 }
