@@ -165,6 +165,8 @@ body {
 
 .board {
   --n: 8;
+  --intro-rot: 0deg;
+  --intro-scale: 1;
   width: min(92vw, 70vh, 560px);
   aspect-ratio: 1 / 1;
   display: grid;
@@ -174,6 +176,11 @@ body {
   border-radius: 10px;
   overflow: hidden;
   box-shadow: var(--shadow);
+  /* The intro sequence spins the board while the regions flood in, then eases
+     back to 0deg. The scale keeps the rotating square inside its own box (its
+     corners would otherwise sweep past the edges); it eases back to 1 as the
+     board settles. Driven per-frame from JS; identity at rest. */
+  transform: rotate(var(--intro-rot, 0deg)) scale(var(--intro-scale, 1));
   /* Custom tap + swipe handling: stop the browser scrolling/zooming on the
      board so a finger drag paints cells instead. */
   touch-action: none;
@@ -284,6 +291,37 @@ body {
   }
   100% {
     transform: scale(1);
+  }
+}
+
+/* ---------- Intro / generation reveal ---------- */
+/* Placeholder cells shown while a puzzle is being generated in the worker. They
+   carry no region data (nothing is known yet); JS paints a slow colour "bloom"
+   over them each frame so the wait reads as the algorithm exploring. */
+.cell.intro-cell {
+  cursor: default;
+}
+
+/* Once the real board is built, its cells start hidden and fade in staggered
+   from each region's centre outward (per-cell --reveal-delay set in JS), so the
+   colour regions appear to flood across the board. */
+.board.intro-revealing .cell {
+  transition: opacity 0.5s ease var(--reveal-delay, 0s);
+}
+.board.intro-revealing .cell.intro-hidden {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Intro is skipped entirely in JS under reduced motion; this is a safety net
+     so a board can never get stuck invisible. */
+  .board {
+    transform: none;
+  }
+  .board.intro-revealing .cell {
+    transition: none;
+  }
+  .board.intro-revealing .cell.intro-hidden {
+    opacity: 1;
   }
 }
 
