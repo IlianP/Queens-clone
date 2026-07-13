@@ -256,9 +256,9 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   // Score a board: matching the target technique level dominates (×100 so it can
   // never be outweighed), then among equally-rated boards prefer the one with
   // the fewest free naked singles beyond the budget — i.e. the least trivial
-  // opening. Level 3 is unexplainable by our hints, so it's penalised heavily.
+  // opening. Level-3 boards never reach here — they're rejected outright below.
   const scoreOf = (level, reach) =>
-    (Math.abs(level - target) + (level >= 3 ? 100 : 0)) * 100 + Math.max(0, reach - reachBudget);
+    Math.abs(level - target) * 100 + Math.max(0, reach - reachBudget);
 
   while (now() - start < budgetMs) {
     attempts++;
@@ -269,6 +269,11 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     if (!makeUnique(N, region, cols, rng, start + budgetMs)) continue;
 
     const level = difficultyLevel(N, region);
+    // A level-3 board isn't solvable by our explainable techniques, so every
+    // hint on it degrades to the honest "reveal" fallback ("Hier gehört die
+    // nächste Dame hin.") — useless to the player. Never return one: skip it so
+    // `best` only ever holds a fair (logic-solvable) board.
+    if (level >= 3) continue;
     const reach = nakedSingleReach(N, region);
     const result = { region, solution: cols.slice(), level, attempts };
     const dist = scoreOf(level, reach);
@@ -300,6 +305,7 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   // unique board quickly, rather than one slow attempt blowing the time.
   // Keep trying until the repair converges. makeUnique is fast and succeeds
   // within a few tries in practice, so we never hand back a non-unique board.
+  let anyUnique = null; // fair board preferred; a unique-but-unfair one is a last resort
   for (let tries = 0; tries < 500; tries++) {
     attempts++;
     const cols = generatePlacement(N, rng);
@@ -307,8 +313,12 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     const region = growRegions(N, cols, rng, balance);
     if (!region) continue;
     if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
-    return { region, solution: cols.slice(), level: difficultyLevel(N, region), attempts };
+    const level = difficultyLevel(N, region);
+    const result = { region, solution: cols.slice(), level, attempts };
+    if (level <= 2) return result; // fair AND unique — always prefer this
+    anyUnique = anyUnique || result; // unfair but unique — keep only if nothing better turns up
   }
+  if (anyUnique) return anyUnique;
 
   // Astronomically-unlikely last resort: a valid board even if uniqueness could
   // not be secured. Kept so the game always has something to render.
