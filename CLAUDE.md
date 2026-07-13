@@ -34,6 +34,26 @@ smoke test for solver/hint changes is to solve a puzzle end-to-end purely by
 applying `computeHint` repeatedly and asserting all `N` queens land on the
 `solution`. Prefer this kind of behavioural check over eyeballing the diff.
 
+### Testing a branch on mobile (always offer this)
+
+This is a visual, touch-first game, so **whenever proposing how to test a branch,
+always include a way to test it on a phone** — don't only give localhost steps,
+and don't make the user ask for it again. The established, working method:
+bundle the branch into **one self-contained HTML file and publish it as an
+Artifact**, then hand over the link (the user opens it on their phone before
+creating/merging a PR).
+
+Because the app is multi-file ESM **plus a Web Worker**, and an Artifact must be
+a single self-contained file under a strict CSP, bundle it (don't hand-write a
+copy) — the reproducible builder lives in git history for this branch
+(`build-artifact.mjs`): it concatenates the real sources in dependency order
+(`settings → solver → generator → game → hint → main`, stripping `import`/`export`),
+rebuilds the worker as a **classic Blob-URL worker** (module workers and
+external URLs are CSP-blocked; the game's own fallback covers a sandbox that
+blocks blob workers too), and **prepends `<meta charset="utf-8">`** so the
+German text + emoji don't mojibake. Verify the bundle in a mobile-sized
+Playwright viewport (Chromium at `/opt/pw-browsers`) before publishing.
+
 ## Architecture
 
 Pure logic modules have **no DOM access**; `main.js` is the only file that
