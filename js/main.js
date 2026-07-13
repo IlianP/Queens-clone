@@ -35,6 +35,9 @@ const dom = {
   debugMode: el('debug-mode'),
   debugCopy: el('debug-copy'),
   loading: el('loading'),
+  partyOverlay: el('party-overlay'),
+  confetti: el('confetti'),
+  partyClose: el('party-close'),
   winOverlay: el('win-overlay'),
   winTime: el('win-time'),
   winNewGame: el('win-new-game'),
@@ -251,6 +254,7 @@ function updateBoard() {
   }
 
   updateMessage();
+  maybeParty();
 }
 
 function updateMessage() {
@@ -276,6 +280,77 @@ function onWin() {
   dom.winTime.textContent = `Zeit: ${m}:${s}`;
   show(dom.winOverlay);
 }
+
+// ---------- Party mode (Easter egg) ----------
+// Dotting every single cell (no queens anywhere) is a pointless, absurd thing
+// to do — the whole board pulses red as one giant dead end. We reward the
+// mischief: hold that state for 1.5s and a silent, no-audio party kicks off
+// (confetti + alternating blue emergency lights + a mock achievement).
+let partyTimer = null; // pending arm timer, or null
+let partyActive = false; // overlay currently showing
+let partyDone = false; // already partied for this fully-dotted episode
+
+// Re-evaluated after every board change. Arms the party when the board becomes
+// fully dotted, and tears everything down again the moment it isn't.
+function maybeParty() {
+  if (!game || !game.isFullyDotted()) {
+    cancelPartyTimer();
+    if (partyActive) stopParty();
+    partyDone = false;
+    return;
+  }
+  if (partyActive || partyDone || partyTimer) return;
+  partyTimer = setTimeout(() => {
+    partyTimer = null;
+    startParty();
+  }, 1500);
+}
+
+function cancelPartyTimer() {
+  if (partyTimer) clearTimeout(partyTimer);
+  partyTimer = null;
+}
+
+// Build N confetti pieces with randomised colour, size, drift, spin and timing.
+function buildConfetti(n) {
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < n; i++) {
+    const piece = document.createElement('i');
+    const size = 6 + Math.random() * 10;
+    piece.style.left = (Math.random() * 100).toFixed(2) + 'vw';
+    piece.style.width = size.toFixed(1) + 'px';
+    piece.style.height = (size * (0.6 + Math.random() * 0.8)).toFixed(1) + 'px';
+    piece.style.background = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    if (Math.random() < 0.3) piece.style.borderRadius = '50%';
+    piece.style.setProperty('--x', (Math.random() * 160 - 80).toFixed(0) + 'px');
+    piece.style.setProperty('--spin', (360 + Math.random() * 720).toFixed(0) + 'deg');
+    piece.style.animationDuration = (2.4 + Math.random() * 2.6).toFixed(2) + 's';
+    piece.style.animationDelay = (-Math.random() * 4).toFixed(2) + 's';
+    frag.appendChild(piece);
+  }
+  return frag;
+}
+
+function startParty() {
+  if (partyActive) return;
+  partyActive = true;
+  partyDone = true; // don't re-fire until the board leaves this state
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  dom.confetti.innerHTML = '';
+  if (!reduce) dom.confetti.appendChild(buildConfetti(90));
+  show(dom.partyOverlay);
+}
+
+function stopParty() {
+  partyActive = false;
+  hide(dom.partyOverlay);
+  dom.confetti.innerHTML = '';
+}
+
+dom.partyClose.addEventListener('click', stopParty);
+dom.partyOverlay.addEventListener('click', (e) => {
+  if (e.target === dom.partyOverlay) stopParty();
+});
 
 // ---------- Undo ----------
 // Each user gesture (a tap, a whole swipe stroke, or a Clear/Reset) snapshots
@@ -692,6 +767,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hide(dom.settingsOverlay);
     clearHint();
+    if (partyActive) stopParty();
   }
 });
 
