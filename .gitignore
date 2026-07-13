@@ -1,0 +1,2 @@
+# Build output from build-artifact.mjs (mobile-test bundle) — regenerate on demand.
+dist/
