@@ -46,6 +46,7 @@ const dom = {
   sizeValue: el('size-value'),
   difficulty: el('difficulty'),
   quickMode: el('quick-mode'),
+  introAnimation: el('intro-animation'),
   settingsApply: el('settings-apply'),
   settingsClose: el('settings-close'),
 };
@@ -126,35 +127,317 @@ window.addEventListener('blur', pauseTimer);
 window.addEventListener('focus', resumeTimer);
 
 // ---------- New game / generation ----------
-function newGame() {
+// Generation is synchronous and can take several seconds on big/hard boards, so
+// it runs in a module Web Worker to keep the main thread free for the intro
+// animation. `genToken` guards against overlapping newGame() calls (e.g. the
+// user hammering "Neues Spiel"): only the latest run is allowed to finish.
+let genWorker = null;
+let genToken = 0;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function prefersReducedMotion() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+function introEnabled() {
+  return settings.introAnimation && !prefersReducedMotion();
+}
+
+// A fresh worker per request. Creating a new one implicitly terminates any
+// in-flight (now-superseded) computation, so a stale board can't block a newer
+// one. Returns null when module workers aren't available -> caller falls back to
+// synchronous generation on the main thread.
+function freshWorker() {
+  if (genWorker) {
+    genWorker.terminate();
+    genWorker = null;
+  }
+  try {
+    genWorker = new Worker(new URL('./generator.worker.js', import.meta.url), { type: 'module' });
+  } catch (e) {
+    genWorker = null;
+  }
+  return genWorker;
+}
+
+function generateAsync(N, difficulty, budgetMs) {
+  return new Promise((resolve) => {
+    const w = freshWorker();
+    if (!w) {
+      resolve(generatePuzzle(N, difficulty, { budgetMs }));
+      return;
+    }
+    w.onmessage = (ev) => resolve(ev.data);
+    w.onerror = () => {
+      // Worker failed to load/import (older browser, etc.) -> generate inline.
+      try {
+        w.terminate();
+      } catch (_) {}
+      genWorker = null;
+      resolve(generatePuzzle(N, difficulty, { budgetMs }));
+    };
+    w.postMessage({ N, difficulty, budgetMs });
+  });
+}
+
+async function newGame() {
+  const myToken = ++genToken;
   hide(dom.winOverlay);
   dom.message.textContent = '';
-  show(dom.loading);
+  clearHint();
+  game = null; // block interaction (pointer/hint/undo all bail on !game) while loading
+  untick();
+  dom.timer.textContent = '0:00';
+
   const N = settings.size;
   const difficulty = settings.difficulty;
   const budgetMs = N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
+  const animate = introEnabled();
 
-  // Yield a frame so the spinner paints before the (synchronous) generator runs.
-  setTimeout(() => {
-    const puzzle = generatePuzzle(N, difficulty, { budgetMs });
-    buildBoard(N, puzzle.region);
-    game = new Game(N, puzzle.region, settings.quickMode);
-    currentSolution = puzzle.solution;
-    clearHint();
-    undoStack = [];
-    updateUndoButton();
-    updateBoard();
-    startTimer();
-    hide(dom.loading);
-  }, 30);
+  if (animate) intro.startCompute(N);
+  else show(dom.loading);
+
+  const puzzle = await generateAsync(N, difficulty, budgetMs);
+  if (myToken !== genToken) return; // a newer newGame() superseded this one
+
+  if (animate) {
+    // Guarantee a beat of the compute animation even for instant (small) boards.
+    const elapsed = intro.computeElapsed();
+    if (elapsed < MIN_COMPUTE_MS) await wait(MIN_COMPUTE_MS - elapsed);
+    if (myToken !== genToken) return;
+  }
+
+  buildBoard(N, puzzle.region, animate);
+  if (animate) await intro.reveal(N);
+  else hide(dom.loading);
+  if (myToken !== genToken) return;
+
+  game = new Game(N, puzzle.region, settings.quickMode);
+  currentSolution = puzzle.solution;
+  undoStack = [];
+  updateUndoButton();
+  updateBoard();
+  startTimer(); // clock starts only once the board is playable, not during the intro
 }
 
-function buildBoard(N, region) {
+// ---------- Intro animation ----------
+// Fills the generation wait with motion (worker keeps the main thread free) and
+// then reveals the finished board: colour regions flood in from their centres
+// while the board spins, easing back to 0deg — the orientation it was computed
+// with. A single requestAnimationFrame loop drives both phases.
+const MIN_COMPUTE_MS = 380; // minimum visible time for the "computing" bloom
+const SPIN_SPEED = 45; // deg per second while generating
+const ROT_EASE = 0.9; // seconds to unwind the rotation back to 0deg
+const CELL_TRANS = 0.5; // must match the CSS opacity transition on revealed cells
+const SCALE_MIN = 0.7; // ~1/√2: keeps the spinning square inside its own box
+
+const intro = (() => {
+  let raf = 0;
+  let phase = 'idle'; // 'compute' | 'reveal' | 'idle'
+  let placeholder = []; // { el, r, c } for the compute-phase bloom
+  let computeStart = 0;
+  let lastRot = 0; // current rotation angle, carried from compute into reveal
+  let rotBase = 0;
+  let rotTarget = 0;
+  let revealStart = 0;
+  let revealDuration = 0;
+  let revealResolve = null;
+
+  function ambientPaint(t) {
+    // A slow travelling plasma across the placeholder grid: smooth waves of
+    // pastel colour that read as the algorithm exploring the board.
+    for (const pc of placeholder) {
+      const v =
+        Math.sin(pc.r * 0.7 + t * 1.6) +
+        Math.cos(pc.c * 0.7 - t * 1.3) +
+        Math.sin((pc.r + pc.c) * 0.45 + t * 0.9);
+      const n = (v + 3) / 6; // 0..1
+      const idx = Math.min(PALETTE.length - 1, Math.max(0, Math.floor(n * PALETTE.length)));
+      pc.el.style.backgroundColor = PALETTE[idx];
+      pc.el.style.opacity = (0.4 + 0.55 * n).toFixed(3);
+    }
+  }
+
+  function frame(ts) {
+    if (phase === 'compute') {
+      const t = (ts - computeStart) / 1000;
+      lastRot = t * SPIN_SPEED;
+      dom.board.style.setProperty('--intro-rot', lastRot.toFixed(2) + 'deg');
+      dom.board.style.setProperty('--intro-scale', SCALE_MIN);
+      ambientPaint(t);
+      raf = requestAnimationFrame(frame);
+    } else if (phase === 'reveal') {
+      const t = (ts - revealStart) / 1000;
+      const k = Math.min(t / ROT_EASE, 1);
+      const e = 1 - Math.pow(1 - k, 3); // easeOutCubic
+      const rot = rotBase + (rotTarget - rotBase) * e;
+      dom.board.style.setProperty('--intro-rot', (rot % 360).toFixed(2) + 'deg');
+      dom.board.style.setProperty('--intro-scale', (SCALE_MIN + (1 - SCALE_MIN) * e).toFixed(4));
+      if (t >= revealDuration) {
+        dom.board.style.setProperty('--intro-rot', '0deg');
+        dom.board.style.setProperty('--intro-scale', '1');
+        dom.board.classList.remove('intro-revealing');
+        phase = 'idle';
+        raf = 0;
+        const done = revealResolve;
+        revealResolve = null;
+        if (done) done();
+      } else {
+        raf = requestAnimationFrame(frame);
+      }
+    } else {
+      raf = 0;
+    }
+  }
+
+  function cancel() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    phase = 'idle';
+    revealResolve = null;
+  }
+
+  return {
+    computeElapsed() {
+      return performance.now() - computeStart;
+    },
+    startCompute(N) {
+      cancel();
+      dom.board.classList.remove('intro-revealing');
+      dom.board.style.setProperty('--n', N);
+      dom.board.innerHTML = '';
+      placeholder = [];
+      cells = []; // no interactive cells during the compute phase
+      const frag = document.createDocumentFragment();
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          const d = document.createElement('div');
+          d.className = 'cell intro-cell';
+          placeholder.push({ el: d, r, c });
+          frag.appendChild(d);
+        }
+      }
+      dom.board.appendChild(frag);
+      computeStart = performance.now();
+      lastRot = 0;
+      phase = 'compute';
+      raf = requestAnimationFrame(frame);
+    },
+    // The real board must already be built (buildBoard with reveal=true), which
+    // marks every cell .intro-hidden with its --reveal-delay. This unwinds the
+    // rotation and drops .intro-hidden so the staggered fade-in flows.
+    reveal() {
+      return new Promise((resolve) => {
+        rotBase = lastRot;
+        rotTarget = Math.ceil((rotBase + 1e-6) / 360) * 360; // next 0deg, forward
+        revealStart = performance.now();
+        revealDuration = Math.max(ROT_EASE, revealMaxDelay + CELL_TRANS) + 0.12;
+        revealResolve = resolve;
+        phase = 'reveal';
+        void dom.board.offsetWidth; // register the hidden state before releasing it
+        for (const row of cells) for (const cell of row) cell.classList.remove('intro-hidden');
+        if (!raf) raf = requestAnimationFrame(frame);
+      });
+    },
+  };
+})();
+
+// Per-cell reveal delays: each region floods from its most interior cell (a
+// distance-transform peak) outward, so no origin ever sits on a queen seed and
+// the reveal leaks nothing. `revealMaxDelay` sizes the reveal phase.
+let revealMaxDelay = 0;
+const DIRS = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
+];
+
+function regionRevealDelays(N, region) {
+  const PER = 0.055; // seconds per ring outward from a region's centre
+  const delays = Array.from({ length: N }, () => new Array(N).fill(0));
+  const byReg = new Map();
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const g = region[r][c];
+      if (!byReg.has(g)) byReg.set(g, []);
+      byReg.get(g).push([r, c]);
+    }
+
+  let max = 0;
+  for (const [g, group] of byReg) {
+    const inReg = (r, c) => r >= 0 && r < N && c >= 0 && c < N && region[r][c] === g;
+
+    // Depth from the region's border inward (multi-source BFS from border cells).
+    const depth = new Map();
+    const q = [];
+    for (const [r, c] of group) {
+      if (DIRS.some(([dr, dc]) => !inReg(r + dr, c + dc))) {
+        depth.set(r + ',' + c, 0);
+        q.push([r, c]);
+      }
+    }
+    for (let h = 0; h < q.length; h++) {
+      const [r, c] = q[h];
+      const d = depth.get(r + ',' + c);
+      for (const [dr, dc] of DIRS) {
+        const nr = r + dr;
+        const nc = c + dc;
+        if (inReg(nr, nc) && !depth.has(nr + ',' + nc)) {
+          depth.set(nr + ',' + nc, d + 1);
+          q.push([nr, nc]);
+        }
+      }
+    }
+
+    // Origin = deepest (most interior) cell; never a border cell, never the seed.
+    let origin = group[0];
+    let best = -1;
+    for (const [r, c] of group) {
+      const d = depth.get(r + ',' + c);
+      if (d > best) {
+        best = d;
+        origin = [r, c];
+      }
+    }
+
+    // Distance from the origin -> per-cell delay.
+    const dist = new Map();
+    dist.set(origin[0] + ',' + origin[1], 0);
+    const q2 = [origin];
+    for (let h = 0; h < q2.length; h++) {
+      const [r, c] = q2[h];
+      const d = dist.get(r + ',' + c);
+      for (const [dr, dc] of DIRS) {
+        const nr = r + dr;
+        const nc = c + dc;
+        if (inReg(nr, nc) && !dist.has(nr + ',' + nc)) {
+          dist.set(nr + ',' + nc, d + 1);
+          q2.push([nr, nc]);
+        }
+      }
+    }
+    for (const [r, c] of group) {
+      const del = (dist.get(r + ',' + c) || 0) * PER;
+      delays[r][c] = del;
+      if (del > max) max = del;
+    }
+  }
+  revealMaxDelay = max;
+  return delays;
+}
+
+function buildBoard(N, region, reveal = false) {
   // Assign a distinct palette colour per region.
   colorMap = shuffledPalette(N);
   dom.board.style.setProperty('--n', N);
+  dom.board.classList.remove('intro-revealing');
+  dom.board.style.setProperty('--intro-rot', '0deg');
   dom.board.innerHTML = '';
   cells = Array.from({ length: N }, () => new Array(N));
+
+  // When revealing, each cell starts hidden and fades in on a per-cell delay so
+  // the regions flood in from their centres.
+  const delays = reveal ? regionRevealDelays(N, region) : null;
 
   const frag = document.createDocumentFragment();
   for (let r = 0; r < N; r++) {
@@ -163,6 +446,7 @@ function buildBoard(N, region) {
       div.className = 'cell';
       div.dataset.r = r;
       div.dataset.c = c;
+      div.dataset.region = region[r][c];
       // Use background-COLOR (not the `background` shorthand) so a hint's
       // hatch (a background-image) can layer on top instead of being reset.
       div.style.backgroundColor = colorMap[region[r][c]];
@@ -171,11 +455,16 @@ function buildBoard(N, region) {
       if (r < N - 1 && region[r + 1][c] !== region[r][c]) div.classList.add('bb');
       if (c > 0 && region[r][c - 1] !== region[r][c]) div.classList.add('bl');
       if (c < N - 1 && region[r][c + 1] !== region[r][c]) div.classList.add('br');
+      if (reveal) {
+        div.classList.add('intro-hidden');
+        div.style.setProperty('--reveal-delay', delays[r][c].toFixed(3) + 's');
+      }
       frag.appendChild(div);
       cells[r][c] = div;
     }
   }
   dom.board.appendChild(frag);
+  if (reveal) dom.board.classList.add('intro-revealing');
 }
 
 function shuffledPalette(N) {
@@ -721,6 +1010,7 @@ function openSettings() {
   dom.sizeValue.textContent = settings.size;
   setDifficultyUI(settings.difficulty);
   dom.quickMode.checked = settings.quickMode;
+  dom.introAnimation.checked = settings.introAnimation;
   dom.debugMode.checked = settings.debug;
   show(dom.settingsOverlay);
 }
@@ -754,10 +1044,18 @@ dom.quickMode.addEventListener('change', () => {
   }
 });
 
+// A visual-only preference: persist immediately so it sticks even if the modal
+// is closed without applying. It takes effect on the next generated puzzle.
+dom.introAnimation.addEventListener('change', () => {
+  settings.introAnimation = dom.introAnimation.checked;
+  saveSettings(settings);
+});
+
 dom.settingsApply.addEventListener('click', () => {
   settings.size = clampSize(dom.sizeRange.value);
   settings.difficulty = currentDifficultyUI();
   settings.quickMode = dom.quickMode.checked;
+  settings.introAnimation = dom.introAnimation.checked;
   saveSettings(settings);
   hide(dom.settingsOverlay);
   newGame();
