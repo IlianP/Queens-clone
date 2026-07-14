@@ -45,13 +45,19 @@
       </footer>
     </div>
 
-    <!-- Win overlay -->
-    <div class="overlay" id="win-overlay" hidden>
-      <div class="overlay-card">
-        <div class="win-emoji">🎉</div>
-        <h2>Gelöst!</h2>
-        <p id="win-time"></p>
+    <!-- Brief celebratory confetti burst on a win (reuses the party-mode
+         confetti); non-interactive and cleared shortly after. -->
+    <div class="confetti win-confetti" id="win-confetti" aria-hidden="true" hidden></div>
+
+    <!-- Win card (non-modal, anchored like the hint card: board stays fully
+         visible above it so the solved board can be admired, and the action
+         buttons sit within thumb reach on mobile). -->
+    <div class="hint-card win-card" id="win-overlay" hidden>
+      <div class="hint-card-title">🎉 Gelöst!</div>
+      <p class="hint-card-text" id="win-time"></p>
+      <div class="hint-card-buttons">
         <button class="btn primary" id="win-new-game" type="button">Neues Spiel</button>
+        <button class="btn subtle" id="win-settings" type="button">⚙ Einstellungen</button>
       </div>
     </div>
 

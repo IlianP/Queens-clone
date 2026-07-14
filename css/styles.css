@@ -517,12 +517,37 @@ body {
 .overlay-card h2 {
   margin: 0 0 14px;
 }
-.win-emoji {
-  font-size: 3rem;
-  text-align: center;
-}
 .overlay-card p {
   color: var(--muted);
+}
+
+.win-card {
+  border: 2px solid rgba(23, 160, 106, 0.5);
+  padding: 20px 22px;
+}
+.win-card .hint-card-title {
+  color: #17a06a;
+  font-size: 1.35rem;
+  margin-bottom: 8px;
+}
+.win-card .hint-card-text {
+  font-size: 1rem;
+  margin-bottom: 14px;
+}
+.win-card .hint-card-buttons .btn {
+  padding: 14px 16px;
+  font-size: 1.05rem;
+  border-radius: 14px;
+}
+
+/* Win confetti: reuses the .confetti pieces but as a full-screen fixed layer
+   above the board (below the win card), cleared shortly after the win. */
+.win-confetti {
+  position: fixed;
+  z-index: 24;
+}
+.win-confetti[hidden] {
+  display: none;
 }
 
 /* ---------- Settings ---------- */
