@@ -1,5 +1,6 @@
 // main.js — wires the puzzle generator, game logic and DOM together.
 import { generatePuzzle } from './generator.js';
+import { drawLevel } from './levels.js';
 import { Game } from './game.js';
 import { computeHint } from './hint.js';
 import { loadSettings, saveSettings, clampSize } from './settings.js';
@@ -196,7 +197,9 @@ async function newGame() {
   if (animate) intro.startCompute(N);
   else show(dom.loading);
 
-  const puzzle = await generateAsync(N, difficulty, budgetMs);
+  // Precomputed pool first (instant, exact difficulty, randomly transformed);
+  // live worker generation stays as the fallback when no pool is available.
+  const puzzle = (await drawLevel(N, difficulty)) || (await generateAsync(N, difficulty, budgetMs));
   if (myToken !== genToken) return; // a newer newGame() superseded this one
 
   if (animate) {

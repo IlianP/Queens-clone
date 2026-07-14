@@ -47,7 +47,9 @@ Because the app is multi-file ESM **plus a Web Worker**, and an Artifact must be
 a single self-contained file under a strict CSP, bundle it (don't hand-write a
 copy) — the reproducible builder lives in git history for this branch
 (`build-artifact.mjs`): it concatenates the real sources in dependency order
-(`settings → solver → generator → game → hint → main`, stripping `import`/`export`),
+(`settings → solver → generator → levels → game → hint → main`, stripping
+`import`/`export`), inlines the `levels/` pools as the `__QUEENS_LEVELS__`
+global (the Artifact CSP blocks fetch),
 rebuilds the worker as a **classic Blob-URL worker** (module workers and
 external URLs are CSP-blocked; the game's own fallback covers a sandbox that
 blocks blob workers too), and **prepends `<meta charset="utf-8">`** so the
@@ -65,7 +67,9 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `index.html` | Page skeleton |
 | `css/styles.css` | Layout, responsive/mobile design |
 | `js/solver.js` | Rules, unit lists, solution counting (uniqueness), human-style deduction solver + difficulty rating |
-| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty |
+| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds) |
+| `js/levels.js` | Serves precomputed puzzles from `levels/` with a random D4 rotation/mirror per draw; session shuffle-bag; `drawLevel` resolves `null` on any failure |
+| `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`) |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection (pure logic) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/settings.js` | Preferences (size/difficulty/quick mode/debug) in `localStorage` — no game state or scores are persisted |
@@ -84,7 +88,24 @@ same technique ladder appears in three places that must stay consistent:
 a difficulty using that rating; `hint.js` offers exactly these techniques (plus
 Hall-set "crowding" and an honest reveal fallback) so a human-followable hint
 always exists. If you add or change a technique, update all three so ratings,
-generation, and hints don't drift apart.
+generation, and hints don't drift apart — **and regenerate the pools**
+(`node tools/generate-levels.mjs`, then `node tools/verify-levels.mjs`),
+otherwise the puzzles shipped in `levels/` keep the old ratings.
+
+### Precomputed level pools
+
+`newGame()` tries `drawLevel(N, difficulty)` from `js/levels.js` first: a
+random pool entry with a random D4 symmetry applied — all 8 rotations/mirrors
+preserve the rules, uniqueness, and difficulty rating, and colours are shuffled
+at render time anyway, so stored shapes aren't recognisable. Live worker
+generation stays as the fallback whenever `drawLevel` resolves `null` (missing
+or invalid pool), so the game never depends on the pools existing. The
+in-session no-repeat shuffle-bag is memory-only by design — this project
+persists preferences, never game state. Constraints on `js/levels.js` (it is
+concatenated into the classic-script Artifact bundle): **no `import.meta`**
+(the pool fetch URL is page-relative instead) and no top-level name collisions.
+`tools/build-artifact.mjs` embeds the pools as the `__QUEENS_LEVELS__` global,
+which `drawLevel` checks before fetching — keep that handshake in sync.
 
 ### Hint data shape
 

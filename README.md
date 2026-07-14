@@ -36,14 +36,33 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   - *Mittel* – benötigt zusätzlich Zeilen-/Spalten-↔-Regionen-Schlüsse.
   - *Schwer* – benötigt eine vorausschauende (Widerspruchs-)Deduktion.
 
-  Die Schwierigkeit ist unabhängig von der Feldgröße. Bei großen Feldern sind sehr
-  leichte Rätsel selten – dann wird das nächstpassende, eindeutige Rätsel gewählt.
+  Die Schwierigkeit ist unabhängig von der Feldgröße. Da die Rätsel aus vorberechneten
+  Pools stammen (siehe unten), ist die gewählte Stufe immer exakt getroffen – auch bei
+  großen Feldern, wo z. B. sehr leichte Rätsel bei Live-Erzeugung selten wären.
 - **Schnellmodus:** Beim Setzen einer Dame werden alle dadurch ausgeschlossenen Felder
   automatisch gepunktet: die gesamte Zeile, Spalte, Farbregion und die angrenzenden Felder.
 
 Nur diese Einstellungen werden lokal (im `localStorage`) gespeichert, damit sie beim
 nächsten neuen Spiel wieder da sind. Es wird **kein** Spielstand und **kein** Highscore
 gespeichert – ein Seiten-Reload startet frisch.
+
+## Rätsel-Pools
+
+„Neues Spiel" startet sofort: Die Rätsel werden nicht live berechnet, sondern aus
+vorberechneten Pools in `levels/` gezogen (eine JSON-Datei pro Kombination aus
+Feldgröße und Schwierigkeit, je 50 Rätsel). Damit sich nichts einprägt, wird jedes
+gezogene Rätsel zufällig **gedreht oder gespiegelt** (8 Symmetrien) und bekommt wie
+bisher zufällige Farben – aus 50 gespeicherten Formen entstehen so hunderte
+unterscheidbare Bretter. Innerhalb einer Sitzung wiederholt sich keine Form, bevor
+nicht alle an der Reihe waren (nur im Speicher, nichts wird persistiert).
+
+Schlägt das Laden eines Pools fehl (z. B. offline geänderte Dateien), erzeugt das
+Spiel das Rätsel wie früher live im Hintergrund – es gibt also immer ein Brett.
+
+Die Pools werden mit `node tools/generate-levels.mjs` erzeugt und mit
+`node tools/verify-levels.mjs` geprüft (Eindeutigkeit, Schwierigkeit, Symmetrien,
+Lösbarkeit rein über Hinweise). Nach Änderungen an Generator-/Solver-Logik müssen
+beide erneut laufen.
 
 ## Deployment auf GitHub Pages
 
@@ -62,13 +81,18 @@ auch „Deploy from a branch" wählen und den Repo-Root (`/`) veröffentlichen.
 ## Projektstruktur
 
 ```
-index.html            – Seitengerüst
-css/styles.css        – Layout & responsives, mobiles Design
-js/solver.js          – Regeln, Lösungszählung, Logik-Solver (Schwierigkeitsbewertung)
-js/generator.js       – Rätselerzeugung mit garantiert eindeutiger Lösung
-js/game.js            – Spielzustand, Schnellmodus, Konflikt- & Gewinnerkennung
-js/settings.js        – Einstellungen (localStorage)
-js/main.js            – DOM-Anbindung, Rendering, Steuerung
+index.html                – Seitengerüst
+css/styles.css            – Layout & responsives, mobiles Design
+js/solver.js              – Regeln, Lösungszählung, Logik-Solver (Schwierigkeitsbewertung)
+js/generator.js           – Rätselerzeugung mit garantiert eindeutiger Lösung (Fallback & Pool-Erzeugung)
+js/levels.js              – Lädt die vorberechneten Pools, dreht/spiegelt zufällig
+js/game.js                – Spielzustand, Schnellmodus, Konflikt- & Gewinnerkennung
+js/hint.js                – Nächster logischer Schluss als erklärbarer Hinweis
+js/settings.js            – Einstellungen (localStorage)
+js/main.js                – DOM-Anbindung, Rendering, Steuerung
+levels/                   – Vorberechnete Rätsel-Pools (JSON, pro Größe × Schwierigkeit)
+tools/generate-levels.mjs – Erzeugt die Pools neu
+tools/verify-levels.mjs   – Prüft alle Pools (Eindeutigkeit, Stufe, Symmetrien, Hinweise)
 ```
 
 ## Lokal ausführen

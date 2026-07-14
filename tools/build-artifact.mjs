@@ -8,7 +8,7 @@
 // workers and external URLs are blocked by the Artifact CSP. If the sandbox
 // blocks blob workers too, the game's own fallback runs generation synchronously
 // and the reveal still plays.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -22,15 +22,33 @@ const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 function strip(code) {
   return code
     .replace(/^\s*import\s.*?;\s*$/gm, '')
-    .replace(/^\s*export\s+(const|let|var|function|class)\b/gm, '$1');
+    .replace(/^\s*export\s+((?:async\s+)?(?:const|let|var|function|class))\b/gm, '$1');
 }
 
 const settings = strip(read('js/settings.js'));
 const solver = strip(read('js/solver.js'));
 const generator = strip(read('js/generator.js'));
+const levels = strip(read('js/levels.js'));
 const game = strip(read('js/game.js'));
 const hint = strip(read('js/hint.js'));
 let main = strip(read('js/main.js'));
+
+// The Artifact CSP blocks fetch, so the level pools are embedded as the
+// global js/levels.js checks before fetching. Guard the handshake like the
+// worker line: if the global's name changes, the embed must not silently rot.
+if (!levels.includes('__QUEENS_LEVELS__')) {
+  throw new Error('js/levels.js no longer reads __QUEENS_LEVELS__ — pool embed would break');
+}
+const levelsDir = join(ROOT, 'levels');
+const pools = {};
+if (existsSync(levelsDir)) {
+  for (const f of readdirSync(levelsDir).filter((f) => f.endsWith('.json')).sort()) {
+    pools[f.replace('.json', '')] = JSON.parse(readFileSync(join(levelsDir, f), 'utf8'));
+  }
+}
+if (Object.keys(pools).length === 0) {
+  console.warn('warning: no levels/*.json found — bundle will fall back to live generation');
+}
 
 // Point the worker at the blob URL instead of a sibling module file.
 const workerExpr = "new Worker(new URL('./generator.worker.js', import.meta.url), { type: 'module' })";
@@ -45,8 +63,9 @@ const workerSrc =
   '  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs }));\n' +
   '};\n';
 
-// Page bundle: settings -> solver -> generator -> game -> hint -> main (boots).
-const pageBundle = [settings, solver, generator, game, hint, main].join('\n\n');
+// Page bundle: settings -> solver -> generator -> levels -> game -> hint ->
+// main (boots).
+const pageBundle = [settings, solver, generator, levels, game, hint, main].join('\n\n');
 
 const css = read('css/styles.css');
 
@@ -65,6 +84,7 @@ ${css}
 ${body}
 <script>
 "use strict";
+var __QUEENS_LEVELS__ = ${JSON.stringify(pools)};
 var __WORKER_URL__ = null;
 try {
   var __WORKER_SRC__ = ${JSON.stringify(workerSrc)};
