@@ -224,10 +224,10 @@ async function newGame() {
 // then reveals the finished board: colour regions flood in from their centres
 // while the board spins, easing back to 0deg — the orientation it was computed
 // with. A single requestAnimationFrame loop drives both phases.
-const MIN_COMPUTE_MS = 380; // minimum visible time for the "computing" bloom
-const SPIN_SPEED = 45; // deg per second while generating
-const ROT_EASE = 0.9; // seconds to unwind the rotation back to 0deg
-const CELL_TRANS = 0.5; // must match the CSS opacity transition on revealed cells
+const MIN_COMPUTE_MS = 540; // minimum visible time for the "computing" bloom
+const SPIN_SPEED = 32; // deg per second while generating
+const ROT_EASE = 1.3; // seconds to unwind the rotation back to 0deg
+const CELL_TRANS = 0.7; // must match the CSS opacity transition on revealed cells
 const SCALE_MIN = 0.7; // ~1/√2: keeps the spinning square inside its own box
 
 const intro = (() => {
@@ -330,7 +330,7 @@ const intro = (() => {
         rotBase = lastRot;
         rotTarget = Math.ceil((rotBase + 1e-6) / 360) * 360; // next 0deg, forward
         revealStart = performance.now();
-        revealDuration = Math.max(ROT_EASE, revealMaxDelay + CELL_TRANS) + 0.12;
+        revealDuration = Math.max(ROT_EASE, revealMaxDelay + CELL_TRANS) + 0.17;
         revealResolve = resolve;
         phase = 'reveal';
         void dom.board.offsetWidth; // register the hidden state before releasing it
@@ -353,7 +353,7 @@ const DIRS = [
 ];
 
 function regionRevealDelays(N, region) {
-  const PER = 0.055; // seconds per ring outward from a region's centre
+  const PER = 0.08; // seconds per ring outward from a region's centre
   const delays = Array.from({ length: N }, () => new Array(N).fill(0));
   const byReg = new Map();
   for (let r = 0; r < N; r++)
