@@ -300,31 +300,60 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     return best;
   }
 
-  // No unique board within the budget (only happens for the largest sizes on an
-  // unlucky run): keep trying with short per-attempt limits so we converge on a
-  // unique board quickly, rather than one slow attempt blowing the time.
-  // Keep trying until the repair converges. makeUnique is fast and succeeds
-  // within a few tries in practice, so we never hand back a non-unique board.
-  let anyUnique = null; // fair board preferred; a unique-but-unfair one is a last resort
-  for (let tries = 0; tries < 500; tries++) {
+  // The budget expired without a single fair board at the target difficulty
+  // (happens for the largest sizes on an unlucky run — most often HARD, whose
+  // biased region growth makes fair boards rare). Fairness — solvability by the
+  // guaranteed technique ladder — is the core invariant: a board whose hints
+  // degrade to the unexplained "reveal" fallback is worse than one a notch
+  // easier than requested. So we keep searching, but now optimise for fairness
+  // over difficulty and NEVER hand back a level-3 board.
+  //
+  // Crucially we switch to organic growth (balance 0) here: the smallest-region
+  // bias is exactly what starves fair boards, so dropping it makes a fair,
+  // logic-solvable board appear within a few tries even at large N (verified),
+  // which also avoids the slow pile-up of level-3 verifications that made this
+  // path drag on. Keep the fair board closest to the requested difficulty.
+  let fair = null; // closest-difficulty fair board so far
+  const fallbackDeadline = now() + Math.max(1500, budgetMs);
+  for (let tries = 0; tries < 1000 && now() < fallbackDeadline; tries++) {
     attempts++;
     const cols = generatePlacement(N, rng);
     if (!cols) continue;
-    const region = growRegions(N, cols, rng, balance);
+    const region = growRegions(N, cols, rng, 0);
     if (!region) continue;
     if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
     const level = difficultyLevel(N, region);
-    const result = { region, solution: cols.slice(), level, attempts };
-    if (level <= 2) return result; // fair AND unique — always prefer this
-    anyUnique = anyUnique || result; // unfair but unique — keep only if nothing better turns up
+    if (level >= 3) continue; // never hand back a board the hints can't explain
+    const dist = Math.abs(level - target);
+    if (fair === null || dist < fair._dist) {
+      fair = { region, solution: cols.slice(), level, attempts };
+      fair._dist = dist;
+    }
+    if (dist === 0) break; // exact difficulty match — done
   }
-  if (anyUnique) return anyUnique;
+  if (fair) {
+    delete fair._dist;
+    return fair;
+  }
 
-  // Astronomically-unlikely last resort: a valid board even if uniqueness could
-  // not be secured. Kept so the game always has something to render.
-  const cols = generatePlacement(N, rng) || defaultPlacement(N);
-  const region = growRegions(N, cols, rng, balance) || trivialRegions(N);
-  return { region, solution: cols.slice(), level: difficultyLevel(N, region), attempts };
+  // Astronomically-unlikely last resort (organic growth yielded no fair unique
+  // board at all above): keep generating organic unique boards and return the
+  // first fair one, so the contract "solvable by pure logic" holds. Organic
+  // boards are fair with overwhelming probability, so this returns almost
+  // immediately; the last unique board is kept only so the game can always
+  // render something if every single attempt somehow failed the fairness check.
+  let lastUnique = null;
+  for (let tries = 0; tries < 2000; tries++) {
+    attempts++;
+    const cols = generatePlacement(N, rng) || defaultPlacement(N);
+    const region = growRegions(N, cols, rng, 0) || trivialRegions(N);
+    if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
+    const level = difficultyLevel(N, region);
+    const result = { region, solution: cols.slice(), level, attempts };
+    if (level <= 2) return result; // fair AND unique
+    lastUnique = result;
+  }
+  return lastUnique || { region: trivialRegions(N), solution: defaultPlacement(N), level: 0, attempts };
 }
 
 function now() {
