@@ -40,6 +40,7 @@ const dom = {
   confetti: el('confetti'),
   partyClose: el('party-close'),
   winOverlay: el('win-overlay'),
+  winConfetti: el('win-confetti'),
   winTime: el('win-time'),
   winNewGame: el('win-new-game'),
   winSettings: el('win-settings'),
@@ -184,6 +185,7 @@ function generateAsync(N, difficulty, budgetMs) {
 async function newGame() {
   const myToken = ++genToken;
   hide(dom.winOverlay);
+  clearWinConfetti();
   dom.message.textContent = '';
   clearHint();
   game = null; // block interaction (pointer/hint/undo all bail on !game) while loading
@@ -552,8 +554,10 @@ function updateBoard() {
 
 function updateMessage() {
   if (game.isWon()) {
-    dom.message.textContent = 'Gelöst! 🎉';
-    dom.message.className = 'message ok';
+    // The win card below the board already says "Gelöst!", so keep the
+    // in-board message line empty to avoid a redundant second announcement.
+    dom.message.textContent = '';
+    dom.message.className = 'message';
     onWin();
   } else if (game.queenCount === game.N) {
     dom.message.textContent = 'Fast! Es gibt noch Konflikte.';
@@ -572,6 +576,25 @@ function onWin() {
   const s = String(total % 60).padStart(2, '0');
   dom.winTime.textContent = `Zeit: ${m}:${s}`;
   show(dom.winOverlay);
+  fireWinConfetti();
+}
+
+// A short celebratory confetti burst on a win — same pieces as the party-mode
+// Easter egg, but self-clearing after a few seconds so it doesn't linger over
+// the solved board. Skipped under reduced-motion, like the party confetti.
+let winConfettiTimer = null;
+function fireWinConfetti() {
+  clearWinConfetti();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  dom.winConfetti.appendChild(buildConfetti(80));
+  show(dom.winConfetti);
+  winConfettiTimer = setTimeout(clearWinConfetti, 4500);
+}
+function clearWinConfetti() {
+  if (winConfettiTimer) clearTimeout(winConfettiTimer);
+  winConfettiTimer = null;
+  hide(dom.winConfetti);
+  dom.winConfetti.innerHTML = '';
 }
 
 // ---------- Party mode (Easter egg) ----------
@@ -713,7 +736,8 @@ function cellAtPoint(x, y) {
 }
 
 dom.board.addEventListener('pointerdown', (e) => {
-  if (!game || hintActive) return;
+  if (!game || hintActive || game.isWon()) return; // solved board is locked
+
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const cell = e.target.closest('.cell');
   if (!cell) return;
@@ -989,6 +1013,7 @@ dom.newGame.addEventListener('click', newGame);
 dom.winNewGame.addEventListener('click', newGame);
 dom.winSettings.addEventListener('click', () => {
   hide(dom.winOverlay);
+  clearWinConfetti();
   openSettings();
 });
 dom.undo.addEventListener('click', () => {
@@ -1001,6 +1026,7 @@ dom.resetBoard.addEventListener('click', () => {
   pushUndo();
   game.reset();
   hide(dom.winOverlay);
+  clearWinConfetti();
   startTimer(); // clear the board -> clean clock
   updateBoard();
 });
