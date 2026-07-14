@@ -42,6 +42,7 @@ const dom = {
   winOverlay: el('win-overlay'),
   winTime: el('win-time'),
   winNewGame: el('win-new-game'),
+  winSettings: el('win-settings'),
   settingsOverlay: el('settings-overlay'),
   sizeRange: el('size-range'),
   sizeValue: el('size-value'),
@@ -986,6 +987,10 @@ dom.debugMode.addEventListener('change', () => {
 // ---------- Controls ----------
 dom.newGame.addEventListener('click', newGame);
 dom.winNewGame.addEventListener('click', newGame);
+dom.winSettings.addEventListener('click', () => {
+  hide(dom.winOverlay);
+  openSettings();
+});
 dom.undo.addEventListener('click', () => {
   clearHint();
   doUndo();

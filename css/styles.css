@@ -517,12 +517,15 @@ body {
 .overlay-card h2 {
   margin: 0 0 14px;
 }
-.win-emoji {
-  font-size: 3rem;
-  text-align: center;
-}
 .overlay-card p {
   color: var(--muted);
+}
+
+.win-card {
+  border: 2px solid rgba(23, 160, 106, 0.5);
+}
+.win-card .hint-card-title {
+  color: #17a06a;
 }
 
 /* ---------- Settings ---------- */
