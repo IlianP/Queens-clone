@@ -7,8 +7,9 @@
 //   node tools/generate-levels.mjs [--size N] [--difficulty easy|medium|hard]
 //                                  [--count 50] [--seed <int>]
 //
-// No flags = regenerate all 21 buckets (minutes; the N=11 buckets dominate —
-// exact-level hits there can take ~10 s each). Re-run this (then
+// No flags = regenerate all 22 buckets (5..11 in all three difficulties plus
+// hard-only at 12; minutes to tens of minutes — the N>=11 buckets dominate,
+// exact-level hits there can take tens of seconds each). Re-run this (then
 // tools/verify-levels.mjs) whenever generator/solver/difficulty logic changes,
 // or stored ratings drift from the code.
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -21,9 +22,16 @@ import { encodePuzzle, canonicalKey } from '../js/levels.js';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'levels');
 
-const SIZES = [5, 6, 7, 8, 9, 10, 11];
+const SIZES = [5, 6, 7, 8, 9, 10, 11, 12];
 const DIFFICULTIES = ['easy', 'medium', 'hard'];
 const LEVELS = { easy: 0, medium: 1, hard: 2 };
+
+// A 12x12 board is inherently hard: puzzles the easy/medium techniques can
+// solve essentially don't occur at that size (a naked-single-only 12x12 is
+// vanishingly rare), so we only pool "hard" there — matching the hard-only
+// difficulty lock the UI applies at size 12.
+const HARD_ONLY_FROM = 12;
+const difficultiesFor = (N) => (N >= HARD_ONLY_FROM ? ['hard'] : DIFFICULTIES);
 
 // ---------- CLI ----------
 const args = process.argv.slice(2);
@@ -102,7 +110,12 @@ mkdirSync(OUT_DIR, { recursive: true });
 console.log(`seed ${seed}, ${count} puzzles per bucket`);
 const t0 = Date.now();
 for (const N of onlySize !== null ? [onlySize] : SIZES) {
-  for (const difficulty of onlyDifficulty !== null ? [onlyDifficulty] : DIFFICULTIES) {
+  const buildable = difficultiesFor(N);
+  for (const difficulty of onlyDifficulty !== null ? [onlyDifficulty] : buildable) {
+    if (!buildable.includes(difficulty)) {
+      console.log(`skip ${N}-${difficulty}: size ${N} is hard-only`);
+      continue;
+    }
     // Bucket-specific stream so --size/--difficulty reruns of one bucket don't
     // shift the puzzles every other bucket would draw from the shared seed.
     const rng = mulberry32((seed ^ (N * 31 + LEVELS[difficulty])) >>> 0);

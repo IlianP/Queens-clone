@@ -99,7 +99,12 @@ random pool entry with a random D4 symmetry applied — all 8 rotations/mirrors
 preserve the rules, uniqueness, and difficulty rating, and colours are shuffled
 at render time anyway, so stored shapes aren't recognisable. Live worker
 generation stays as the fallback whenever `drawLevel` resolves `null` (missing
-or invalid pool), so the game never depends on the pools existing. The
+or invalid pool), so the game never depends on the pools existing. **Size 12 is
+hard-only**: an easy/medium 12×12 (solvable by naked-single / line↔region
+techniques) is vanishingly rare, so the UI locks difficulty to *Schwer* at size
+12 (`applyDifficultyConstraint` in `main.js`), `generate-levels.mjs` builds only
+the `12-hard` bucket (`difficultiesFor`), and no `12-easy`/`12-medium` pools
+exist. The
 in-session no-repeat shuffle-bag is memory-only by design — this project
 persists preferences, never game state. Constraints on `js/levels.js` (it is
 concatenated into the classic-script Artifact bundle): **no `import.meta`**

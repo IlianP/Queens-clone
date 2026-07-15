@@ -5,7 +5,7 @@ import { Game } from './game.js';
 import { computeHint } from './hint.js';
 import { loadSettings, saveSettings, clampSize } from './settings.js';
 
-// Distinct, mildly pastel region colours (supports up to 11 regions).
+// Distinct, mildly pastel region colours (supports up to 12 regions).
 const PALETTE = [
   '#ff8a8a', '#ffb26b', '#ffe066', '#c1e15b', '#7ed99a', '#66d9cd',
   '#79c7ff', '#8aa2ff', '#bd93f9', '#ff9ed8', '#d0a679', '#c9cdd6',
@@ -48,6 +48,7 @@ const dom = {
   sizeRange: el('size-range'),
   sizeValue: el('size-value'),
   difficulty: el('difficulty'),
+  difficultyHint: el('difficulty-hint'),
   quickMode: el('quick-mode'),
   introAnimation: el('intro-animation'),
   settingsApply: el('settings-apply'),
@@ -55,6 +56,9 @@ const dom = {
 };
 
 let settings = loadSettings();
+// Size 12 is hard-only (see applyDifficultyConstraint) — normalise a persisted
+// or stale easy/medium choice so the first board matches what the modal allows.
+if (settings.size >= 12) settings.difficulty = 'hard';
 let game = null;
 let currentSolution = null; // cols[r] of the unique solution (for hints)
 let cells = []; // cells[r][c] -> HTMLElement
@@ -194,7 +198,7 @@ async function newGame() {
 
   const N = settings.size;
   const difficulty = settings.difficulty;
-  const budgetMs = N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
+  const budgetMs = N >= 12 ? 5200 : N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
   const animate = introEnabled();
 
   if (animate) intro.startCompute(N);
@@ -1043,6 +1047,7 @@ function openSettings() {
   dom.sizeRange.value = settings.size;
   dom.sizeValue.textContent = settings.size;
   setDifficultyUI(settings.difficulty);
+  applyDifficultyConstraint(settings.size);
   dom.quickMode.checked = settings.quickMode;
   dom.introAnimation.checked = settings.introAnimation;
   dom.debugMode.checked = settings.debug;
@@ -1051,17 +1056,30 @@ function openSettings() {
 
 dom.sizeRange.addEventListener('input', () => {
   dom.sizeValue.textContent = dom.sizeRange.value;
+  applyDifficultyConstraint(dom.sizeRange.value);
 });
 
 dom.difficulty.addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-value]');
-  if (!btn) return;
+  if (!btn || btn.disabled) return;
   setDifficultyUI(btn.dataset.value);
 });
 function setDifficultyUI(value) {
   for (const btn of dom.difficulty.querySelectorAll('button')) {
     btn.setAttribute('aria-checked', String(btn.dataset.value === value));
   }
+}
+// A 12x12 board is inherently hard: puzzles solvable by the easy/medium
+// techniques essentially don't exist at that size, so lock the choice to
+// "Schwer" (and force it) whenever the slider sits at 12.
+const HARD_ONLY_SIZE = 12;
+function applyDifficultyConstraint(size) {
+  const hardOnly = Number(size) >= HARD_ONLY_SIZE;
+  for (const btn of dom.difficulty.querySelectorAll('button')) {
+    btn.disabled = hardOnly && btn.dataset.value !== 'hard';
+  }
+  if (hardOnly) setDifficultyUI('hard');
+  dom.difficultyHint.hidden = !hardOnly;
 }
 function currentDifficultyUI() {
   const active = dom.difficulty.querySelector('button[aria-checked="true"]');
@@ -1087,7 +1105,7 @@ dom.introAnimation.addEventListener('change', () => {
 
 dom.settingsApply.addEventListener('click', () => {
   settings.size = clampSize(dom.sizeRange.value);
-  settings.difficulty = currentDifficultyUI();
+  settings.difficulty = settings.size >= HARD_ONLY_SIZE ? 'hard' : currentDifficultyUI();
   settings.quickMode = dom.quickMode.checked;
   settings.introAnimation = dom.introAnimation.checked;
   saveSettings(settings);

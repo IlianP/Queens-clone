@@ -22,7 +22,7 @@ const LEVEL_POOL_VERSION = 1;
 
 // ---------- encoding ----------
 // region -> N*N base-36 chars row-major, solution -> N base-36 chars
-// (cols[r] = queen column in row r). N <= 11 so every value fits one char.
+// (cols[r] = queen column in row r). N <= 12 so every value fits one char.
 
 export function encodePuzzle(N, region, solution) {
   let r = '';

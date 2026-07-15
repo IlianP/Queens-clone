@@ -604,6 +604,10 @@ body {
   background: var(--accent);
   color: var(--accent-ink);
 }
+.segmented button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .toggle-field {
   display: flex;
