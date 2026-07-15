@@ -30,15 +30,19 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 
 ## Einstellungen (⚙)
 
-- **Feldgröße:** 5 bis 11.
+- **Feldgröße:** 5 bis 12. Bei **12** sind ausschließlich schwere Rätsel möglich –
+  ein 12×12-Feld ist von Natur aus schwer, „leichte“/„mittlere“ Rätsel dieser Größe
+  existieren praktisch nicht –, deshalb wird die Schwierigkeit dort auf *Schwer*
+  festgelegt.
 - **Schwierigkeit:**
   - *Leicht* – lösbar allein durch „nur ein Feld übrig"-Schlüsse.
   - *Mittel* – benötigt zusätzlich Zeilen-/Spalten-↔-Regionen-Schlüsse.
   - *Schwer* – benötigt eine vorausschauende (Widerspruchs-)Deduktion.
 
-  Die Schwierigkeit ist unabhängig von der Feldgröße. Da die Rätsel aus vorberechneten
-  Pools stammen (siehe unten), ist die gewählte Stufe immer exakt getroffen – auch bei
-  großen Feldern, wo z. B. sehr leichte Rätsel bei Live-Erzeugung selten wären.
+  Die Schwierigkeit ist (bis Feldgröße 11) unabhängig von der Feldgröße. Da die Rätsel
+  aus vorberechneten Pools stammen (siehe unten), ist die gewählte Stufe immer exakt
+  getroffen – auch bei großen Feldern, wo z. B. sehr leichte Rätsel bei Live-Erzeugung
+  selten wären.
 - **Schnellmodus:** Beim Setzen einer Dame werden alle dadurch ausgeschlossenen Felder
   automatisch gepunktet: die gesamte Zeile, Spalte, Farbregion und die angrenzenden Felder.
 
@@ -50,7 +54,8 @@ gespeichert – ein Seiten-Reload startet frisch.
 
 „Neues Spiel" startet sofort: Die Rätsel werden nicht live berechnet, sondern aus
 vorberechneten Pools in `levels/` gezogen (eine JSON-Datei pro Kombination aus
-Feldgröße und Schwierigkeit, je 50 Rätsel). Damit sich nichts einprägt, wird jedes
+Feldgröße und Schwierigkeit, je 50 Rätsel; Feldgröße 12 hat nur einen
+`schwer`-Pool). Damit sich nichts einprägt, wird jedes
 gezogene Rätsel zufällig **gedreht oder gespiegelt** (8 Symmetrien) und bekommt wie
 bisher zufällige Farben – aus 50 gespeicherten Formen entstehen so hunderte
 unterscheidbare Bretter. Innerhalb einer Sitzung wiederholt sich keine Form, bevor

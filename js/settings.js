@@ -5,7 +5,7 @@
 const KEY = 'queens-clone-settings';
 
 export const MIN_SIZE = 5;
-export const MAX_SIZE = 11;
+export const MAX_SIZE = 12;
 export const DEFAULTS = {
   size: 8,
   difficulty: 'medium',

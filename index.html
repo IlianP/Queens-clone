@@ -69,7 +69,7 @@
         <label class="field">
           <span class="field-label">Feldgröße</span>
           <div class="range-row">
-            <input type="range" id="size-range" min="5" max="11" step="1" />
+            <input type="range" id="size-range" min="5" max="12" step="1" />
             <span class="range-value" id="size-value">8</span>
           </div>
         </label>
@@ -81,6 +81,9 @@
             <button type="button" data-value="medium" role="radio">Mittel</button>
             <button type="button" data-value="hard" role="radio">Schwer</button>
           </div>
+          <span class="field-hint" id="difficulty-hint" hidden
+            >Bei Feldgröße 12 sind nur schwere Rätsel möglich.</span
+          >
         </div>
 
         <label class="field toggle-field">
