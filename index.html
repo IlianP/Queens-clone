@@ -32,8 +32,11 @@
         <div class="message" id="message"></div>
         <!-- Prüf-Status: kurze Rückmeldung "Fehlerfrei?" ohne Position oder
              Hinweis. Wird per Button ausgelöst oder – wenn aktiviert – als
-             Live-Lämpchen automatisch aktualisiert. -->
-        <div class="check-status" id="check-status" role="status" aria-live="polite" hidden></div>
+             Live-Lämpchen automatisch aktualisiert. The slot reserves the pill's
+             height at all times so showing/hiding it never nudges the board. -->
+        <div class="check-slot">
+          <div class="check-status" id="check-status" role="status" aria-live="polite" hidden></div>
+        </div>
       </main>
 
       <div class="actions">

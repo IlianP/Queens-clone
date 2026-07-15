@@ -470,12 +470,19 @@ body {
 
 /* Prüf-Status lamp: a small pill with a coloured dot. Only ever a yes/no —
    never reveals a position. Colours mirror the message line (ok green /
-   error red). Hidden until a check has run. */
+   error red). Hidden until a check has run. The slot keeps a fixed height even
+   while the pill is hidden, so the live lamp appearing/disappearing never
+   reflows the board (which would jump under the player's finger mid-tap). */
+.check-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+}
 .check-status {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  align-self: center;
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 0.9rem;
@@ -561,6 +568,13 @@ body {
   width: min(420px, 100%);
   box-shadow: var(--shadow);
   animation: rise 0.2s ease;
+  /* Cap the card to the viewport (minus the overlay's padding) and let it scroll
+     internally, so a tall settings list never pushes the buttons off-screen —
+     e.g. on a short split-screen window. dvh tracks the mobile URL bar. */
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 @keyframes rise {
   from {
