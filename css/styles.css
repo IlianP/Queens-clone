@@ -468,6 +468,60 @@ body {
   color: #17a06a;
 }
 
+/* Prüf-Status lamp: a small pill with a coloured dot. Only ever a yes/no —
+   never reveals a position. Colours mirror the message line (ok green /
+   error red). Hidden until a check has run. */
+.check-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid transparent;
+  animation: check-pop 0.18s ease;
+}
+.check-status[hidden] {
+  display: none;
+}
+.check-status::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+  flex: none;
+}
+.check-status.ok {
+  color: #17a06a;
+  background: color-mix(in srgb, #17a06a 12%, var(--panel));
+  border-color: color-mix(in srgb, #17a06a 35%, transparent);
+}
+.check-status.error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+@keyframes check-pop {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .check-status {
+    animation: none;
+  }
+}
+
 .actions {
   display: flex;
   justify-content: center;

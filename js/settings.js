@@ -12,6 +12,7 @@ export const DEFAULTS = {
   quickMode: true,
   debug: false,
   introAnimation: true,
+  liveCheck: false,
 };
 
 export function clampSize(n) {
@@ -32,6 +33,7 @@ export function loadSettings() {
       debug: typeof s.debug === 'boolean' ? s.debug : DEFAULTS.debug,
       introAnimation:
         typeof s.introAnimation === 'boolean' ? s.introAnimation : DEFAULTS.introAnimation,
+      liveCheck: typeof s.liveCheck === 'boolean' ? s.liveCheck : DEFAULTS.liveCheck,
     };
   } catch (e) {
     return { ...DEFAULTS };
