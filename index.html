@@ -23,6 +23,7 @@
             <span class="timer" id="timer">0:00</span>
           </div>
           <button class="btn" id="new-game" type="button">Neues Spiel</button>
+          <button class="btn icon" id="open-leaderboard" type="button" aria-label="Bestenliste" title="Bestenliste">🏆</button>
           <button class="btn icon" id="open-settings" type="button" aria-label="Einstellungen" title="Einstellungen">⚙</button>
         </div>
       </header>
@@ -54,7 +55,30 @@
          buttons sit within thumb reach on mobile). -->
     <div class="hint-card win-card" id="win-overlay" hidden>
       <div class="hint-card-title">🎉 Gelöst!</div>
-      <p class="hint-card-text" id="win-time"></p>
+      <p class="hint-card-text win-summary" id="win-time"></p>
+
+      <div class="score-panel">
+        <div class="score-tabs" id="win-tabs" hidden>
+          <button class="score-tab" id="win-tab-local" type="button" aria-selected="true">Lokal</button>
+          <button class="score-tab" id="win-tab-global" type="button" aria-selected="false">Global 🌐</button>
+        </div>
+        <div class="score-list" id="win-scores"></div>
+      </div>
+
+      <div class="win-entry">
+        <input
+          class="nickname-input"
+          id="win-nickname"
+          type="text"
+          maxlength="20"
+          placeholder="Dein Name"
+          autocomplete="nickname"
+          aria-label="Dein Name für die Bestenliste"
+        />
+        <button class="btn primary" id="win-submit" type="button">Eintragen</button>
+      </div>
+      <p class="win-submit-status" id="win-submit-status" aria-live="polite"></p>
+
       <div class="hint-card-buttons">
         <button class="btn primary" id="win-new-game" type="button">Neues Spiel</button>
         <button class="btn subtle" id="win-settings" type="button">⚙ Einstellungen</button>
@@ -115,6 +139,44 @@
         <div class="settings-buttons">
           <button class="btn primary" id="settings-apply" type="button">Übernehmen &amp; neues Spiel</button>
           <button class="btn subtle" id="settings-close" type="button">Schließen</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bestenliste (browse best times for any size × difficulty, on-device
+         and — when configured — the global leaderboard). -->
+    <div class="overlay" id="leaderboard-overlay" hidden>
+      <div class="overlay-card leaderboard-card">
+        <h2>🏆 Bestenliste</h2>
+
+        <div class="field">
+          <span class="field-label">Feldgröße</span>
+          <div class="range-row">
+            <input type="range" id="lb-size-range" min="5" max="12" step="1" />
+            <span class="range-value" id="lb-size-value">8</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Schwierigkeit</span>
+          <div class="segmented" id="lb-difficulty" role="radiogroup" aria-label="Schwierigkeit">
+            <button type="button" data-value="easy" role="radio">Leicht</button>
+            <button type="button" data-value="medium" role="radio">Mittel</button>
+            <button type="button" data-value="hard" role="radio">Schwer</button>
+          </div>
+          <span class="field-hint" id="lb-difficulty-hint" hidden
+            >Bei Feldgröße 12 sind nur schwere Rätsel möglich.</span
+          >
+        </div>
+
+        <div class="score-tabs" id="lb-tabs" hidden>
+          <button class="score-tab" id="lb-tab-local" type="button" aria-selected="true">Lokal</button>
+          <button class="score-tab" id="lb-tab-global" type="button" aria-selected="false">Global 🌐</button>
+        </div>
+        <div class="score-list lb-list" id="lb-scores"></div>
+
+        <div class="settings-buttons">
+          <button class="btn subtle" id="lb-close" type="button">Schließen</button>
         </div>
       </div>
     </div>

@@ -21,7 +21,8 @@ const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 // `grep -nE '^(export )?(const|let|var|function|class)'` if you add files.)
 function strip(code) {
   return code
-    .replace(/^\s*import\s.*?;\s*$/gm, '')
+    // Drop import statements — single- OR multi-line, up to the terminating ';'.
+    .replace(/^\s*import\s[\s\S]*?;[ \t]*$/gm, '')
     .replace(/^\s*export\s+((?:async\s+)?(?:const|let|var|function|class))\b/gm, '$1');
 }
 
@@ -29,8 +30,10 @@ const settings = strip(read('js/settings.js'));
 const solver = strip(read('js/solver.js'));
 const generator = strip(read('js/generator.js'));
 const levels = strip(read('js/levels.js'));
+const highscores = strip(read('js/highscores.js'));
 const game = strip(read('js/game.js'));
 const hint = strip(read('js/hint.js'));
+const leaderboard = strip(read('js/leaderboard.js'));
 let main = strip(read('js/main.js'));
 
 // The Artifact CSP blocks fetch, so the level pools are embedded as the
@@ -63,9 +66,19 @@ const workerSrc =
   '  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs }));\n' +
   '};\n';
 
-// Page bundle: settings -> solver -> generator -> levels -> game -> hint ->
-// main (boots).
-const pageBundle = [settings, solver, generator, levels, game, hint, main].join('\n\n');
+// Page bundle: settings -> solver -> generator -> levels -> highscores ->
+// game -> hint -> leaderboard -> main (boots). The online leaderboard's fetch
+// calls are CSP-blocked inside the Artifact, so it stays disabled there and the
+// bundle runs local-only — the same graceful fallback the game uses elsewhere.
+const pageBundle = [settings, solver, generator, levels, highscores, game, hint, leaderboard, main].join(
+  '\n\n'
+);
+
+// Safety net: a surviving `import`/`export` means strip() missed a form (e.g. a
+// new multi-line import) and the classic-script bundle would throw at load.
+if (/^\s*(import|export)\s/m.test(pageBundle)) {
+  throw new Error('bundle still contains an import/export statement — strip() needs updating');
+}
 
 const css = read('css/styles.css');
 

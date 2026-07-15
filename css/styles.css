@@ -550,6 +550,157 @@ body {
   display: none;
 }
 
+/* ---------- Highscores (win card + Bestenliste) ---------- */
+/* Result summary: the ranked "Ergebnis" (effective time) big, with the raw
+   time / hints / mistakes breakdown underneath. */
+.win-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+.win-score {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #17a06a;
+  font-variant-numeric: tabular-nums;
+}
+.win-breakdown {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.score-panel {
+  margin-bottom: 12px;
+}
+
+/* Lokal / Global toggle (only shown when the online leaderboard is configured). */
+.score-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--bg);
+  padding: 4px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.score-tabs[hidden] {
+  display: none;
+}
+.score-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.score-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.score-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.score-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.score-row:nth-child(odd) {
+  background: rgba(128, 128, 128, 0.08);
+}
+.score-rank {
+  min-width: 1.8em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.score-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.score-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--ink);
+}
+/* The just-solved / own entry, called out in the list. */
+.score-row.me {
+  background: rgba(23, 160, 106, 0.16);
+  box-shadow: inset 0 0 0 1.5px rgba(23, 160, 106, 0.5);
+}
+.score-empty {
+  padding: 12px 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* Name field + submit button on the win card. */
+.win-entry {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.win-entry[hidden] {
+  display: none;
+}
+.nickname-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--cell-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 1rem;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--ink);
+}
+.nickname-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.win-entry .btn {
+  flex: 0 0 auto;
+}
+.win-submit-status {
+  margin: 0 0 10px;
+  min-height: 1.1em;
+  font-size: 0.85rem;
+  text-align: center;
+  color: var(--muted);
+}
+.win-submit-status.ok {
+  color: #17a06a;
+}
+.win-submit-status.err {
+  color: var(--danger);
+}
+.win-submit-status:empty {
+  display: none;
+  margin: 0;
+}
+
+.leaderboard-card .lb-list {
+  min-height: 84px;
+}
+
 /* ---------- Settings ---------- */
 .field {
   display: block;

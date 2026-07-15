@@ -46,9 +46,44 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 - **Schnellmodus:** Beim Setzen einer Dame werden alle dadurch ausgeschlossenen Felder
   automatisch gepunktet: die gesamte Zeile, Spalte, Farbregion und die angrenzenden Felder.
 
-Nur diese Einstellungen werden lokal (im `localStorage`) gespeichert, damit sie beim
-nächsten neuen Spiel wieder da sind. Es wird **kein** Spielstand und **kein** Highscore
-gespeichert – ein Seiten-Reload startet frisch.
+Diese Einstellungen, der zuletzt genutzte Name und die lokalen Bestzeiten werden im
+`localStorage` gespeichert (siehe *Bestenliste* unten). Ein laufender **Spielstand**
+wird dagegen **nicht** gespeichert – ein Seiten-Reload startet ein frisches Rätsel.
+
+## Bestenliste
+
+Nach dem Lösen zeigt der Gewinn-Bildschirm ein **Ergebnis** und fragt, ob du dich
+eintragen möchtest. Das Ergebnis ist eine „effektive Zeit": die reine Lösezeit plus
+ein Aufschlag pro genutztem **Tipp** (+30 s) und pro **Fehler** (+15 s, eine Dame
+abseits der eindeutigen Lösung). Kleiner ist besser. Jede Kombination aus Feldgröße
+und Schwierigkeit hat eine eigene Rangliste; über 🏆 lässt sich jede davon durchblättern.
+
+- **Lokal:** Bestzeiten werden immer auf dem Gerät gespeichert (Top 10 je Rangliste),
+  ganz ohne Server. Der zuletzt eingegebene Name wird gemerkt, damit er nach jeder
+  Runde schon vorausgefüllt ist.
+- **Global (optional):** Ist eine Online-Rangliste eingerichtet, erscheint zusätzlich
+  ein **Eintragen**-Button und ein *Global*-Tab. Ohne Einrichtung läuft alles rein
+  lokal weiter – Online ist nie Voraussetzung.
+
+### Online-Rangliste einrichten (optional, Supabase)
+
+GitHub Pages liefert nur statische Dateien aus, das Spiel kann aber trotzdem per
+`fetch()` eine Online-Rangliste ansprechen. Als Backend genügt ein kostenloses
+[Supabase](https://supabase.com)-Projekt – der eigene Server wird nicht gebraucht.
+
+1. Supabase-Projekt anlegen.
+2. `docs/leaderboard-setup.sql` im **SQL-Editor** des Projekts ausführen. Das legt die
+   Tabelle sowie die geprüften Funktionen `submit_score` / `top_scores` an (die
+   serverseitige Plausibilitätsprüfung = der Missbrauchsschutz).
+3. In `js/leaderboard.js` die **Projekt-URL** und den **öffentlichen anon-Key**
+   eintragen. Beide Werte dürfen im Browser stehen; der `service_role`-Key gehört
+   **niemals** dorthin.
+
+**Ehrlicher Hinweis:** Da der Browser die Zeit selbst meldet, ist keine solche
+Rangliste manipulationssicher. Die Serverprüfungen (unmögliche Zeiten ablehnen,
+Werte begrenzen, Best-Effort Rate-Limit) halten nur groben Unfug ab – für ein
+Hobbyspiel genug, kein Turnier-Anspruch. Statt roher IP wird nur ein gesalzener
+Tageshash fürs Rate-Limit gespeichert.
 
 ## Rätsel-Pools
 
@@ -93,11 +128,15 @@ js/generator.js           – Rätselerzeugung mit garantiert eindeutiger Lösun
 js/levels.js              – Lädt die vorberechneten Pools, dreht/spiegelt zufällig
 js/game.js                – Spielzustand, Schnellmodus, Konflikt- & Gewinnerkennung
 js/hint.js                – Nächster logischer Schluss als erklärbarer Hinweis
-js/settings.js            – Einstellungen (localStorage)
+js/highscores.js          – Score-Modell & lokale Bestzeiten (localStorage)
+js/leaderboard.js         – Optionale globale Online-Rangliste (Supabase, fällt still auf lokal zurück)
+js/settings.js            – Einstellungen & letzter Name (localStorage)
 js/main.js                – DOM-Anbindung, Rendering, Steuerung
 levels/                   – Vorberechnete Rätsel-Pools (JSON, pro Größe × Schwierigkeit)
+docs/leaderboard-setup.sql – SQL zum Einrichten der optionalen Supabase-Rangliste
 tools/generate-levels.mjs – Erzeugt die Pools neu
 tools/verify-levels.mjs   – Prüft alle Pools (Eindeutigkeit, Stufe, Symmetrien, Hinweise)
+tools/build-artifact.mjs  – Bündelt die App in eine Datei (Mobil-Test als Artifact)
 ```
 
 ## Lokal ausführen

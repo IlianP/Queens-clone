@@ -3,7 +3,15 @@ import { generatePuzzle } from './generator.js';
 import { drawLevel } from './levels.js';
 import { Game } from './game.js';
 import { computeHint } from './hint.js';
-import { loadSettings, saveSettings, clampSize } from './settings.js';
+import { loadSettings, saveSettings, clampSize, sanitizeNickname } from './settings.js';
+import {
+  computeScore,
+  sanitizeName,
+  getLocalScores,
+  saveLocalScore,
+  previewRank,
+} from './highscores.js';
+import { leaderboardConfigured, submitScore, fetchTopScores } from './leaderboard.js';
 
 // Distinct, mildly pastel region colours (supports up to 12 regions).
 const PALETTE = [
@@ -42,8 +50,26 @@ const dom = {
   winOverlay: el('win-overlay'),
   winConfetti: el('win-confetti'),
   winTime: el('win-time'),
+  winTabs: el('win-tabs'),
+  winTabLocal: el('win-tab-local'),
+  winTabGlobal: el('win-tab-global'),
+  winScores: el('win-scores'),
+  winNickname: el('win-nickname'),
+  winSubmit: el('win-submit'),
+  winSubmitStatus: el('win-submit-status'),
   winNewGame: el('win-new-game'),
   winSettings: el('win-settings'),
+  openLeaderboard: el('open-leaderboard'),
+  leaderboardOverlay: el('leaderboard-overlay'),
+  lbSizeRange: el('lb-size-range'),
+  lbSizeValue: el('lb-size-value'),
+  lbDifficulty: el('lb-difficulty'),
+  lbDifficultyHint: el('lb-difficulty-hint'),
+  lbTabs: el('lb-tabs'),
+  lbTabLocal: el('lb-tab-local'),
+  lbTabGlobal: el('lb-tab-global'),
+  lbScores: el('lb-scores'),
+  lbClose: el('lb-close'),
   settingsOverlay: el('settings-overlay'),
   sizeRange: el('size-range'),
   sizeValue: el('size-value'),
@@ -66,6 +92,16 @@ let colorMap = []; // color for each region id
 let lastPlaced = null;
 let hintActive = false;
 let currentHint = null;
+
+// Score inputs for the current attempt (reset with the clock in startTimer):
+// hints revealed and queens placed off the unique solution. Both feed the win
+// score (see js/highscores.js). onWin() runs once per solve, guarded by
+// winHandled; pendingWin holds that result until it's committed to the local
+// list (on submit, or when the board is left).
+let hintsUsed = 0;
+let mistakes = 0;
+let winHandled = false;
+let pendingWin = null; // { size, difficulty, seconds, hints, mistakes, score, saved }
 
 // ---------- Timer ----------
 // Only counts while the window is focused/visible. Time is accumulated across
@@ -94,11 +130,15 @@ function untick() {
   timerId = null;
 }
 function startTimer() {
-  // Fresh clock for a new/reset board.
+  // Fresh clock for a new/reset board — also resets the score counters and the
+  // win guard so the next solve is scored from scratch.
   untick();
   timerAccumMs = 0;
   timerRunStart = isWindowActive() ? Date.now() : 0;
   timerDone = false;
+  hintsUsed = 0;
+  mistakes = 0;
+  winHandled = false;
   if (timerRunStart) tick();
   renderTime();
 }
@@ -187,6 +227,7 @@ function generateAsync(N, difficulty, budgetMs) {
 }
 
 async function newGame() {
+  flushPendingWin(); // record the last solve locally if it wasn't submitted
   const myToken = ++genToken;
   hide(dom.winOverlay);
   clearWinConfetti();
@@ -572,15 +613,192 @@ function updateMessage() {
   }
 }
 
+// ---------- Win / highscores ----------
+let winTab = 'local'; // which list the win card shows: 'local' | 'global'
+
+function fmtTime(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
+function plural(n, one, many) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+function setStatus(node, text, kind = '') {
+  node.textContent = text;
+  node.className = 'win-submit-status' + (kind ? ' ' + kind : '');
+}
+
+// Render score entries into a container. Names may come from other players via
+// the global leaderboard, so they go in with textContent (never innerHTML) to
+// keep untrusted text inert. highlightIdx (0-based) marks the player's own row.
+function renderScoreList(container, entries, highlightIdx = -1) {
+  container.innerHTML = '';
+  if (!entries || entries.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'score-empty';
+    empty.textContent = 'Noch keine Einträge – sei die/der Erste!';
+    container.appendChild(empty);
+    return;
+  }
+  entries.forEach((e, i) => {
+    const row = document.createElement('div');
+    row.className = 'score-row' + (i === highlightIdx ? ' me' : '');
+    row.title = `Zeit ${fmtTime(e.seconds)} · ${plural(e.hints, 'Tipp', 'Tipps')} · ${plural(
+      e.mistakes,
+      'Fehler',
+      'Fehler'
+    )}`;
+    const rank = document.createElement('span');
+    rank.className = 'score-rank';
+    rank.textContent = `${i + 1}.`;
+    const name = document.createElement('span');
+    name.className = 'score-name';
+    name.textContent = e.name || 'Anonym';
+    const val = document.createElement('span');
+    val.className = 'score-val';
+    val.textContent = fmtTime(e.score);
+    row.append(rank, name, val);
+    container.appendChild(row);
+  });
+}
+
 function onWin() {
+  if (winHandled) return; // fire once per solve (updateBoard can re-run while won)
+  winHandled = true;
   clearHint();
   stopTimer();
-  const total = currentElapsed();
-  const m = Math.floor(total / 60);
-  const s = String(total % 60).padStart(2, '0');
-  dom.winTime.textContent = `Zeit: ${m}:${s}`;
+
+  const seconds = currentElapsed();
+  const score = computeScore(seconds, hintsUsed, mistakes);
+  pendingWin = {
+    size: game.N,
+    difficulty: settings.difficulty,
+    seconds,
+    hints: hintsUsed,
+    mistakes,
+    score,
+    saved: false,
+  };
+
+  // Summary: the ranked "Ergebnis" (effective time) with the raw breakdown.
+  dom.winTime.innerHTML =
+    `<span class="win-score">${fmtTime(score)}</span>` +
+    `<span class="win-breakdown">Zeit ${fmtTime(seconds)} · ${plural(
+      hintsUsed,
+      'Tipp',
+      'Tipps'
+    )} · ${plural(mistakes, 'Fehler', 'Fehler')}</span>`;
+
+  dom.winNickname.value = settings.nickname || '';
+  dom.winSubmit.disabled = false;
+  dom.winSubmit.textContent = leaderboardConfigured() ? 'Eintragen' : 'Speichern';
+  setStatus(dom.winSubmitStatus, '');
+  dom.winTabs.hidden = !leaderboardConfigured();
+  selectWinTab('local');
+
   show(dom.winOverlay);
   fireWinConfetti();
+}
+
+function selectWinTab(tab) {
+  winTab = tab;
+  dom.winTabLocal.setAttribute('aria-selected', String(tab === 'local'));
+  dom.winTabGlobal.setAttribute('aria-selected', String(tab === 'global'));
+  if (tab === 'local') renderWinLocal();
+  else renderWinGlobal();
+}
+
+function renderWinLocal() {
+  if (!pendingWin) return;
+  const { size, difficulty } = pendingWin;
+  if (pendingWin.saved) {
+    renderScoreList(dom.winScores, getLocalScores(size, difficulty), pendingWin.savedRank);
+    return;
+  }
+  // Not committed yet: preview where this solve would land in the local list.
+  const list = getLocalScores(size, difficulty).slice();
+  const rank = previewRank(size, difficulty, pendingWin.score);
+  list.splice(rank, 0, {
+    name: sanitizeNickname(dom.winNickname.value) || 'Du',
+    seconds: pendingWin.seconds,
+    hints: pendingWin.hints,
+    mistakes: pendingWin.mistakes,
+    score: pendingWin.score,
+  });
+  renderScoreList(dom.winScores, list.slice(0, 10), rank);
+}
+
+async function renderWinGlobal() {
+  if (!pendingWin) return;
+  renderScoreList(dom.winScores, [], -1);
+  dom.winScores.firstChild.textContent = 'Lade globale Bestenliste …';
+  const { size, difficulty } = pendingWin;
+  const rows = await fetchTopScores(size, difficulty, 10);
+  if (winTab !== 'global') return; // switched away while loading
+  if (!rows) {
+    renderScoreList(dom.winScores, [], -1);
+    dom.winScores.firstChild.textContent = 'Globale Bestenliste nicht erreichbar.';
+    return;
+  }
+  renderScoreList(dom.winScores, rows, -1);
+}
+
+// Persist the pending win to the on-device list exactly once.
+function commitPendingWin(name) {
+  if (!pendingWin || pendingWin.saved) return;
+  const entryName = sanitizeName(name) || 'Anonym';
+  const { rank } = saveLocalScore(pendingWin.size, pendingWin.difficulty, {
+    name: entryName,
+    seconds: pendingWin.seconds,
+    hints: pendingWin.hints,
+    mistakes: pendingWin.mistakes,
+    score: pendingWin.score,
+  });
+  pendingWin.saved = true;
+  pendingWin.savedRank = rank;
+}
+
+// Called when the board is left (new game / reset): record an un-submitted win
+// locally with the remembered nickname so personal bests are never lost.
+function flushPendingWin() {
+  if (pendingWin && !pendingWin.saved) commitPendingWin(settings.nickname);
+  pendingWin = null;
+}
+
+async function onWinSubmit() {
+  if (!pendingWin) return;
+  const typed = sanitizeNickname(dom.winNickname.value);
+  if (typed) {
+    settings.nickname = typed; // remember a real name for next time
+    saveSettings(settings);
+  }
+  const name = typed || settings.nickname || 'Anonym';
+
+  commitPendingWin(name); // always record locally first
+  if (winTab === 'local') renderWinLocal();
+
+  if (!leaderboardConfigured()) {
+    dom.winSubmit.disabled = true;
+    setStatus(dom.winSubmitStatus, 'Lokal gespeichert ✓', 'ok');
+    return;
+  }
+
+  dom.winSubmit.disabled = true;
+  setStatus(dom.winSubmitStatus, 'Sende an globale Bestenliste …');
+  const res = await submitScore({
+    name,
+    size: pendingWin.size,
+    difficulty: pendingWin.difficulty,
+    seconds: pendingWin.seconds,
+    hints: pendingWin.hints,
+    mistakes: pendingWin.mistakes,
+  });
+  if (res && Number.isFinite(res.rank)) {
+    setStatus(dom.winSubmitStatus, `Global eingetragen: Platz ${res.rank} von ${res.total} 🌐`, 'ok');
+    selectWinTab('global');
+  } else {
+    setStatus(dom.winSubmitStatus, 'Global nicht erreichbar – lokal gespeichert ✓', 'err');
+  }
 }
 
 // A short celebratory confetti burst on a win — same pieces as the party-mode
@@ -701,8 +919,12 @@ function doUndo() {
   game.queenCount = s.queenCount;
   hide(dom.winOverlay);
   if (timerDone) {
-    // A win had frozen the clock; undoing means play continues.
+    // A win had frozen the clock; undoing means play continues. Drop the solved
+    // result (don't record it) and re-arm onWin for a fresh solve.
     timerDone = false;
+    winHandled = false;
+    pendingWin = null;
+    clearWinConfetti();
     resumeTimer();
   }
   lastPlaced = null;
@@ -782,7 +1004,12 @@ function endDrag(e) {
     pushUndo();
     const wasQueen = game.queen[r][c];
     game.tap(r, c);
-    if (!wasQueen && game.queen[r][c]) lastPlaced = { r, c };
+    if (!wasQueen && game.queen[r][c]) {
+      lastPlaced = { r, c };
+      // A queen off the unique solution is a wrong deduction — count it once,
+      // when placed (undoing it later doesn't un-count the misstep).
+      if (currentSolution && currentSolution[r] !== c) mistakes++;
+    }
     updateBoard();
   }
   drag = null;
@@ -799,7 +1026,8 @@ function collectQueens() {
 }
 
 function showHint() {
-  if (!game || hintActive) return;
+  if (!game || hintActive || game.isWon()) return;
+  hintsUsed++; // asking for help counts toward the score, even if not applied
   const hint = computeHint(game.N, game.region, currentSolution, collectQueens(), game.mark);
   renderHint(hint);
 }
@@ -1020,12 +1248,19 @@ dom.winSettings.addEventListener('click', () => {
   clearWinConfetti();
   openSettings();
 });
+dom.winSubmit.addEventListener('click', onWinSubmit);
+dom.winTabLocal.addEventListener('click', () => selectWinTab('local'));
+dom.winTabGlobal.addEventListener('click', () => selectWinTab('global'));
+dom.winNickname.addEventListener('input', () => {
+  if (winTab === 'local' && pendingWin && !pendingWin.saved) renderWinLocal();
+});
 dom.undo.addEventListener('click', () => {
   clearHint();
   doUndo();
 });
 dom.resetBoard.addEventListener('click', () => {
   if (!game) return;
+  flushPendingWin(); // if the solved board is being cleared, keep its best time
   clearHint();
   pushUndo();
   game.reset();
@@ -1113,9 +1348,99 @@ dom.settingsApply.addEventListener('click', () => {
   newGame();
 });
 
+// ---------- Bestenliste modal ----------
+// Browse best times for any (size, difficulty) bucket, on-device and — when the
+// online leaderboard is configured — globally. Generic segmented-control
+// helpers keep the size-12-is-hard-only rule consistent with the settings modal.
+let lbTab = 'local';
+
+function setSegmented(container, value) {
+  for (const btn of container.querySelectorAll('button')) {
+    btn.setAttribute('aria-checked', String(btn.dataset.value === value));
+  }
+}
+function segmentedValue(container) {
+  const active = container.querySelector('button[aria-checked="true"]');
+  return active ? active.dataset.value : 'medium';
+}
+function applyHardOnly(container, hintEl, size) {
+  const hardOnly = Number(size) >= HARD_ONLY_SIZE;
+  for (const btn of container.querySelectorAll('button')) {
+    btn.disabled = hardOnly && btn.dataset.value !== 'hard';
+  }
+  if (hardOnly) setSegmented(container, 'hard');
+  if (hintEl) hintEl.hidden = !hardOnly;
+}
+
+function currentLbBucket() {
+  const size = clampSize(dom.lbSizeRange.value);
+  const difficulty = size >= HARD_ONLY_SIZE ? 'hard' : segmentedValue(dom.lbDifficulty);
+  return { size, difficulty };
+}
+
+function openLeaderboard() {
+  clearHint();
+  const size = settings.size;
+  const difficulty = size >= HARD_ONLY_SIZE ? 'hard' : settings.difficulty;
+  dom.lbSizeRange.value = size;
+  dom.lbSizeValue.textContent = size;
+  setSegmented(dom.lbDifficulty, difficulty);
+  applyHardOnly(dom.lbDifficulty, dom.lbDifficultyHint, size);
+  dom.lbTabs.hidden = !leaderboardConfigured();
+  selectLbTab('local');
+  show(dom.leaderboardOverlay);
+}
+
+function selectLbTab(tab) {
+  lbTab = tab;
+  dom.lbTabLocal.setAttribute('aria-selected', String(tab === 'local'));
+  dom.lbTabGlobal.setAttribute('aria-selected', String(tab === 'global'));
+  renderLb();
+}
+
+async function renderLb() {
+  const { size, difficulty } = currentLbBucket();
+  if (lbTab !== 'global') {
+    renderScoreList(dom.lbScores, getLocalScores(size, difficulty), -1);
+    return;
+  }
+  renderScoreList(dom.lbScores, [], -1);
+  dom.lbScores.firstChild.textContent = 'Lade globale Bestenliste …';
+  const rows = await fetchTopScores(size, difficulty, 20);
+  // Ignore a stale response if the tab or bucket changed while loading.
+  const now = currentLbBucket();
+  if (lbTab !== 'global' || now.size !== size || now.difficulty !== difficulty) return;
+  if (!rows) {
+    renderScoreList(dom.lbScores, [], -1);
+    dom.lbScores.firstChild.textContent = 'Globale Bestenliste nicht erreichbar.';
+    return;
+  }
+  renderScoreList(dom.lbScores, rows, -1);
+}
+
+dom.openLeaderboard.addEventListener('click', openLeaderboard);
+dom.lbClose.addEventListener('click', () => hide(dom.leaderboardOverlay));
+dom.leaderboardOverlay.addEventListener('click', (e) => {
+  if (e.target === dom.leaderboardOverlay) hide(dom.leaderboardOverlay);
+});
+dom.lbSizeRange.addEventListener('input', () => {
+  dom.lbSizeValue.textContent = dom.lbSizeRange.value;
+  applyHardOnly(dom.lbDifficulty, dom.lbDifficultyHint, dom.lbSizeRange.value);
+  renderLb();
+});
+dom.lbDifficulty.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-value]');
+  if (!btn || btn.disabled) return;
+  setSegmented(dom.lbDifficulty, btn.dataset.value);
+  renderLb();
+});
+dom.lbTabLocal.addEventListener('click', () => selectLbTab('local'));
+dom.lbTabGlobal.addEventListener('click', () => selectLbTab('global'));
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     hide(dom.settingsOverlay);
+    hide(dom.leaderboardOverlay);
     clearHint();
     if (partyActive) stopParty();
   }
