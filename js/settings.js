@@ -1,19 +1,32 @@
 // settings.js
-// Persist only the user's preferences (size / difficulty / quick mode) in
-// localStorage. No game state or scores are stored — a page reload starts fresh.
+// Persist only the user's preferences (size / difficulty / quick mode / last
+// nickname) in localStorage. No game state is stored — a page reload starts
+// fresh. Highscores live in their own key (see js/highscores.js); the nickname
+// is kept here so the win screen can pre-fill it after every game.
 
 const KEY = 'queens-clone-settings';
 
 export const MIN_SIZE = 5;
 export const MAX_SIZE = 12;
+export const MAX_NICKNAME_LENGTH = 20;
 export const DEFAULTS = {
   size: 8,
   difficulty: 'medium',
   quickMode: true,
   debug: false,
   introAnimation: true,
+  nickname: '',
   liveCheck: false,
 };
+
+// Collapse whitespace and cap the length so a stored nickname is always a tidy
+// single-line string (shared with the highscore entry sanitiser).
+export function sanitizeNickname(name) {
+  return String(name == null ? '' : name)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_NICKNAME_LENGTH);
+}
 
 export function clampSize(n) {
   n = parseInt(n, 10);
@@ -33,6 +46,7 @@ export function loadSettings() {
       debug: typeof s.debug === 'boolean' ? s.debug : DEFAULTS.debug,
       introAnimation:
         typeof s.introAnimation === 'boolean' ? s.introAnimation : DEFAULTS.introAnimation,
+      nickname: sanitizeNickname(s.nickname),
       liveCheck: typeof s.liveCheck === 'boolean' ? s.liveCheck : DEFAULTS.liveCheck,
     };
   } catch (e) {

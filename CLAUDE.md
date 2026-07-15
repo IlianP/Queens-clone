@@ -47,9 +47,11 @@ Because the app is multi-file ESM **plus a Web Worker**, and an Artifact must be
 a single self-contained file under a strict CSP, bundle it (don't hand-write a
 copy) — the reproducible builder lives in git history for this branch
 (`build-artifact.mjs`): it concatenates the real sources in dependency order
-(`settings → solver → generator → levels → game → hint → main`, stripping
-`import`/`export`), inlines the `levels/` pools as the `__QUEENS_LEVELS__`
-global (the Artifact CSP blocks fetch),
+(`settings → solver → generator → levels → highscores → game → hint →
+leaderboard → main`, stripping `import`/`export` — the strip handles multi-line
+imports and a post-strip guard throws if any survive), inlines the `levels/`
+pools as the `__QUEENS_LEVELS__` global (the Artifact CSP blocks fetch, so the
+online leaderboard is disabled in the Artifact and it runs local-only),
 rebuilds the worker as a **classic Blob-URL worker** (module workers and
 external URLs are CSP-blocked; the game's own fallback covers a sandbox that
 blocks blob workers too), and **prepends `<meta charset="utf-8">`** so the
@@ -72,8 +74,10 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`) |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
-| `js/settings.js` | Preferences (size/difficulty/quick mode/debug) in `localStorage` — no game state or scores are persisted |
-| `js/main.js` | Wires generator + game + hint to the DOM: rendering, input, timer, hint card, debug export |
+| `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`; pure logic |
+| `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Fails soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback |
+| `js/settings.js` | Preferences (size/difficulty/quick mode/debug) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted |
+| `js/main.js` | Wires generator + game + hint + highscores + leaderboard to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, debug export |
 
 ### Difficulty ↔ solver ↔ hint (keep these aligned)
 
@@ -120,6 +124,25 @@ lineCells, excludedCells, applyLabel }`. `kind` is one of `place` /
 `targetCells`, so a single `eliminate` hint may legitimately mark several cells
 at once (e.g. every cell that dead-ends the same unit) — plural copy and the
 apply-label plural are handled in `hint.js`/`elimHint`.
+
+### Highscores / leaderboard
+
+Score = effective time in seconds: `seconds + 30·hints + 15·mistakes` (lower is
+better), bucketed per `(size, difficulty)`. **`computeScore` in
+`js/highscores.js` and `queens_score()` in `docs/leaderboard-setup.sql` must
+stay identical** — if you retune a penalty, change both. Raw components are
+stored (not just the final score) so weights can move without a data migration.
+Counters live in `main.js`: `hintsUsed` bumps in `showHint`, `mistakes` bumps in
+the tap handler when a queen lands off `currentSolution`; both reset in
+`startTimer`. `onWin` is guarded by `winHandled` (fires once per solve) and a
+`pendingWin` is committed to the local list on submit or when the board is left
+(`flushPendingWin`). The online layer is best-effort abuse-protected server-side
+(plausibility + rate-limit); it can't be truly cheat-proof since the client
+reports its own time — say so, don't oversell it. Untrusted leaderboard names
+are always rendered with `textContent`, never `innerHTML`. Bundle constraint:
+`highscores.js`/`leaderboard.js` are concatenated into one classic script, so
+**no top-level name collisions** (that's why the store key is `SCORES_KEY`, not
+another `KEY`) and **no `import.meta`**.
 
 ## Git / workflow
 
