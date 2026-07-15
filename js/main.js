@@ -34,6 +34,8 @@ const dom = {
   openSettings: el('open-settings'),
   undo: el('undo'),
   hint: el('hint'),
+  check: el('check'),
+  checkStatus: el('check-status'),
   resetBoard: el('reset-board'),
   hintCard: el('hint-card'),
   hintTitle: el('hint-title'),
@@ -76,6 +78,7 @@ const dom = {
   difficulty: el('difficulty'),
   difficultyHint: el('difficulty-hint'),
   quickMode: el('quick-mode'),
+  liveCheck: el('live-check'),
   introAnimation: el('intro-animation'),
   settingsApply: el('settings-apply'),
   settingsClose: el('settings-close'),
@@ -233,6 +236,7 @@ async function newGame() {
   clearWinConfetti();
   dom.message.textContent = '';
   clearHint();
+  clearCheckStatus();
   game = null; // block interaction (pointer/hint/undo all bail on !game) while loading
   untick();
   dom.timer.textContent = '0:00';
@@ -595,6 +599,7 @@ function updateBoard() {
 
   updateMessage();
   maybeParty();
+  refreshLiveCheck();
 }
 
 function updateMessage() {
@@ -1117,6 +1122,64 @@ dom.hint.addEventListener('click', showHint);
 dom.hintApply.addEventListener('click', applyHint);
 dom.hintClose.addEventListener('click', clearHint);
 
+// ---------- Prüf-Status ----------
+// A pure yes/no "is the board still error-free?" status — never a position and
+// never the next move (that's the hint's job). It reads the same rule logic the
+// board already uses (conflicts + dead units) plus a solution-aware check: a
+// placed queen that isn't on the unique solution counts as an error even before
+// a rule breaks (design choice (b)). Two ways to surface it:
+//   - the "Prüfen" button: shows the status on demand,
+//   - the live lamp (opt-in): updates automatically a short beat after the last
+//     move, so it doesn't flicker while you're still placing queens.
+const LIVE_CHECK_DELAY = 2000; // ms of quiet after the last move before the lamp updates
+let liveCheckTimer = null;
+
+function clearCheckStatus() {
+  if (liveCheckTimer) {
+    clearTimeout(liveCheckTimer);
+    liveCheckTimer = null;
+  }
+  dom.checkStatus.hidden = true;
+  dom.checkStatus.className = 'check-status';
+  dom.checkStatus.textContent = '';
+}
+
+// Render the current yes/no result. Deliberately says nothing about *where*.
+function renderCheckStatus() {
+  if (!game) return;
+  const error = game.hasError(currentSolution);
+  dom.checkStatus.textContent = error ? '✗ Es gibt einen Fehler' : '✓ Keine Fehler';
+  dom.checkStatus.className = 'check-status ' + (error ? 'error' : 'ok');
+  dom.checkStatus.hidden = false;
+}
+
+// The "Prüfen" button: evaluate right away, regardless of the live setting.
+function runCheck() {
+  if (!game) return;
+  if (liveCheckTimer) {
+    clearTimeout(liveCheckTimer);
+    liveCheckTimer = null;
+  }
+  renderCheckStatus();
+}
+
+// Called after every board change. Any current status is cleared immediately
+// (the answer may no longer hold), and — when the live lamp is on — a fresh
+// evaluation is armed for once the player pauses. Skipped on an untouched or
+// solved board so the lamp stays quiet when there's nothing meaningful to say.
+function refreshLiveCheck() {
+  if (liveCheckTimer) {
+    clearTimeout(liveCheckTimer);
+    liveCheckTimer = null;
+  }
+  dom.checkStatus.hidden = true;
+  dom.checkStatus.className = 'check-status';
+  if (!settings.liveCheck || !game || game.isWon() || game.isPristine()) return;
+  liveCheckTimer = setTimeout(renderCheckStatus, LIVE_CHECK_DELAY);
+}
+
+dom.check.addEventListener('click', runCheck);
+
 // ---------- Debug ----------
 function updateDebugButton() {
   dom.debugCopy.hidden = !settings.debug;
@@ -1284,6 +1347,7 @@ function openSettings() {
   setDifficultyUI(settings.difficulty);
   applyDifficultyConstraint(settings.size);
   dom.quickMode.checked = settings.quickMode;
+  dom.liveCheck.checked = settings.liveCheck;
   dom.introAnimation.checked = settings.introAnimation;
   dom.debugMode.checked = settings.debug;
   show(dom.settingsOverlay);
@@ -1331,6 +1395,15 @@ dom.quickMode.addEventListener('change', () => {
   }
 });
 
+// Live-Prüfung applies to the running board at once: turning it on arms the
+// lamp for the current position, turning it off hides it immediately.
+dom.liveCheck.addEventListener('change', () => {
+  settings.liveCheck = dom.liveCheck.checked;
+  saveSettings(settings);
+  if (settings.liveCheck) refreshLiveCheck();
+  else clearCheckStatus();
+});
+
 // A visual-only preference: persist immediately so it sticks even if the modal
 // is closed without applying. It takes effect on the next generated puzzle.
 dom.introAnimation.addEventListener('change', () => {
@@ -1342,6 +1415,7 @@ dom.settingsApply.addEventListener('click', () => {
   settings.size = clampSize(dom.sizeRange.value);
   settings.difficulty = settings.size >= HARD_ONLY_SIZE ? 'hard' : currentDifficultyUI();
   settings.quickMode = dom.quickMode.checked;
+  settings.liveCheck = dom.liveCheck.checked;
   settings.introAnimation = dom.introAnimation.checked;
   saveSettings(settings);
   hide(dom.settingsOverlay);

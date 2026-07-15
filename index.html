@@ -31,9 +31,17 @@
       <main class="board-wrap">
         <div class="board" id="board" role="grid" aria-label="Spielfeld"></div>
         <div class="message" id="message"></div>
+        <!-- Prüf-Status: kurze Rückmeldung "Fehlerfrei?" ohne Position oder
+             Hinweis. Wird per Button ausgelöst oder – wenn aktiviert – als
+             Live-Lämpchen automatisch aktualisiert. The slot reserves the pill's
+             height at all times so showing/hiding it never nudges the board. -->
+        <div class="check-slot">
+          <div class="check-status" id="check-status" role="status" aria-live="polite" hidden></div>
+        </div>
       </main>
 
       <div class="actions">
+        <button class="btn subtle" id="check" type="button">🔎 Prüfen</button>
         <button class="btn subtle" id="hint" type="button">💡 Hinweis</button>
         <button class="btn subtle" id="undo" type="button" disabled>↶ Rückgängig</button>
         <button class="btn subtle" id="reset-board" type="button">Zurücksetzen</button>
@@ -116,6 +124,14 @@
             <span class="field-hint">Beim Setzen einer Dame werden Zeile, Spalte, Farbregion und angrenzende Felder automatisch gepunktet.</span>
           </span>
           <input type="checkbox" id="quick-mode" class="switch" />
+        </label>
+
+        <label class="field toggle-field">
+          <span>
+            <span class="field-label">Live-Prüfung</span>
+            <span class="field-hint">Zeigt fortlaufend ein Statuslämpchen an, ob dein Spielstand fehlerfrei ist – ohne zu verraten, wo ein Fehler liegt. Erscheint erst kurz nach deinem letzten Zug. Ohne diese Option lässt sich der Status jederzeit über „Prüfen“ abrufen.</span>
+          </span>
+          <input type="checkbox" id="live-check" class="switch" />
         </label>
 
         <label class="field toggle-field">
