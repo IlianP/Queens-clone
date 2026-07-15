@@ -25,8 +25,8 @@
 // blocks fetch to external hosts, so this stays disabled there and the bundle
 // runs local-only — which is the same graceful fallback path.
 
-const SUPABASE_URL = ''; // e.g. 'https://abcdefgh.supabase.co' (no trailing slash)
-const SUPABASE_ANON_KEY = ''; // the project's public anon / publishable key
+const SUPABASE_URL = 'https://bnyucmczsxzmsuylawgs.supabase.co'; // no trailing slash
+const SUPABASE_ANON_KEY = 'sb_publishable_U83QRj1qXeApAkrEQlsRmA_B2wMBmDy'; // public publishable key
 const REQUEST_TIMEOUT_MS = 6000;
 
 // True once both config values are filled in. The UI hides all online controls
