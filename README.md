@@ -23,6 +23,12 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 - **Neues Spiel** erzeugt ein frisches Rätsel.
 - **Markierungen löschen** entfernt nur deine Punkte, die Damen bleiben.
 - **Zurücksetzen** leert das aktuelle Feld.
+- **Prüfen** zeigt kurz an, ob dein aktueller Stand fehlerfrei ist – nur ein
+  grünes „✓ Keine Fehler" bzw. rotes „✗ Es gibt einen Fehler", **ohne** zu
+  verraten, wo ein Fehler liegt, und **ohne** den nächsten Zug vorzuschlagen
+  (das bleibt dem Hinweis vorbehalten). Als Fehler zählt jeder Regelverstoß im
+  aktuellen Stand **und** eine gesetzte Dame, die nicht zur eindeutigen Lösung
+  gehört – so fällt auch ein Abweichen vom Lösungsweg auf, bevor eine Regel bricht.
 - Fehler (sich berührende / kollidierende Damen) werden rot markiert.
 - Eine Zeile, Spalte oder Farbregion, in der jedes Feld ausgeschlossen ist und
   keine Dame steht, wird rot pulsierend umrandet – dort ist keine Dame mehr
@@ -45,6 +51,10 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   selten wären.
 - **Schnellmodus:** Beim Setzen einer Dame werden alle dadurch ausgeschlossenen Felder
   automatisch gepunktet: die gesamte Zeile, Spalte, Farbregion und die angrenzenden Felder.
+- **Live-Prüfung:** Zeigt dauerhaft ein Statuslämpchen an, ob dein Stand fehlerfrei ist
+  (dieselbe Prüfung wie der **Prüfen**-Button, ebenfalls ohne die Fehlerstelle zu
+  verraten). Es erscheint erst kurz nach deinem letzten Zug, damit es beim Spielen nicht
+  flackert. Ohne diese Option lässt sich der Status jederzeit über **Prüfen** abrufen.
 
 Nur diese Einstellungen werden lokal (im `localStorage`) gespeichert, damit sie beim
 nächsten neuen Spiel wieder da sind. Es wird **kein** Spielstand und **kein** Highscore

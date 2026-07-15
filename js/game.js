@@ -151,6 +151,34 @@ export class Game {
     return { regions, rows, cols };
   }
 
+  // Whether the current board has any detectable mistake, WITHOUT revealing
+  // where. Used by the "Prüfen" status and the live lamp — a pure yes/no so the
+  // UI never leaks a position or the next move. Reuses the existing rule logic
+  // (conflicts + dead units) and, given the puzzle's unique solution, also flags
+  // a placed queen that isn't on that solution (the player left the solution
+  // path even before a rule breaks). `solution` is cols[r] = the column of the
+  // queen in row r; pass it for the solution-aware check, omit it for rules only.
+  hasError(solution) {
+    if (this.conflicts().size > 0) return true;
+    const dead = this.deadUnits();
+    if (dead.regions.size || dead.rows.size || dead.cols.size) return true;
+    if (solution) {
+      for (let r = 0; r < this.N; r++)
+        for (let c = 0; c < this.N; c++)
+          if (this.queen[r][c] && solution[r] !== c) return true;
+    }
+    return false;
+  }
+
+  // Untouched board: no queens and no manual marks. The live lamp stays off in
+  // this state so a fresh board doesn't light up green for nothing.
+  isPristine() {
+    if (this.queenCount !== 0) return false;
+    for (let r = 0; r < this.N; r++)
+      for (let c = 0; c < this.N; c++) if (this.mark[r][c]) return false;
+    return true;
+  }
+
   isWon() {
     return this.queenCount === this.N && this.conflicts().size === 0;
   }
