@@ -532,12 +532,16 @@ function shuffledPalette(N) {
 }
 
 // ---------- Render ----------
+// How long the board waits before it paints error feedback (conflicts + dead
+// units). Placement and dots stay instant; only the error marks are delayed so
+// that an immediate row/column reaction can't betray a queen's position — the
+// player gets a beat to reason before the board reacts. See scheduleErrorMarks.
+const ERROR_MARK_DELAY = 500;
+let errorMarkTimer = null;
+
 function updateBoard() {
   const N = game.N;
   const auto = game.autoMarkGrid();
-  const conflicts = game.conflicts();
-  const dead = game.deadUnits(auto);
-  const region = game.region;
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N; c++) {
       const cell = cells[r][c];
@@ -554,6 +558,47 @@ function updateBoard() {
         cell.innerHTML =
           state === 'queen' ? CROWN : state === 'dot' ? '<span class="dot"></span>' : '';
       }
+    }
+  }
+
+  // Error feedback (conflicts + dead units) is painted on a short delay. A
+  // solved board has no errors to hide, so paint it at once to avoid a stale
+  // red flash lingering under the win card.
+  if (game.isWon()) renderErrorMarks();
+  else scheduleErrorMarks();
+
+  if (lastPlaced) {
+    const cell = cells[lastPlaced.r]?.[lastPlaced.c];
+    if (cell && game.queen[lastPlaced.r][lastPlaced.c]) {
+      cell.classList.remove('pop');
+      void cell.offsetWidth; // restart animation
+      cell.classList.add('pop');
+    }
+    lastPlaced = null;
+  }
+
+  updateMessage();
+  maybeParty();
+  refreshLiveCheck();
+  updateActionButtons(); // freeze undo/reset the instant the board is solved
+}
+
+// Paint (or clear) the board's error feedback from the live game state: red
+// conflict cells plus the red outline around any dead unit. Reads current game
+// state at call time, so it stays correct even when fired from a delayed timer.
+function renderErrorMarks() {
+  if (errorMarkTimer) {
+    clearTimeout(errorMarkTimer);
+    errorMarkTimer = null;
+  }
+  const N = game.N;
+  const auto = game.autoMarkGrid();
+  const conflicts = game.conflicts();
+  const dead = game.deadUnits(auto);
+  const region = game.region;
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      const cell = cells[r][c];
       cell.classList.toggle('conflict', conflicts.has(`${r},${c}`));
 
       // Outline a unit in red once it's a dead end (fully dotted, no queen).
@@ -586,21 +631,17 @@ function updateBoard() {
       );
     }
   }
+}
 
-  if (lastPlaced) {
-    const cell = cells[lastPlaced.r]?.[lastPlaced.c];
-    if (cell && game.queen[lastPlaced.r][lastPlaced.c]) {
-      cell.classList.remove('pop');
-      void cell.offsetWidth; // restart animation
-      cell.classList.add('pop');
-    }
-    lastPlaced = null;
-  }
-
-  updateMessage();
-  maybeParty();
-  refreshLiveCheck();
-  updateActionButtons(); // freeze undo/reset the instant the board is solved
+// Schedule the error feedback to appear after a short delay. Each board change
+// resets the timer (debounce), so rapid taps only ever surface the errors of
+// the settled position, never a fleeting mid-move reveal.
+function scheduleErrorMarks() {
+  if (errorMarkTimer) clearTimeout(errorMarkTimer);
+  errorMarkTimer = setTimeout(() => {
+    errorMarkTimer = null;
+    if (game) renderErrorMarks();
+  }, ERROR_MARK_DELAY);
 }
 
 function updateMessage() {
@@ -1145,7 +1186,7 @@ function clearCheckStatus() {
 function renderCheckStatus() {
   if (!game) return;
   const error = game.hasError(currentSolution);
-  dom.checkStatus.textContent = error ? '✗ Es gibt einen Fehler' : '✓ Keine Fehler';
+  dom.checkStatus.textContent = error ? '✗ Es gibt Fehler' : '✓ Keine Fehler';
   dom.checkStatus.className = 'check-status ' + (error ? 'error' : 'ok');
   dom.checkStatus.hidden = false;
 }
@@ -1160,18 +1201,39 @@ function runCheck() {
   renderCheckStatus();
 }
 
-// Called after every board change. Any current status is cleared immediately
-// (the answer may no longer hold), and — when the live lamp is on — a fresh
-// evaluation is armed for once the player pauses. Skipped on an untouched or
-// solved board so the lamp stays quiet when there's nothing meaningful to say.
+// Called after every board change. With the live lamp on, a red "there are
+// errors" message is *sticky*: it stays put across taps and only clears once the
+// board is actually error-free — so acknowledging an error doesn't make the
+// warning vanish the instant you touch the board again. A green message is not
+// sticky: like before, it's cleared on the next move and re-armed after a pause.
+// Live off / untouched / solved: never keep a status around.
 function refreshLiveCheck() {
+  if (!settings.liveCheck || !game || game.isWon() || game.isPristine()) {
+    clearCheckStatus();
+    return;
+  }
+
+  // A red error already on screen stays exactly as it is while the board is
+  // still in error — tapping a new cell must not clear it. Drop the pending
+  // re-evaluation too; the answer ("there are errors") still holds.
+  const showingError = !dom.checkStatus.hidden && dom.checkStatus.classList.contains('error');
+  if (showingError && game.hasError(currentSolution)) {
+    if (liveCheckTimer) {
+      clearTimeout(liveCheckTimer);
+      liveCheckTimer = null;
+    }
+    return;
+  }
+
+  // No sticky red to hold (nothing shown, a green shown, or the red's errors
+  // just got cleared): hide the current status and re-arm a fresh evaluation
+  // for once the player pauses.
   if (liveCheckTimer) {
     clearTimeout(liveCheckTimer);
     liveCheckTimer = null;
   }
   dom.checkStatus.hidden = true;
   dom.checkStatus.className = 'check-status';
-  if (!settings.liveCheck || !game || game.isWon() || game.isPristine()) return;
   liveCheckTimer = setTimeout(renderCheckStatus, LIVE_CHECK_DELAY);
 }
 

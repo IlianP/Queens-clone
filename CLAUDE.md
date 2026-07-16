@@ -27,12 +27,25 @@ ES modules don't load over `file://`, so serve over HTTP:
 python3 -m http.server 8000   # then open http://localhost:8000
 ```
 
-There is **no test suite, linter, or package.json**. To verify logic changes,
-run the module directly with Node (it's plain ESM) and drive it with a real
-puzzle state — e.g. the debug JSON the game can copy (⚙ → debug mode). A good
-smoke test for solver/hint changes is to solve a puzzle end-to-end purely by
-applying `computeHint` repeatedly and asserting all `N` queens land on the
-`solution`. Prefer this kind of behavioural check over eyeballing the diff.
+There is **no CI, linter, or package.json** — the site ships with no build step
+and no dependencies. There is, however, a small **developer test harness in
+`tests/`** (not wired into CI); check it before re-deriving how to drive things:
+
+- `tests/logic/` — pure Node, no browser, no deps. `node tests/logic/hint-solve.mjs`
+  is exactly the smoke test below: solve generated puzzles end-to-end by applying
+  `computeHint` repeatedly and assert all `N` queens land on the `solution`. Run
+  it after any `solver.js` / `generator.js` / `hint.js` / `game.js` change.
+- `tests/browser/` — Playwright driving the real DOM. Playwright + Chromium are
+  **environment-provided** (fixed `/opt` paths, no repo dependency), so these run
+  only in that kind of environment. `board-helpers.mjs` encapsulates the fiddly
+  parts (pointer capture on the board, the tap cycle). See `tests/README.md`.
+
+To verify logic changes you can also run a module directly with Node (it's plain
+ESM) and drive it with a real puzzle state — e.g. the debug JSON the game can
+copy (⚙ → debug mode). A good smoke test for solver/hint changes is to solve a
+puzzle end-to-end purely by applying `computeHint` repeatedly and asserting all
+`N` queens land on the `solution`. Prefer this kind of behavioural check over
+eyeballing the diff.
 
 ### Testing a branch on mobile (always offer this)
 
