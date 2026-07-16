@@ -269,7 +269,7 @@ async function newGame() {
   game = new Game(N, puzzle.region, settings.quickMode);
   currentSolution = puzzle.solution;
   undoStack = [];
-  updateUndoButton();
+  updateActionButtons();
   updateBoard();
   startTimer(); // clock starts only once the board is playable, not during the intro
 }
@@ -600,6 +600,7 @@ function updateBoard() {
   updateMessage();
   maybeParty();
   refreshLiveCheck();
+  updateActionButtons(); // freeze undo/reset the instant the board is solved
 }
 
 function updateMessage() {
@@ -911,30 +912,26 @@ function snapshot() {
 function pushUndo() {
   undoStack.push(snapshot());
   if (undoStack.length > 500) undoStack.shift();
-  updateUndoButton();
+  updateActionButtons();
 }
-function updateUndoButton() {
-  dom.undo.disabled = undoStack.length === 0;
+// A solved board is frozen (see the isWon() guards on taps/hints): undo and
+// reset are disabled too, so a recorded win can't be rewound into a second
+// solve — nor the known board pointlessly cleared. The only way forward from a
+// win is a new game.
+function updateActionButtons() {
+  const won = !!(game && game.isWon());
+  dom.undo.disabled = won || undoStack.length === 0;
+  dom.resetBoard.disabled = won;
 }
 function doUndo() {
-  if (!game || undoStack.length === 0) return;
+  if (!game || game.isWon() || undoStack.length === 0) return;
   const s = undoStack.pop();
   game.mark = s.mark;
   game.queen = s.queen;
   game.queenCount = s.queenCount;
-  hide(dom.winOverlay);
-  if (timerDone) {
-    // A win had frozen the clock; undoing means play continues. Drop the solved
-    // result (don't record it) and re-arm onWin for a fresh solve.
-    timerDone = false;
-    winHandled = false;
-    pendingWin = null;
-    clearWinConfetti();
-    resumeTimer();
-  }
   lastPlaced = null;
   updateBoard();
-  updateUndoButton();
+  updateActionButtons();
 }
 
 // ---------- Interaction (tap + swipe) ----------
@@ -1322,23 +1319,28 @@ dom.undo.addEventListener('click', () => {
   doUndo();
 });
 dom.resetBoard.addEventListener('click', () => {
-  if (!game) return;
-  flushPendingWin(); // if the solved board is being cleared, keep its best time
+  if (!game || game.isWon()) return; // a solved board is frozen — start a new game
   clearHint();
   pushUndo();
   game.reset();
-  hide(dom.winOverlay);
-  clearWinConfetti();
   startTimer(); // clear the board -> clean clock
   updateBoard();
 });
 
 // ---------- Settings modal ----------
 dom.openSettings.addEventListener('click', openSettings);
-dom.settingsClose.addEventListener('click', () => hide(dom.settingsOverlay));
+dom.settingsClose.addEventListener('click', closeSettings);
 dom.settingsOverlay.addEventListener('click', (e) => {
-  if (e.target === dom.settingsOverlay) hide(dom.settingsOverlay);
+  if (e.target === dom.settingsOverlay) closeSettings();
 });
+
+// Settings can be opened from the win card (its ⚙ button hides the card first).
+// Closing settings without starting a new game must bring the win card back, so
+// the solved board's score entry isn't stranded behind a frozen board.
+function closeSettings() {
+  hide(dom.settingsOverlay);
+  if (game && game.isWon()) show(dom.winOverlay);
+}
 
 function openSettings() {
   clearHint();
@@ -1513,7 +1515,7 @@ dom.lbTabGlobal.addEventListener('click', () => selectLbTab('global'));
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
-    hide(dom.settingsOverlay);
+    if (!dom.settingsOverlay.hidden) closeSettings();
     hide(dom.leaderboardOverlay);
     clearHint();
     if (partyActive) stopParty();
