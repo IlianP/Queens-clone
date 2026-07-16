@@ -532,12 +532,16 @@ function shuffledPalette(N) {
 }
 
 // ---------- Render ----------
+// How long the board waits before it paints error feedback (conflicts + dead
+// units). Placement and dots stay instant; only the error marks are delayed so
+// that an immediate row/column reaction can't betray a queen's position — the
+// player gets a beat to reason before the board reacts. See scheduleErrorMarks.
+const ERROR_MARK_DELAY = 500;
+let errorMarkTimer = null;
+
 function updateBoard() {
   const N = game.N;
   const auto = game.autoMarkGrid();
-  const conflicts = game.conflicts();
-  const dead = game.deadUnits(auto);
-  const region = game.region;
   for (let r = 0; r < N; r++) {
     for (let c = 0; c < N; c++) {
       const cell = cells[r][c];
@@ -554,6 +558,47 @@ function updateBoard() {
         cell.innerHTML =
           state === 'queen' ? CROWN : state === 'dot' ? '<span class="dot"></span>' : '';
       }
+    }
+  }
+
+  // Error feedback (conflicts + dead units) is painted on a short delay. A
+  // solved board has no errors to hide, so paint it at once to avoid a stale
+  // red flash lingering under the win card.
+  if (game.isWon()) renderErrorMarks();
+  else scheduleErrorMarks();
+
+  if (lastPlaced) {
+    const cell = cells[lastPlaced.r]?.[lastPlaced.c];
+    if (cell && game.queen[lastPlaced.r][lastPlaced.c]) {
+      cell.classList.remove('pop');
+      void cell.offsetWidth; // restart animation
+      cell.classList.add('pop');
+    }
+    lastPlaced = null;
+  }
+
+  updateMessage();
+  maybeParty();
+  refreshLiveCheck();
+  updateActionButtons(); // freeze undo/reset the instant the board is solved
+}
+
+// Paint (or clear) the board's error feedback from the live game state: red
+// conflict cells plus the red outline around any dead unit. Reads current game
+// state at call time, so it stays correct even when fired from a delayed timer.
+function renderErrorMarks() {
+  if (errorMarkTimer) {
+    clearTimeout(errorMarkTimer);
+    errorMarkTimer = null;
+  }
+  const N = game.N;
+  const auto = game.autoMarkGrid();
+  const conflicts = game.conflicts();
+  const dead = game.deadUnits(auto);
+  const region = game.region;
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      const cell = cells[r][c];
       cell.classList.toggle('conflict', conflicts.has(`${r},${c}`));
 
       // Outline a unit in red once it's a dead end (fully dotted, no queen).
@@ -586,21 +631,17 @@ function updateBoard() {
       );
     }
   }
+}
 
-  if (lastPlaced) {
-    const cell = cells[lastPlaced.r]?.[lastPlaced.c];
-    if (cell && game.queen[lastPlaced.r][lastPlaced.c]) {
-      cell.classList.remove('pop');
-      void cell.offsetWidth; // restart animation
-      cell.classList.add('pop');
-    }
-    lastPlaced = null;
-  }
-
-  updateMessage();
-  maybeParty();
-  refreshLiveCheck();
-  updateActionButtons(); // freeze undo/reset the instant the board is solved
+// Schedule the error feedback to appear after a short delay. Each board change
+// resets the timer (debounce), so rapid taps only ever surface the errors of
+// the settled position, never a fleeting mid-move reveal.
+function scheduleErrorMarks() {
+  if (errorMarkTimer) clearTimeout(errorMarkTimer);
+  errorMarkTimer = setTimeout(() => {
+    errorMarkTimer = null;
+    if (game) renderErrorMarks();
+  }, ERROR_MARK_DELAY);
 }
 
 function updateMessage() {
