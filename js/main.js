@@ -1186,7 +1186,7 @@ function clearCheckStatus() {
 function renderCheckStatus() {
   if (!game) return;
   const error = game.hasError(currentSolution);
-  dom.checkStatus.textContent = error ? '✗ Es gibt einen Fehler' : '✓ Keine Fehler';
+  dom.checkStatus.textContent = error ? '✗ Es gibt Fehler' : '✓ Keine Fehler';
   dom.checkStatus.className = 'check-status ' + (error ? 'error' : 'ok');
   dom.checkStatus.hidden = false;
 }
@@ -1201,18 +1201,39 @@ function runCheck() {
   renderCheckStatus();
 }
 
-// Called after every board change. Any current status is cleared immediately
-// (the answer may no longer hold), and — when the live lamp is on — a fresh
-// evaluation is armed for once the player pauses. Skipped on an untouched or
-// solved board so the lamp stays quiet when there's nothing meaningful to say.
+// Called after every board change. With the live lamp on, a red "there are
+// errors" message is *sticky*: it stays put across taps and only clears once the
+// board is actually error-free — so acknowledging an error doesn't make the
+// warning vanish the instant you touch the board again. A green message is not
+// sticky: like before, it's cleared on the next move and re-armed after a pause.
+// Live off / untouched / solved: never keep a status around.
 function refreshLiveCheck() {
+  if (!settings.liveCheck || !game || game.isWon() || game.isPristine()) {
+    clearCheckStatus();
+    return;
+  }
+
+  // A red error already on screen stays exactly as it is while the board is
+  // still in error — tapping a new cell must not clear it. Drop the pending
+  // re-evaluation too; the answer ("there are errors") still holds.
+  const showingError = !dom.checkStatus.hidden && dom.checkStatus.classList.contains('error');
+  if (showingError && game.hasError(currentSolution)) {
+    if (liveCheckTimer) {
+      clearTimeout(liveCheckTimer);
+      liveCheckTimer = null;
+    }
+    return;
+  }
+
+  // No sticky red to hold (nothing shown, a green shown, or the red's errors
+  // just got cleared): hide the current status and re-arm a fresh evaluation
+  // for once the player pauses.
   if (liveCheckTimer) {
     clearTimeout(liveCheckTimer);
     liveCheckTimer = null;
   }
   dom.checkStatus.hidden = true;
   dom.checkStatus.className = 'check-status';
-  if (!settings.liveCheck || !game || game.isWon() || game.isPristine()) return;
   liveCheckTimer = setTimeout(renderCheckStatus, LIVE_CHECK_DELAY);
 }
 

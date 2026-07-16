@@ -24,7 +24,7 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 - **Markierungen löschen** entfernt nur deine Punkte, die Damen bleiben.
 - **Zurücksetzen** leert das aktuelle Feld.
 - **Prüfen** zeigt kurz an, ob dein aktueller Stand fehlerfrei ist – nur ein
-  grünes „✓ Keine Fehler" bzw. rotes „✗ Es gibt einen Fehler", **ohne** zu
+  grünes „✓ Keine Fehler" bzw. rotes „✗ Es gibt Fehler", **ohne** zu
   verraten, wo ein Fehler liegt, und **ohne** den nächsten Zug vorzuschlagen
   (das bleibt dem Hinweis vorbehalten). Als Fehler zählt jeder Regelverstoß im
   aktuellen Stand **und** eine gesetzte Dame, die nicht zur eindeutigen Lösung
