@@ -142,6 +142,7 @@ function startTimer() {
   hintsUsed = 0;
   mistakes = 0;
   winHandled = false;
+  stickyForced = null;
   if (timerRunStart) tick();
   renderTime();
 }
@@ -979,7 +980,24 @@ function doUndo() {
 // A tap cycles a single cell. Press-and-drag paints: the first cell decides
 // whether the stroke adds dots (started on an empty cell) or erases them
 // (started on a marked cell); queens are never touched by a swipe.
+//
+// Two touch-accuracy safeguards ride on top of this (see also game.forcedCells):
+//   1. Axis lock — once a swipe has swept far enough along a single row or
+//      column, the stroke pins to that line for the rest of the gesture. A fast
+//      finger drifting sideways near the end of a sweep can no longer dot a
+//      stray neighbour: off-axis points are projected back onto the locked line.
+//   2. Forced-cell target growth — when a unit has only one open cell left, the
+//      queen there is obvious, so that cell's tap target grows into its
+//      neighbours (up to half a cell) and a near-miss still lands on it. See
+//      resolveTapCell.
 let drag = null;
+
+// How many cells a swipe must sweep along one line before the axis locks. Kept
+// near the full row/column length (drift happens at the END of a long sweep, not
+// on short strokes) but never below 3, so tiny boards don't lock over-eagerly.
+function axisLockThreshold(N) {
+  return Math.max(3, N - 2);
+}
 
 function paintModeForStart(r, c) {
   if (game.queen[r][c]) return null; // queens are tap-only
@@ -1004,6 +1022,84 @@ function cellAtPoint(x, y) {
   return cell && dom.board.contains(cell) ? cell : null;
 }
 
+// ----- Forced-cell tap target growth (safeguard #2) -----
+// A forced cell we just dotted, kept enlarged until it becomes a queen, so the
+// whole two-tap "mark then crown" placement stays easy to hit even though the
+// cell stops being "open" the moment its first dot lands.
+let stickyForced = null;
+
+// Would growing the target of forced cell (fr,fc) be ambiguous? It is when
+// another forced cell sits in its 8-neighbourhood: their grown targets would
+// overlap and fight over the same taps, so we leave both at natural size.
+function forcedAmbiguous(fr, fc, forced) {
+  for (const key of forced) {
+    const [r, c] = key.split(',').map(Number);
+    if (r === fr && c === fc) continue;
+    if (Math.abs(r - fr) <= 1 && Math.abs(c - fc) <= 1) return true;
+  }
+  return false;
+}
+
+// Forced cells eligible for target growth right now: the unambiguous ones from
+// game.forcedCells(), plus the sticky cell we dotted last tap (still a dot,
+// awaiting its queen). Empty list ⇒ the feature is dormant and taps are raw.
+function growableForcedCells() {
+  const forced = game ? game.forcedCells() : new Set();
+  const out = [];
+  for (const key of forced) {
+    const [r, c] = key.split(',').map(Number);
+    if (forcedAmbiguous(r, c, forced)) continue;
+    out.push({ r, c });
+  }
+  if (stickyForced) {
+    const { r, c } = stickyForced;
+    if (
+      game.mark[r][c] &&
+      !game.queen[r][c] &&
+      !forcedAmbiguous(r, c, forced) &&
+      !out.some((f) => f.r === r && f.c === c)
+    ) {
+      out.push({ r, c });
+    }
+  }
+  return out;
+}
+
+// Resolve where a tap at (x,y) — nominally on cell (defR,defC) — should land.
+// If a forced cell's grown target (its rect padded by half a cell) covers the
+// point and the tapped cell is that forced cell or one of its neighbours, the
+// tap is redirected there. Returns { r, c, grown }.
+function resolveTapCell(x, y, defR, defC) {
+  const targets = growableForcedCells();
+  if (targets.length === 0) return { r: defR, c: defC, grown: false };
+  // Tapping the forced cell itself — no redirect needed, but flag it so its
+  // pending queen stays sticky.
+  for (const f of targets) {
+    if (f.r === defR && f.c === defC) return { r: f.r, c: f.c, grown: true };
+  }
+  let best = null;
+  let bestDist = Infinity;
+  for (const f of targets) {
+    if (Math.abs(f.r - defR) > 1 || Math.abs(f.c - defC) > 1) continue; // neighbours only
+    const rect = cells[f.r][f.c].getBoundingClientRect();
+    // Grow the target by half a cell, but keep the outer edge EXCLUSIVE: a tap
+    // dead-centre on a neighbour (exactly half a cell away) belongs to that
+    // neighbour, only taps strictly inside its inner half get pulled in.
+    const padX = rect.width / 2;
+    const padY = rect.height / 2;
+    if (x <= rect.left - padX || x >= rect.right + padX) continue;
+    if (y <= rect.top - padY || y >= rect.bottom + padY) continue;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const d = (x - cx) ** 2 + (y - cy) ** 2;
+    if (d < bestDist) {
+      bestDist = d;
+      best = { r: f.r, c: f.c, grown: true };
+    }
+  }
+  return best || { r: defR, c: defC, grown: false };
+}
+
 dom.board.addEventListener('pointerdown', (e) => {
   if (!game || hintActive || game.isWon()) return; // solved board is locked
 
@@ -1011,14 +1107,26 @@ dom.board.addEventListener('pointerdown', (e) => {
   const cell = e.target.closest('.cell');
   if (!cell) return;
   e.preventDefault();
+  const startR = +cell.dataset.r;
+  const startC = +cell.dataset.c;
   drag = {
     id: e.pointerId,
-    startR: +cell.dataset.r,
-    startC: +cell.dataset.c,
-    mode: paintModeForStart(+cell.dataset.r, +cell.dataset.c),
+    startR,
+    startC,
+    mode: paintModeForStart(startR, startC),
     moved: false,
     snapshotted: false,
-    lastKey: `${cell.dataset.r},${cell.dataset.c}`,
+    lastKey: `${startR},${startC}`,
+    // Down point, used to resolve a plain tap's grown target on release.
+    downX: e.clientX,
+    downY: e.clientY,
+    // Axis-lock bookkeeping: the common row/column of every painted cell so far
+    // (null once the stroke leaves it), and the locked axis once decided.
+    rowConst: startR,
+    colConst: startC,
+    painted: 0,
+    axis: null, // 'row' | 'col' once locked
+    lockLine: -1,
   };
 });
 
@@ -1026,24 +1134,52 @@ dom.board.addEventListener('pointermove', (e) => {
   if (!drag || e.pointerId !== drag.id) return;
   const cell = cellAtPoint(e.clientX, e.clientY);
   if (!cell) return;
-  const key = `${cell.dataset.r},${cell.dataset.c}`;
+  let r = +cell.dataset.r;
+  let c = +cell.dataset.c;
+
+  // Once locked, project the finger back onto the locked line: keep the moving
+  // coordinate, pin the other, so drift off the axis marks the intended cell
+  // rather than a stray neighbour.
+  if (drag.axis === 'row') r = drag.lockLine;
+  else if (drag.axis === 'col') c = drag.lockLine;
+
+  const key = `${r},${c}`;
   if (key === drag.lastKey) return; // still on the last-processed cell
   drag.lastKey = key;
+
+  // Track collinearity and lock the axis once the sweep is unmistakably a full
+  // row or column. A diagonal/scribble drops both constraints and never locks.
+  if (drag.axis === null) {
+    if (drag.rowConst !== null && r !== drag.rowConst) drag.rowConst = null;
+    if (drag.colConst !== null && c !== drag.colConst) drag.colConst = null;
+    drag.painted++;
+    if (drag.painted >= axisLockThreshold(game.N)) {
+      if (drag.rowConst !== null && drag.colConst === null) {
+        drag.axis = 'row';
+        drag.lockLine = drag.rowConst;
+      } else if (drag.colConst !== null && drag.rowConst === null) {
+        drag.axis = 'col';
+        drag.lockLine = drag.colConst;
+      }
+    }
+  }
 
   let changed = false;
   if (!drag.moved) {
     drag.moved = true;
     changed = paintCell(drag.startR, drag.startC); // include the start cell
   }
-  if (paintCell(+cell.dataset.r, +cell.dataset.c)) changed = true;
+  if (paintCell(r, c)) changed = true;
   if (changed) updateBoard();
 });
 
 function endDrag(e) {
   if (!drag || (e && e.pointerId !== drag.id)) return;
   if (!drag.moved) {
-    // A plain tap: cycle the single cell (empty → dot → queen → empty).
-    const { startR: r, startC: c } = drag;
+    // A plain tap: cycle the single cell (empty → dot → queen → empty). A tap on
+    // (or near) a forced cell is redirected onto it via its grown target.
+    const target = resolveTapCell(drag.downX, drag.downY, drag.startR, drag.startC);
+    const { r, c } = target;
     pushUndo();
     const wasQueen = game.queen[r][c];
     game.tap(r, c);
@@ -1053,6 +1189,9 @@ function endDrag(e) {
       // when placed (undoing it later doesn't un-count the misstep).
       if (currentSolution && currentSolution[r] !== c) mistakes++;
     }
+    // Keep a freshly-dotted forced cell enlarged until its queen lands, so the
+    // second tap of the placement is just as forgiving as the first.
+    stickyForced = target.grown && game.mark[r][c] && !game.queen[r][c] ? { r, c } : null;
     updateBoard();
   }
   drag = null;

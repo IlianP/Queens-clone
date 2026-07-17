@@ -151,6 +151,54 @@ export class Game {
     return { regions, rows, cols };
   }
 
+  // Cells forced by elimination: the sole remaining open cell of a row, column
+  // or region that still needs a queen — the only legal placement left, i.e.
+  // the "naked single" the solver and hint already reason about. "Open" mirrors
+  // deadUnits: a cell holding no queen and no dot (neither a manual mark nor a
+  // quick-mode auto-mark). Returns a Set of "r,c" keys. This reveals nothing the
+  // player can't already see — a unit reduced to a single gap is visible on the
+  // board — so the UI can use it to make that obvious cell easier to hit.
+  forcedCells(auto = this.autoMarkGrid()) {
+    const N = this.N;
+    const rowOpen = new Array(N).fill(0);
+    const rowCell = new Array(N).fill(null);
+    const rowQueen = new Array(N).fill(false);
+    const colOpen = new Array(N).fill(0);
+    const colCell = new Array(N).fill(null);
+    const colQueen = new Array(N).fill(false);
+    const regOpen = new Map();
+    const regCell = new Map();
+    const regQueen = new Set();
+    for (let r = 0; r < N; r++) {
+      for (let c = 0; c < N; c++) {
+        const reg = this.region[r][c];
+        if (this.queen[r][c]) {
+          rowQueen[r] = colQueen[c] = true;
+          regQueen.add(reg);
+        } else if (!this.mark[r][c] && !auto[r][c]) {
+          rowOpen[r]++;
+          rowCell[r] = [r, c];
+          colOpen[c]++;
+          colCell[c] = [r, c];
+          regOpen.set(reg, (regOpen.get(reg) || 0) + 1);
+          regCell.set(reg, [r, c]);
+        }
+      }
+    }
+    const out = new Set();
+    for (let i = 0; i < N; i++) {
+      if (!rowQueen[i] && rowOpen[i] === 1) out.add(`${rowCell[i][0]},${rowCell[i][1]}`);
+      if (!colQueen[i] && colOpen[i] === 1) out.add(`${colCell[i][0]},${colCell[i][1]}`);
+    }
+    for (const [reg, count] of regOpen) {
+      if (!regQueen.has(reg) && count === 1) {
+        const [r, c] = regCell.get(reg);
+        out.add(`${r},${c}`);
+      }
+    }
+    return out;
+  }
+
   // Whether the current board has any detectable mistake, WITHOUT revealing
   // where. Used by the "Prüfen" status and the live lamp — a pure yes/no so the
   // UI never leaks a position or the next move. Reuses the existing rule logic
