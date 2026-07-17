@@ -94,3 +94,34 @@ export async function placeQueen(page, idx) {
 export function conflictCount(page) {
   return page.$$eval('.cell.conflict', (cs) => cs.length);
 }
+
+// Viewport-space rect of the cell at flat index idx (x/y is its centre).
+export function cellRect(page, idx) {
+  return page.evaluate((i) => {
+    const r = document.querySelectorAll('.cell')[i].getBoundingClientRect();
+    return {
+      x: r.x + r.width / 2,
+      y: r.y + r.height / 2,
+      left: r.left,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+      width: r.width,
+      height: r.height,
+    };
+  }, idx);
+}
+
+// A real press-and-drag stroke through a list of {x,y} viewport points (down on
+// the first, moving through the rest, up on the last). Uses the real mouse so
+// pointer capture engages, exactly like tapCell.
+export async function swipe(page, points) {
+  await page.mouse.move(points[0].x, points[0].y);
+  await page.mouse.down();
+  for (let i = 1; i < points.length; i++) {
+    await page.mouse.move(points[i].x, points[i].y, { steps: 4 });
+    await page.waitForTimeout(10);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(40);
+}
