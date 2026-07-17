@@ -75,11 +75,12 @@ export function isMuted() {
 
 // ---------- The sounds (deliberately understated) ----------
 
-// Placing a queen: a bright, satisfying pluck (a note + its octave).
+// Placing a queen: a bright, satisfying pluck (a note + its octave). Kept a
+// touch quieter than the other cues so a run of placements stays gentle.
 export function playPlace() {
   play([
-    { freq: 660, type: 'triangle', dur: 0.14, gain: 0.22 },
-    { freq: 990, type: 'sine', dur: 0.1, gain: 0.12, when: 0.005 },
+    { freq: 660, type: 'triangle', dur: 0.14, gain: 0.16 },
+    { freq: 990, type: 'sine', dur: 0.1, gain: 0.09, when: 0.005 },
   ]);
 }
 
@@ -93,11 +94,11 @@ export function playErase() {
   play([{ freq: 200, type: 'sine', dur: 0.07, gain: 0.11 }]);
 }
 
-// Asking for a hint: a gentle two-note lift.
+// Asking for a hint: a gentle two-note lift (kept a shade quieter too).
 export function playHint() {
   play([
-    { freq: 587, type: 'sine', dur: 0.12, gain: 0.14 },
-    { freq: 880, type: 'sine', dur: 0.16, gain: 0.14, when: 0.09 },
+    { freq: 587, type: 'sine', dur: 0.12, gain: 0.1 },
+    { freq: 880, type: 'sine', dur: 0.16, gain: 0.1, when: 0.09 },
   ]);
 }
 
@@ -113,5 +114,20 @@ export function playWin() {
     { freq: 659.25, type: 'triangle', dur: 0.22, gain: 0.2, when: 0.1 },
     { freq: 783.99, type: 'triangle', dur: 0.22, gain: 0.2, when: 0.2 },
     { freq: 1046.5, type: 'triangle', dur: 0.42, gain: 0.22, when: 0.32 },
+  ]);
+}
+
+// Party mode Easter egg (dotting every cell): a cheeky little toy-fanfare — a
+// bouncy square-wave riff capped by a bright sparkle. Sillier and longer than
+// the win chime, to match the confetti-and-blue-lights absurdity.
+export function playParty() {
+  play([
+    { freq: 523.25, type: 'square', dur: 0.13, gain: 0.14, when: 0.0 }, // C5
+    { freq: 659.25, type: 'square', dur: 0.13, gain: 0.14, when: 0.12 }, // E5
+    { freq: 783.99, type: 'square', dur: 0.13, gain: 0.14, when: 0.24 }, // G5
+    { freq: 659.25, type: 'square', dur: 0.13, gain: 0.14, when: 0.36 }, // E5
+    { freq: 880.0, type: 'square', dur: 0.2, gain: 0.15, when: 0.48 }, // A5
+    { freq: 1046.5, type: 'triangle', dur: 0.4, gain: 0.18, when: 0.66 }, // C6 sparkle
+    { freq: 1567.98, type: 'sine', dur: 0.3, gain: 0.1, when: 0.72 }, // G6 shimmer
   ]);
 }

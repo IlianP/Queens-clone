@@ -20,6 +20,7 @@ import {
   playHint,
   playUi,
   playWin,
+  playParty,
 } from './audio.js';
 
 // Distinct, mildly pastel region colours (supports up to 12 regions).
@@ -910,8 +911,8 @@ function clearWinConfetti() {
 // ---------- Party mode (Easter egg) ----------
 // Dotting every single cell (no queens anywhere) is a pointless, absurd thing
 // to do — the whole board pulses red as one giant dead end. We reward the
-// mischief: hold that state for 1.5s and a silent, no-audio party kicks off
-// (confetti + alternating blue emergency lights + a mock achievement).
+// mischief: hold that state for 1.5s and a party kicks off (confetti +
+// alternating blue emergency lights + a mock achievement + a toy fanfare).
 let partyTimer = null; // pending arm timer, or null
 let partyActive = false; // overlay currently showing
 let partyDone = false; // already partied for this fully-dotted episode
@@ -965,6 +966,7 @@ function startParty() {
   dom.confetti.innerHTML = '';
   if (!reduce) dom.confetti.appendChild(buildConfetti(90));
   show(dom.partyOverlay);
+  playParty(); // gated only by mute, not reduced-motion (it's sound, not motion)
 }
 
 function stopParty() {
