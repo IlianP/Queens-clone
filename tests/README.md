@@ -23,6 +23,13 @@ repeatedly**, asserting all `N` queens land on the unique solution. If the
 generator, solver and hint engine ever drift apart, the solve stalls and the
 test fails — which is exactly the regression you want to catch.
 
+`leaderboard-retry.mjs` covers the online-submit retry logic in
+`js/leaderboard.js` with a **mocked `fetch`** — so it never writes to the real
+Supabase leaderboard. It asserts `submitScore` retries transient failures
+(network / 5xx / 429) with backoff, does *not* retry a permanent 4xx, and gives
+up after a bounded number of attempts. It exercises the real backoff schedule,
+so it takes a few seconds.
+
 ## `browser/` — Playwright, environment-provided
 
 These drive the real DOM (`js/main.js`) in Chromium. Use them for interaction
@@ -46,6 +53,13 @@ node tests/browser/error-delay.mjs      # BASE_URL defaults to http://localhost:
 `error-delay.mjs` asserts that board error feedback (conflict + dead-unit
 marks) stays hidden the instant a queen is placed and only appears after the
 delay — so an immediate reaction can't reveal a queen's position.
+
+`leaderboard-retry.mjs` drives a real solve (via hints) to the win screen and
+checks the global-submit flow: it **intercepts every Supabase RPC with
+`page.route`** — so no test score ever reaches the live leaderboard — fails the
+submit endpoint to drive the auto-retry + manual *"Erneut versuchen"* path, then
+lets it succeed and verifies the same solve can't be submitted twice
+(`pendingWin.submittedGlobal`). Slow by design (it waits out the real backoff).
 
 ### Writing a new browser test
 
