@@ -987,9 +987,9 @@ function doUndo() {
 //      finger drifting sideways near the end of a sweep can no longer dot a
 //      stray neighbour: off-axis points are projected back onto the locked line.
 //   2. Forced-cell target growth — when a unit has only one open cell left, the
-//      queen there is obvious, so that cell's tap target grows into its
-//      neighbours (up to half a cell) and a near-miss still lands on it. See
-//      resolveTapCell.
+//      queen there is obvious, so that cell's tap target grows a little into its
+//      neighbours (see FORCED_TARGET_GROWTH) and a near-miss still lands on it.
+//      See resolveTapCell.
 let drag = null;
 
 // How many cells a swipe must sweep along one line before the axis locks. Kept
@@ -998,6 +998,12 @@ let drag = null;
 function axisLockThreshold(N) {
   return Math.max(3, N - 2);
 }
+
+// How far a forced cell's tap target grows into each neighbour, as a fraction of
+// the cell size. Kept small (20 %) on purpose: a bigger reach starts stealing
+// taps that were genuinely meant for the neighbouring cell or region (marking or
+// clearing there), so it only forgives a near-miss right at the shared edge.
+const FORCED_TARGET_GROWTH = 0.2;
 
 function paintModeForStart(r, c) {
   if (game.queen[r][c]) return null; // queens are tap-only
@@ -1082,11 +1088,11 @@ function resolveTapCell(x, y, defR, defC) {
   for (const f of targets) {
     if (Math.abs(f.r - defR) > 1 || Math.abs(f.c - defC) > 1) continue; // neighbours only
     const rect = cells[f.r][f.c].getBoundingClientRect();
-    // Grow the target by half a cell, but keep the outer edge EXCLUSIVE: a tap
-    // dead-centre on a neighbour (exactly half a cell away) belongs to that
-    // neighbour, only taps strictly inside its inner half get pulled in.
-    const padX = rect.width / 2;
-    const padY = rect.height / 2;
+    // Grow the target by a fraction of a cell (see FORCED_TARGET_GROWTH), with
+    // the outer edge EXCLUSIVE: only a near-miss right at the shared edge is
+    // pulled in; a tap deeper into the neighbour stays with the neighbour.
+    const padX = rect.width * FORCED_TARGET_GROWTH;
+    const padY = rect.height * FORCED_TARGET_GROWTH;
     if (x <= rect.left - padX || x >= rect.right + padX) continue;
     if (y <= rect.top - padY || y >= rect.bottom + padY) continue;
     const cx = rect.left + rect.width / 2;

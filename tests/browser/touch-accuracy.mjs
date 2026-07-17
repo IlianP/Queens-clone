@@ -90,6 +90,9 @@ try {
   if (!row1Clean) fail('axis lock: row 1 has stray dots from the drift');
 
   // ---- Safeguard #2: enlarged target for the single forced cell ----
+  // The target grows only ~20% of a cell into each neighbour, so we probe three
+  // depths into the left neighbour, measured from its inner edge (the one shared
+  // with the forced cell): well inside the zone, past it, and near the far edge.
   // Turn quick mode off and reload so auto-marks don't muddy the signals.
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem('queens-clone-settings') || '{}');
@@ -101,33 +104,44 @@ try {
   const N2 = await boardSize(page);
   const k = Math.floor(N2 / 2); // keep column k open
 
-  // (a) A near-miss tap on the inner half of the left neighbour (nearest the
-  // forced cell) is redirected onto (0,k): the forced cell — empty until now —
-  // gets the dot, and the neighbour is left untouched.
-  await setupForcedRow(N2, k);
-  if ((await cellState(page, cellIndex(N2, 0, k))) !== 'empty') {
-    fail('setup(a): forced cell (0,k) is not open');
+  // Reset to a clean board with (0,k) as the sole open cell in its row.
+  async function freshForcedRow(tag) {
+    await page.click('#reset-board');
+    await page.waitForTimeout(40);
+    await setupForcedRow(N2, k);
+    if ((await cellState(page, cellIndex(N2, 0, k))) !== 'empty') {
+      fail(`setup(${tag}): forced cell (0,k) is not open`);
+    }
+    return cellRect(page, cellIndex(N2, 0, k - 1));
   }
-  let left = await cellRect(page, cellIndex(N2, 0, k - 1));
-  await tapPoint(left.right - left.width * 0.15, left.y); // inner (right) half
+
+  // (a) A near-miss tap 10% into the neighbour from the shared edge is inside
+  // the grown zone, so it is redirected onto (0,k): the forced cell — empty
+  // until now — gets the dot, and the neighbour is left untouched.
+  let left = await freshForcedRow('a');
+  await tapPoint(left.right - left.width * 0.1, left.y);
   if ((await cellState(page, cellIndex(N2, 0, k))) !== 'dot') {
-    fail('grown target: a near-miss tap did not land on the forced cell');
+    fail('grown target: a 10% near-miss tap did not land on the forced cell');
   }
   if ((await cellState(page, cellIndex(N2, 0, k - 1))) !== 'dot') {
     fail('grown target: the near-miss tap disturbed the neighbour');
   }
 
-  // (b) A tap on the outer half of the neighbour is outside the grown zone, so
-  // it acts on the neighbour itself (its dot cycles to a queen) and never
-  // touches the forced cell.
-  await page.click('#reset-board');
-  await page.waitForTimeout(40);
-  await setupForcedRow(N2, k);
-  if ((await cellState(page, cellIndex(N2, 0, k))) !== 'empty') {
-    fail('setup(b): forced cell (0,k) is not open');
+  // (b) A tap 35% into the neighbour is PAST the ~20% zone (it would have been
+  // caught by the old half-cell target) — it must now act on the neighbour
+  // itself (its dot cycles to a queen) and never touch the forced cell.
+  left = await freshForcedRow('b');
+  await tapPoint(left.right - left.width * 0.35, left.y);
+  if ((await cellState(page, cellIndex(N2, 0, k - 1))) !== 'queen') {
+    fail('grown target: a 35% tap was wrongly pulled off the neighbour');
   }
-  left = await cellRect(page, cellIndex(N2, 0, k - 1));
-  await tapPoint(left.left + left.width * 0.15, left.y); // outer (left) half
+  if ((await cellState(page, cellIndex(N2, 0, k))) !== 'empty') {
+    fail('grown target: a 35% tap wrongly hijacked the forced cell');
+  }
+
+  // (c) A tap near the far edge of the neighbour also acts on the neighbour.
+  left = await freshForcedRow('c');
+  await tapPoint(left.left + left.width * 0.15, left.y);
   if ((await cellState(page, cellIndex(N2, 0, k - 1))) !== 'queen') {
     fail('grown target: a far tap on the neighbour did not act on the neighbour');
   }
