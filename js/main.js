@@ -12,6 +12,16 @@ import {
   previewRank,
 } from './highscores.js';
 import { leaderboardConfigured, submitScore, fetchTopScores } from './leaderboard.js';
+import {
+  setMuted,
+  playPlace,
+  playDot,
+  playErase,
+  playHint,
+  playUi,
+  playWin,
+  playParty,
+} from './audio.js';
 
 // Distinct, mildly pastel region colours (supports up to 12 regions).
 const PALETTE = [
@@ -32,6 +42,8 @@ const dom = {
   message: el('message'),
   newGame: el('new-game'),
   openSettings: el('open-settings'),
+  toggleSound: el('toggle-sound'),
+  soundToggle: el('sound-toggle'),
   undo: el('undo'),
   hint: el('hint'),
   check: el('check'),
@@ -753,6 +765,7 @@ function onWin() {
 
   show(dom.winOverlay);
   fireWinConfetti();
+  playWin();
 }
 
 function selectWinTab(tab) {
@@ -899,8 +912,8 @@ function clearWinConfetti() {
 // ---------- Party mode (Easter egg) ----------
 // Dotting every single cell (no queens anywhere) is a pointless, absurd thing
 // to do — the whole board pulses red as one giant dead end. We reward the
-// mischief: hold that state for 1.5s and a silent, no-audio party kicks off
-// (confetti + alternating blue emergency lights + a mock achievement).
+// mischief: hold that state for 1.5s and a party kicks off (confetti +
+// alternating blue emergency lights + a mock achievement + a toy fanfare).
 let partyTimer = null; // pending arm timer, or null
 let partyActive = false; // overlay currently showing
 let partyDone = false; // already partied for this fully-dotted episode
@@ -954,6 +967,7 @@ function startParty() {
   dom.confetti.innerHTML = '';
   if (!reduce) dom.confetti.appendChild(buildConfetti(90));
   show(dom.partyOverlay);
+  playParty(); // gated only by mute, not reduced-motion (it's sound, not motion)
 }
 
 function stopParty() {
@@ -1152,6 +1166,7 @@ dom.board.addEventListener('pointerdown', (e) => {
     moved: false,
     snapshotted: false,
     lastKey: `${startR},${startC}`,
+    lastSound: 0,
     // Down point, used to resolve a plain tap's grown target on release.
     downX: e.clientX,
     downY: e.clientY,
@@ -1205,7 +1220,17 @@ dom.board.addEventListener('pointermove', (e) => {
     changed = paintCell(drag.startR, drag.startC); // include the start cell
   }
   if (paintCell(r, c)) changed = true;
-  if (changed) updateBoard();
+  if (changed) {
+    updateBoard();
+    // A soft tick as the stroke paints, throttled so a fast swipe stays a gentle
+    // brush rather than a burst of clicks.
+    const now = performance.now();
+    if (now - drag.lastSound > 45) {
+      drag.lastSound = now;
+      if (drag.mode === 'mark') playDot();
+      else playErase();
+    }
+  }
 });
 
 function endDrag(e) {
@@ -1217,12 +1242,18 @@ function endDrag(e) {
     const { r, c } = target;
     pushUndo();
     const wasQueen = game.queen[r][c];
+    const wasMark = game.mark[r][c];
     game.tap(r, c);
     if (!wasQueen && game.queen[r][c]) {
       lastPlaced = { r, c };
+      playPlace();
       // A queen off the unique solution is a wrong deduction — count it once,
       // when placed (undoing it later doesn't un-count the misstep).
       if (currentSolution && currentSolution[r] !== c) mistakes++;
+    } else if (!wasMark && game.mark[r][c]) {
+      playDot();
+    } else if ((wasQueen || wasMark) && !game.queen[r][c] && !game.mark[r][c]) {
+      playErase();
     }
     // Keep a freshly-dotted forced cell enlarged until its queen lands, so the
     // second tap of the placement is just as forgiving as the first.
@@ -1245,6 +1276,7 @@ function collectQueens() {
 function showHint() {
   if (!game || hintActive || game.isWon()) return;
   hintsUsed++; // asking for help counts toward the score, even if not applied
+  playHint();
   const hint = computeHint(game.N, game.region, currentSolution, collectQueens(), game.mark);
   renderHint(hint);
 }
@@ -1315,8 +1347,10 @@ function applyHint() {
       game.mark[r][c] = false;
       lastPlaced = { r, c };
     }
+    playPlace();
   } else if (h.kind === 'eliminate') {
     for (const [r, c] of h.targetCells) if (!game.queen[r][c]) game.mark[r][c] = true;
+    playDot();
   } else if (h.kind === 'mistake') {
     const [r, c] = h.targetCells[0];
     if (game.queen[r][c]) {
@@ -1325,6 +1359,7 @@ function applyHint() {
     } else if (game.mark[r][c]) {
       game.mark[r][c] = false;
     }
+    playErase();
   }
   clearHint();
   updateBoard();
@@ -1411,7 +1446,10 @@ function refreshLiveCheck() {
   liveCheckTimer = setTimeout(renderCheckStatus, LIVE_CHECK_DELAY);
 }
 
-dom.check.addEventListener('click', runCheck);
+dom.check.addEventListener('click', () => {
+  playUi();
+  runCheck();
+});
 
 // ---------- Debug ----------
 function updateDebugButton() {
@@ -1537,9 +1575,16 @@ dom.debugMode.addEventListener('change', () => {
 });
 
 // ---------- Controls ----------
-dom.newGame.addEventListener('click', newGame);
-dom.winNewGame.addEventListener('click', newGame);
+dom.newGame.addEventListener('click', () => {
+  playUi();
+  newGame();
+});
+dom.winNewGame.addEventListener('click', () => {
+  playUi();
+  newGame();
+});
 dom.winSettings.addEventListener('click', () => {
+  playUi();
   hide(dom.winOverlay);
   clearWinConfetti();
   openSettings();
@@ -1551,11 +1596,13 @@ dom.winNickname.addEventListener('input', () => {
   if (winTab === 'local' && pendingWin && !pendingWin.saved) renderWinLocal();
 });
 dom.undo.addEventListener('click', () => {
+  playUi();
   clearHint();
   doUndo();
 });
 dom.resetBoard.addEventListener('click', () => {
   if (!game || game.isWon()) return; // a solved board is frozen — start a new game
+  playUi();
   clearHint();
   pushUndo();
   game.reset();
@@ -1564,7 +1611,10 @@ dom.resetBoard.addEventListener('click', () => {
 });
 
 // ---------- Settings modal ----------
-dom.openSettings.addEventListener('click', openSettings);
+dom.openSettings.addEventListener('click', () => {
+  playUi();
+  openSettings();
+});
 dom.settingsClose.addEventListener('click', closeSettings);
 dom.settingsOverlay.addEventListener('click', (e) => {
   if (e.target === dom.settingsOverlay) closeSettings();
@@ -1587,6 +1637,7 @@ function openSettings() {
   dom.quickMode.checked = settings.quickMode;
   dom.liveCheck.checked = settings.liveCheck;
   dom.introAnimation.checked = settings.introAnimation;
+  dom.soundToggle.checked = settings.sound;
   dom.debugMode.checked = settings.debug;
   show(dom.settingsOverlay);
 }
@@ -1730,7 +1781,10 @@ async function renderLb() {
   renderScoreList(dom.lbScores, rows, -1);
 }
 
-dom.openLeaderboard.addEventListener('click', openLeaderboard);
+dom.openLeaderboard.addEventListener('click', () => {
+  playUi();
+  openLeaderboard();
+});
 dom.lbClose.addEventListener('click', () => hide(dom.leaderboardOverlay));
 dom.leaderboardOverlay.addEventListener('click', (e) => {
   if (e.target === dom.leaderboardOverlay) hide(dom.leaderboardOverlay);
@@ -1758,6 +1812,30 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// ---------- Sound ----------
+// One preference (`sound`) drives both the topbar speaker button and the
+// settings toggle; they stay in sync via applySoundSetting(). The audio layer is
+// muted by flipping a flag, so nothing plays while off and no context is created.
+function applySoundSetting() {
+  setMuted(!settings.sound);
+  const on = settings.sound;
+  dom.toggleSound.textContent = on ? '🔊' : '🔇';
+  dom.toggleSound.setAttribute('aria-pressed', String(!on)); // pressed = muted
+  dom.toggleSound.setAttribute('aria-label', on ? 'Ton stummschalten' : 'Ton einschalten');
+  dom.toggleSound.title = on ? 'Ton an' : 'Ton aus';
+  dom.soundToggle.checked = on;
+}
+
+function setSound(on) {
+  settings.sound = !!on;
+  saveSettings(settings);
+  applySoundSetting();
+  if (settings.sound) playUi(); // a little blip confirms it, only when turning on
+}
+
+dom.toggleSound.addEventListener('click', () => setSound(!settings.sound));
+dom.soundToggle.addEventListener('change', () => setSound(dom.soundToggle.checked));
+
 // ---------- helpers ----------
 function show(node) {
   node.hidden = false;
@@ -1768,4 +1846,5 @@ function hide(node) {
 
 // ---------- boot ----------
 updateDebugButton();
+applySoundSetting();
 newGame();

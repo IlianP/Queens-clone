@@ -23,6 +23,7 @@
             <span class="timer" id="timer">0:00</span>
           </div>
           <button class="btn" id="new-game" type="button">Neues Spiel</button>
+          <button class="btn icon" id="toggle-sound" type="button" aria-pressed="false" aria-label="Ton stummschalten" title="Ton">🔊</button>
           <button class="btn icon" id="open-leaderboard" type="button" aria-label="Bestenliste" title="Bestenliste">🏆</button>
           <button class="btn icon" id="open-settings" type="button" aria-label="Einstellungen" title="Einstellungen">⚙</button>
         </div>
@@ -142,6 +143,14 @@
             <span class="field-hint">Beim Erzeugen eines Rätsels breiten sich die Farbregionen animiert aus, während sich das Feld dreht – füllt die Wartezeit bei großen Feldern.</span>
           </span>
           <input type="checkbox" id="intro-animation" class="switch" />
+        </label>
+
+        <label class="field toggle-field">
+          <span>
+            <span class="field-label">Ton</span>
+            <span class="field-hint">Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise und beim Lösen. Lässt sich auch direkt oben über das Lautsprecher-Symbol stummschalten.</span>
+          </span>
+          <input type="checkbox" id="sound-toggle" class="switch" />
         </label>
 
         <label class="field toggle-field">
