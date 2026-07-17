@@ -27,6 +27,7 @@ function strip(code) {
 }
 
 const settings = strip(read('js/settings.js'));
+const audio = strip(read('js/audio.js'));
 const solver = strip(read('js/solver.js'));
 const generator = strip(read('js/generator.js'));
 const levels = strip(read('js/levels.js'));
@@ -66,11 +67,13 @@ const workerSrc =
   '  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs }));\n' +
   '};\n';
 
-// Page bundle: settings -> solver -> generator -> levels -> highscores ->
-// game -> hint -> leaderboard -> main (boots). The online leaderboard's fetch
-// calls are CSP-blocked inside the Artifact, so it stays disabled there and the
-// bundle runs local-only — the same graceful fallback the game uses elsewhere.
-const pageBundle = [settings, solver, generator, levels, highscores, game, hint, leaderboard, main].join(
+// Page bundle: settings -> audio -> solver -> generator -> levels ->
+// highscores -> game -> hint -> leaderboard -> main (boots). The online
+// leaderboard's fetch calls are CSP-blocked inside the Artifact, so it stays
+// disabled there and the bundle runs local-only — the same graceful fallback the
+// game uses elsewhere. (The synthesised sounds need no assets, so they work
+// under the Artifact CSP unchanged.)
+const pageBundle = [settings, audio, solver, generator, levels, highscores, game, hint, leaderboard, main].join(
   '\n\n'
 );
 

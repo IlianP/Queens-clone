@@ -60,7 +60,7 @@ Because the app is multi-file ESM **plus a Web Worker**, and an Artifact must be
 a single self-contained file under a strict CSP, bundle it (don't hand-write a
 copy) — the reproducible builder lives in git history for this branch
 (`build-artifact.mjs`): it concatenates the real sources in dependency order
-(`settings → solver → generator → levels → highscores → game → hint →
+(`settings → audio → solver → generator → levels → highscores → game → hint →
 leaderboard → main`, stripping `import`/`export` — the strip handles multi-line
 imports and a post-strip guard throws if any survive), inlines the `levels/`
 pools as the `__QUEENS_LEVELS__` global (the Artifact CSP blocks fetch, so the
@@ -89,8 +89,9 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`; pure logic |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Fails soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback |
-| `js/settings.js` | Preferences (size/difficulty/quick mode/debug) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted |
-| `js/main.js` | Wires generator + game + hint + highscores + leaderboard to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, debug export |
+| `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted |
+| `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
+| `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, debug export |
 
 ### Difficulty ↔ solver ↔ hint (keep these aligned)
 

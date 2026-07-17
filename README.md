@@ -21,6 +21,8 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 
 - **Tippen** durchläuft ein Feld: leer → Punkt (Ausschluss) → 👑 → leer.
 - **Neues Spiel** erzeugt ein frisches Rätsel.
+- **🔊 / 🔇** oben schaltet die Soundeffekte ohne Umweg über die Einstellungen
+  direkt stumm bzw. wieder ein.
 - **Markierungen löschen** entfernt nur deine Punkte, die Damen bleiben.
 - **Zurücksetzen** leert das aktuelle Feld.
 - **Prüfen** zeigt kurz an, ob dein aktueller Stand fehlerfrei ist – nur ein
@@ -55,6 +57,8 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   (dieselbe Prüfung wie der **Prüfen**-Button, ebenfalls ohne die Fehlerstelle zu
   verraten). Es erscheint erst kurz nach deinem letzten Zug, damit es beim Spielen nicht
   flackert. Ohne diese Option lässt sich der Status jederzeit über **Prüfen** abrufen.
+- **Ton:** Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise
+  und beim Lösen. Lässt sich hier oder direkt über das 🔊/🔇-Symbol oben stummschalten.
 
 Diese Einstellungen, der zuletzt genutzte Name und die lokalen Bestzeiten werden im
 `localStorage` gespeichert (siehe *Bestenliste* unten). Ein laufender **Spielstand**
@@ -141,6 +145,7 @@ js/hint.js                – Nächster logischer Schluss als erklärbarer Hinwe
 js/highscores.js          – Score-Modell & lokale Bestzeiten (localStorage)
 js/leaderboard.js         – Optionale globale Online-Rangliste (Supabase, fällt still auf lokal zurück)
 js/settings.js            – Einstellungen & letzter Name (localStorage)
+js/audio.js               – Minimalistische Soundeffekte (Web Audio API, ohne Asset-Dateien)
 js/main.js                – DOM-Anbindung, Rendering, Steuerung
 levels/                   – Vorberechnete Rätsel-Pools (JSON, pro Größe × Schwierigkeit)
 docs/leaderboard-setup.sql – SQL zum Einrichten der optionalen Supabase-Rangliste

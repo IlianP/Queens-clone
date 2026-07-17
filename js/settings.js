@@ -17,6 +17,7 @@ export const DEFAULTS = {
   introAnimation: true,
   nickname: '',
   liveCheck: false,
+  sound: true,
 };
 
 // Collapse whitespace and cap the length so a stored nickname is always a tidy
@@ -48,6 +49,7 @@ export function loadSettings() {
         typeof s.introAnimation === 'boolean' ? s.introAnimation : DEFAULTS.introAnimation,
       nickname: sanitizeNickname(s.nickname),
       liveCheck: typeof s.liveCheck === 'boolean' ? s.liveCheck : DEFAULTS.liveCheck,
+      sound: typeof s.sound === 'boolean' ? s.sound : DEFAULTS.sound,
     };
   } catch (e) {
     return { ...DEFAULTS };
