@@ -149,9 +149,17 @@ Counters live in `main.js`: `hintsUsed` bumps in `showHint`, `mistakes` bumps in
 the tap handler when a queen lands off `currentSolution`; both reset in
 `startTimer`. `onWin` is guarded by `winHandled` (fires once per solve) and a
 `pendingWin` is committed to the local list on submit or when the board is left
-(`flushPendingWin`). The online layer is best-effort abuse-protected server-side
-(plausibility + rate-limit); it can't be truly cheat-proof since the client
-reports its own time — say so, don't oversell it. Untrusted leaderboard names
+(`flushPendingWin`). A global submit **auto-retries transient failures** with
+backoff (`submitScore` → `rpcWithRetry` in `leaderboard.js`: up to 4 tries; a
+4xx is treated as permanent and not retried) and, if those are exhausted, the
+win button becomes a manual *"Erneut versuchen"* instead of a dead end — one
+network blip must not lose a hard-won result. Submitting the **same** solve to
+the global board twice is prevented by `pendingWin.submittedGlobal`, which
+latches true only on a confirmed insert (submit_score has no server-side
+idempotency key, so this client latch is the guard). The online layer is
+best-effort abuse-protected server-side (plausibility + rate-limit); it can't be
+truly cheat-proof since the client reports its own time — say so, don't
+oversell it. Untrusted leaderboard names
 are always rendered with `textContent`, never `innerHTML`. Bundle constraint:
 `highscores.js`/`leaderboard.js` are concatenated into one classic script, so
 **no top-level name collisions** (that's why the store key is `SCORES_KEY`, not

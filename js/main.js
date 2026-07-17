@@ -104,7 +104,12 @@ let currentHint = null;
 let hintsUsed = 0;
 let mistakes = 0;
 let winHandled = false;
-let pendingWin = null; // { size, difficulty, seconds, hints, mistakes, score, saved }
+// pendingWin: { size, difficulty, seconds, hints, mistakes, score, saved,
+//               submittedGlobal }. `submittedGlobal` latches true only after a
+// confirmed online insert and is what stops the same solve being entered on the
+// global board twice (the manual retry checks it).
+let pendingWin = null;
+let globalSubmitInFlight = false; // a submit (with its retries) is running
 
 // ---------- Timer ----------
 // Only counts while the window is focused/visible. Time is accumulated across
@@ -725,6 +730,7 @@ function onWin() {
     mistakes,
     score,
     saved: false,
+    submittedGlobal: false,
   };
 
   // Summary: the ranked "Ergebnis" (effective time) with the raw breakdown.
@@ -737,6 +743,7 @@ function onWin() {
     )} · ${plural(mistakes, 'Fehler', 'Fehler')}</span>`;
 
   dom.winNickname.value = settings.nickname || '';
+  globalSubmitInFlight = false;
   dom.winSubmit.disabled = false;
   dom.winSubmit.textContent = leaderboardConfigured() ? 'Eintragen' : 'Speichern';
   setStatus(dom.winSubmitStatus, '');
@@ -814,6 +821,10 @@ function flushPendingWin() {
 
 async function onWinSubmit() {
   if (!pendingWin) return;
+  // Guard the two ways the same solve could be entered globally twice: a submit
+  // already in flight, or one that has already succeeded. Either way, bail.
+  if (globalSubmitInFlight || pendingWin.submittedGlobal) return;
+
   const typed = sanitizeNickname(dom.winNickname.value);
   if (typed) {
     settings.nickname = typed; // remember a real name for next time
@@ -821,7 +832,7 @@ async function onWinSubmit() {
   }
   const name = typed || settings.nickname || 'Anonym';
 
-  commitPendingWin(name); // always record locally first
+  commitPendingWin(name); // always record locally first (no-op if already saved)
   if (winTab === 'local') renderWinLocal();
 
   if (!leaderboardConfigured()) {
@@ -830,21 +841,39 @@ async function onWinSubmit() {
     return;
   }
 
+  globalSubmitInFlight = true;
   dom.winSubmit.disabled = true;
   setStatus(dom.winSubmitStatus, 'Sende an globale Bestenliste …');
-  const res = await submitScore({
-    name,
-    size: pendingWin.size,
-    difficulty: pendingWin.difficulty,
-    seconds: pendingWin.seconds,
-    hints: pendingWin.hints,
-    mistakes: pendingWin.mistakes,
-  });
+  const res = await submitScore(
+    {
+      name,
+      size: pendingWin.size,
+      difficulty: pendingWin.difficulty,
+      seconds: pendingWin.seconds,
+      hints: pendingWin.hints,
+      mistakes: pendingWin.mistakes,
+    },
+    { onRetry: (attempt, total) => setStatus(dom.winSubmitStatus, `Erneuter Versuch … (${attempt}/${total})`) }
+  );
+  globalSubmitInFlight = false;
+
   if (res && Number.isFinite(res.rank)) {
+    pendingWin.submittedGlobal = true; // latch: this solve is now on the global board
+    dom.winSubmit.disabled = true;
     setStatus(dom.winSubmitStatus, `Global eingetragen: Platz ${res.rank} von ${res.total} 🌐`, 'ok');
     selectWinTab('global');
   } else {
-    setStatus(dom.winSubmitStatus, 'Global nicht erreichbar – lokal gespeichert ✓', 'err');
+    // The auto-retries didn't get through. Don't give up on a single episode:
+    // keep the button live as a manual retry (it's re-labelled the first time).
+    // This can't double-submit — submittedGlobal is still false, so it's the same
+    // not-yet-recorded solve trying again; the moment one attempt succeeds it locks.
+    dom.winSubmit.disabled = false;
+    dom.winSubmit.textContent = 'Erneut versuchen';
+    setStatus(
+      dom.winSubmitStatus,
+      'Global nicht erreichbar – lokal gespeichert ✓. Erneut versuchen?',
+      'err'
+    );
   }
 }
 
