@@ -38,15 +38,17 @@
         <div class="check-slot">
           <div class="check-status" id="check-status" role="status" aria-live="polite" hidden></div>
         </div>
-      </main>
 
-      <div class="actions">
-        <button class="btn subtle" id="check" type="button">🔎 Prüfen</button>
-        <button class="btn subtle" id="hint" type="button">💡 Hinweis</button>
-        <button class="btn subtle" id="undo" type="button" disabled>↶ Rückgängig</button>
-        <button class="btn subtle" id="reset-board" type="button">Zurücksetzen</button>
-        <button class="btn subtle" id="debug-copy" type="button" hidden>🐞 Debug kopieren</button>
-      </div>
+        <!-- Kept inside the vertically-centred board group so the controls read
+             as one unit with the board instead of floating far below it. -->
+        <div class="actions">
+          <button class="btn subtle" id="check" type="button">🔎 Prüfen</button>
+          <button class="btn subtle" id="hint" type="button">💡 Hinweis</button>
+          <button class="btn subtle" id="undo" type="button" disabled>↶ Rückgängig</button>
+          <button class="btn subtle" id="reset-board" type="button">🔄 Zurücksetzen</button>
+          <button class="btn subtle" id="debug-copy" type="button" hidden>🐞 Debug kopieren</button>
+        </div>
+      </main>
 
       <footer class="hint">
         Ein Tipp pro Feld: leer → Punkt → 👑 → leer. Eine Dame pro Zeile, Spalte und
