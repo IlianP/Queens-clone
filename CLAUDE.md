@@ -27,9 +27,12 @@ ES modules don't load over `file://`, so serve over HTTP:
 python3 -m http.server 8000   # then open http://localhost:8000
 ```
 
-There is **no CI, linter, or package.json** — the site ships with no build step
-and no dependencies. There is, however, a small **developer test harness in
-`tests/`** (not wired into CI); check it before re-deriving how to drive things:
+There is **no linter or package.json** — the site ships with no build step and
+no dependencies. There is, however, a small **developer test harness in
+`tests/`**, and a minimal CI workflow (`.github/workflows/ci.yml`) runs the
+`tests/logic/` half of it (`logic-tests` job) on every push and PR — see
+"Git / workflow" below for how that gates merges to `main`. Check `tests/`
+before re-deriving how to drive things:
 
 - `tests/logic/` — pure Node, no browser, no deps. `node tests/logic/hint-solve.mjs`
   is exactly the smoke test below: solve generated puzzles end-to-end by applying
@@ -174,3 +177,9 @@ another `KEY`) and **no `import.meta`**.
   scoped to one change.
 - Deployment: `.github/workflows/deploy.yml` publishes to GitHub Pages on push
   to `main` (or `master`). It's a static upload of the repo root — no build.
+- `main` has a **branch protection rule**: PRs need the `logic-tests` status
+  check (`.github/workflows/ci.yml`, runs `tests/logic/`) to pass, and the PR
+  branch must be **up to date with `main`** before the merge button unlocks.
+  If GitHub reports the branch as out-of-date, merge/update from `main` first
+  (e.g. `git fetch origin main && git merge origin/main`, then push) — don't
+  assume a green CI run on an older base is enough to merge.
