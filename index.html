@@ -17,11 +17,17 @@
   <body>
     <div class="app">
       <header class="topbar">
-        <h1>Queens</h1>
-        <div class="toolbar">
+        <div class="brand">
+          <h1>Queens</h1>
+          <!-- Timer on its own compact line under the title: it no longer
+               competes for width in the top row (which overflowed narrow
+               phones once "Neues Spiel" stopped wrapping). Its box only spans
+               its own content, so it never reserves a full-width row. -->
           <div class="status" id="status" aria-live="polite">
             <span class="timer" id="timer">0:00</span>
           </div>
+        </div>
+        <div class="toolbar">
           <button class="btn" id="new-game" type="button">Neues Spiel</button>
           <button class="btn icon" id="open-leaderboard" type="button" aria-label="Bestenliste" title="Bestenliste">🏆</button>
           <button class="btn icon" id="open-settings" type="button" aria-label="Einstellungen" title="Einstellungen">⚙</button>
