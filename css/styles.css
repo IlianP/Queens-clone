@@ -62,6 +62,11 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* Safety net: the app is a fixed-width shell — nothing should ever be
+     reachable by panning sideways. Clip any residual horizontal overflow
+     (e.g. a transiently oversized element during the intro spin) so a swipe
+     off the board can never wiggle the page left/right. */
+  overflow-x: clip;
 }
 
 body {
@@ -91,6 +96,16 @@ body {
   padding-top: 12px;
 }
 
+/* Title + timer stacked; the column is only as wide as its widest child
+   (the title), so the timer never reserves horizontal space of its own. */
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: clamp(1.4rem, 5vw, 1.9rem);
@@ -101,16 +116,40 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
 }
 
+/* Compact timer chip: a subtle tinted pill with a small clock glyph, sized to
+   its content so it sits neatly under the title. */
 .status {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  font-variant-numeric: tabular-nums;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
   color: var(--muted);
   font-weight: 600;
-  min-width: 46px;
-  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.timer-icon {
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+/* Very narrow phones: trim the toolbar so the row still fits without relying
+   on the clip safety net (which would otherwise shave the ⚙ edge). */
+@media (max-width: 360px) {
+  .toolbar {
+    gap: 6px;
+  }
+  .toolbar .btn {
+    padding: 9px 11px;
+  }
+  .toolbar .btn.icon {
+    padding: 9px 10px;
+  }
 }
 
 /* ---------- Buttons ---------- */
