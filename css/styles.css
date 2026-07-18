@@ -102,7 +102,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: 5px;
   min-width: 0;
 }
 
@@ -119,13 +119,23 @@ body {
   flex: none;
 }
 
+/* Compact timer chip: a subtle tinted pill with a small clock glyph, sized to
+   its content so it sits neatly under the title. */
 .status {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  font-variant-numeric: tabular-nums;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
   color: var(--muted);
   font-weight: 600;
-  justify-content: flex-start;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.timer-icon {
+  font-size: 0.85em;
+  line-height: 1;
 }
 
 /* Very narrow phones: trim the toolbar so the row still fits without relying
