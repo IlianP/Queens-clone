@@ -829,8 +829,17 @@ body {
   margin: 0;
 }
 
+/* Fixed (not max) height: the entry count varies a lot as you drag the size
+   slider (or switch difficulty), and letting the list size to its content
+   made the whole card — title and slider included — grow/shrink and wiggle
+   on every step. A constant height with internal scrolling keeps everything
+   above the list pinned in place; short lists just leave blank space below,
+   except the empty state, which centers in the fixed box instead. */
 .leaderboard-card .lb-list {
-  min-height: 84px;
+  height: min(40vh, 320px);
+}
+.leaderboard-card .lb-list:has(.score-empty) {
+  justify-content: center;
 }
 
 /* ---------- Settings ---------- */
@@ -842,6 +851,9 @@ body {
   display: block;
   font-weight: 700;
   margin-bottom: 6px;
+}
+.field-hint[hidden] {
+  display: none;
 }
 .field-hint {
   display: block;
