@@ -1,0 +1,43 @@
+name: CI
+
+# Run the pure-logic test harness on every push and pull request. These tests
+# are plain Node ESM with no dependencies and no browser (see tests/README.md),
+# so they need nothing beyond a Node runtime. The Playwright browser tests in
+# tests/browser/ are intentionally NOT run here: they rely on an
+# environment-provided Playwright + Chromium and don't belong in stock CI.
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  logic-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Run logic tests
+        # Every tests/logic/*.mjs is a self-contained runner that exits non-zero
+        # on failure. Fail the job if any of them fails (new tests are picked up
+        # automatically — no need to list them here).
+        run: |
+          status=0
+          for f in tests/logic/*.mjs; do
+            echo "::group::$f"
+            node "$f" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
