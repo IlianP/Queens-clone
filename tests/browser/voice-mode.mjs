@@ -38,6 +38,9 @@ class FakeRecognition {
 }
 window.SpeechRecognition = FakeRecognition;
 delete window.webkitSpeechRecognition;
+// Disable speech synthesis so command processing is never suppressed by TTS
+// (headless engines fire onend unreliably); the read-aloud path is fail-soft.
+try { delete window.speechSynthesis; } catch (e) { window.speechSynthesis = undefined; }
 window.__fakeVoice = {
   emitFinal(alternatives) {
     const inst = window.__fakeVoiceInstance;
@@ -153,11 +156,52 @@ async function run() {
       (await cellState(page, 14)) === 'empty'
   );
 
-  // --- "Hinweis" opens the hint card (same as the 💡 button). ---
+  // --- Fill: whole columns/rows, with an exclusion. ---
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte Spalte A']);
+  await page.waitForTimeout(60);
+  check(
+    '"Punkte Spalte A" dotted the whole column',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let r = 0; r < 8; r++) if (cells[r * 8].dataset.state !== 'dot') return false;
+      return true;
+    })
+  );
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte Zeile eins außer Spalte C']);
+  await page.waitForTimeout(60);
+  check(
+    '"Zeile eins außer Spalte C" dotted row 1 but skipped C1',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let c = 0; c < 8; c++) {
+        const st = cells[c].dataset.state;
+        if (c === 2 ? st !== 'empty' : st !== 'dot') return false;
+      }
+      return true;
+    })
+  );
+
+  // --- Hint pop-up by voice: opens, "OK" applies it, "Schließen" closes it. ---
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
   await emit(['Hinweis']);
   await page.waitForTimeout(80);
   check('"Hinweis" opened the hint card', !(await page.$eval('#hint-card', (e) => e.hidden)));
-  await page.click('#hint-close');
+  const filledBefore = await page.$$eval('.cell', (cs) => cs.filter((c) => c.dataset.state !== 'empty').length);
+  await emit(['ok']);
+  await page.waitForTimeout(80);
+  check('"OK" closed the hint card (applied)', await page.$eval('#hint-card', (e) => e.hidden));
+  const filledAfter = await page.$$eval('.cell', (cs) => cs.filter((c) => c.dataset.state !== 'empty').length);
+  check('"OK" applied the hint (board changed)', filledAfter > filledBefore);
+  await emit(['Hinweis']);
+  await page.waitForTimeout(80);
+  await emit(['schließen']);
+  await page.waitForTimeout(60);
+  check('"Schließen" closed the hint card', await page.$eval('#hint-card', (e) => e.hidden));
 
   // --- Edge coordinate rulers: a large chess-style ruler instead of the
   //     per-cell corner labels (tested while Voice Mode is still on). ---

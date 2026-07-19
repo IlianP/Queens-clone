@@ -82,6 +82,48 @@ check(
   cellIs(parseVoiceCommand('Punkt auf A2 und L1', 5), 1, 0, 'mark')
 );
 
+// --- Whole-line / region fills with an exclusion set. ---
+function specsEqual(got, want) {
+  if (got.length !== want.length) return false;
+  return got.every((s, i) => {
+    const w = want[i];
+    return s.kind === w[0] && (w[0] === 'color' ? s.name === w[1] : s.v === w[1]);
+  });
+}
+function fillIs(cmd, action, include, exclude) {
+  return (
+    cmd.type === 'fill' &&
+    cmd.action === action &&
+    specsEqual(cmd.include, include) &&
+    specsEqual(cmd.exclude, exclude)
+  );
+}
+check(
+  '"Punkte Spalte B und C außer rot" → fill mark, cols B/C, except red',
+  fillIs(parseVoiceCommand('Punkte Spalte B und C außer rot', 8), 'mark', [['col', 1], ['col', 2]], [['color', 'red']])
+);
+check(
+  '"Punkte Zeile 2 und 3 außer Spalte D" → fill mark, rows 2/3, except col D',
+  fillIs(parseVoiceCommand('Punkte Zeile zwei und drei außer Spalte D', 8), 'mark', [['row', 1], ['row', 2]], [['col', 3]])
+);
+check(
+  '"leere Spalte A" → fill clear of col A',
+  fillIs(parseVoiceCommand('leere Spalte A', 8), 'clear', [['col', 0]], [])
+);
+check(
+  '"Punkte grün" → fill mark of the green region',
+  fillIs(parseVoiceCommand('Punkte grün', 8), 'mark', [['color', 'green']], [])
+);
+// A bare coordinate list stays a batch (no unit word → not a fill).
+check('"A2 B2" stays a batch (not a fill)', parseVoiceCommand('A2 B2', 8).type === 'batch');
+
+// --- Context commands for an open card (hint pop-up). ---
+check('"ok" → apply', actionIs(parseVoiceCommand('ok', 8), 'apply'));
+check('"übernehmen" → apply (ü boundary)', actionIs(parseVoiceCommand('übernehmen', 8), 'apply'));
+check('"schließen" → dismiss', actionIs(parseVoiceCommand('schließen', 8), 'dismiss'));
+check('"wiederholen" → repeat', actionIs(parseVoiceCommand('wiederholen', 8), 'repeat'));
+check('"vorlesen" → repeat', actionIs(parseVoiceCommand('vorlesen', 8), 'repeat'));
+
 // --- Global actions (no coordinate present). ---
 check('"neues Spiel" → newGame', actionIs(parseVoiceCommand('neues Spiel', 8), 'newGame'));
 check('"Hinweis" → hint', actionIs(parseVoiceCommand('Hinweis bitte', 8), 'hint'));

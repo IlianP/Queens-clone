@@ -70,7 +70,10 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   Tippen), **„C4 Dame"** setzt eine Dame, **„C4 Punkt"** einen Ausschluss, **„C4 leeren"**
   räumt es; dazu **„Hinweis"**, **„Prüfen"**, **„Zurück"**, **„Zurücksetzen"**,
   **„Neues Spiel"** und **„Stopp"** (Zuhören beenden). Mehrere Felder lassen sich in
-  einem Befehl aufzählen, z. B. **„Punkte auf A2, B2, C3"**. Nutzt die im Browser eingebaute
+  einem Befehl aufzählen (**„Punkte auf A2, B2, C3"**) und auch ganze Spalten, Zeilen
+  oder Farbregionen mit Ausnahmen ansprechen, z. B. **„Punkte Spalte B und C außer Rot"**
+  oder **„Punkte Zeile 2 und 3 außer Spalte D"**. Erscheint ein Hinweis, wird er
+  vorgelesen und lässt sich mit **„OK"** übernehmen bzw. **„Schließen"** verwerfen. Nutzt die im Browser eingebaute
   Spracherkennung (Web Speech API) – ohne zusätzliche Abhängigkeit oder Server, aber
   aktuell nur in **Chrome/Edge** und mit Mikrofon-Freigabe. Wo die Erkennung fehlt, ist
   die Option deaktiviert und das Spiel läuft unverändert weiter.
