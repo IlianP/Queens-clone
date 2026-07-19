@@ -1935,16 +1935,9 @@ function flashVoiceCell(r, c) {
   cell.classList.add('voice-flash');
 }
 
-// Apply a cell command with the same guards, undo snapshot, mistake counting and
-// sounds as a real tap. `action`: 'toggle' cycles like a tap; 'queen'/'mark'/
-// 'clear' force a state. Returns { ok, reason }.
-function voiceApplyCell(r, c, action) {
-  if (!game) return { ok: false, reason: 'no-game' };
-  if (game.isWon()) return { ok: false, reason: 'won' };
-  clearHint();
-  pushUndo();
-  const wasQueen = game.queen[r][c];
-  const wasMark = game.mark[r][c];
+// Mutate one cell's state for `action` (no undo/sound/render — the caller rolls
+// those up). 'toggle' cycles like a tap; the rest force a state.
+function applyCellStateChange(r, c, action) {
   if (action === 'toggle') {
     game.tap(r, c);
   } else if (action === 'queen') {
@@ -1962,26 +1955,56 @@ function voiceApplyCell(r, c, action) {
     }
     game.mark[r][c] = false;
   }
-  const nowQueen = game.queen[r][c];
-  const nowMark = game.mark[r][c];
-  const changed = wasQueen !== nowQueen || wasMark !== nowMark;
+}
+
+// Apply `action` to one OR MANY cells as a single gesture: the same guards as a
+// tap, one undo snapshot, one board render, and the sounds/mistake-counting
+// rolled up. A spoken batch ("Punkte auf A2, B2, C3") is thus one undo step.
+// Returns { ok, reason, placed, dotted, cleared, count, changed }.
+function voiceApplyCells(cells, action) {
+  if (!game) return { ok: false, reason: 'no-game' };
+  if (game.isWon()) return { ok: false, reason: 'won' };
+  clearHint();
+  pushUndo();
+  let placed = 0;
+  let dotted = 0;
+  let cleared = 0;
+  let changed = 0;
+  let lastQueen = null;
+  for (const { row: r, col: c } of cells) {
+    const wasQueen = game.queen[r][c];
+    const wasMark = game.mark[r][c];
+    applyCellStateChange(r, c, action);
+    const nowQueen = game.queen[r][c];
+    const nowMark = game.mark[r][c];
+    if (wasQueen !== nowQueen || wasMark !== nowMark) changed++;
+    if (!wasQueen && nowQueen) {
+      placed++;
+      lastQueen = { r, c };
+      // A queen off the unique solution is a wrong deduction — count each once.
+      if (currentSolution && currentSolution[r] !== c) mistakes++;
+    } else if (!wasMark && nowMark && !nowQueen) {
+      dotted++;
+    } else if ((wasQueen || wasMark) && !nowQueen && !nowMark) {
+      cleared++;
+    }
+  }
   if (!changed) {
-    // No-op command (e.g. "Dame" on an existing queen): don't clutter undo.
+    // Nothing actually changed (e.g. "Dame" on existing queens) — keep undo clean.
     undoStack.pop();
     updateActionButtons();
   }
-  if (!wasQueen && nowQueen) {
-    lastPlaced = { r, c };
+  // One representative cue for the whole gesture (place > dot > erase), like a tap.
+  if (placed) {
+    lastPlaced = lastQueen;
     playPlace();
-    // A queen off the unique solution is a wrong deduction — count it once.
-    if (currentSolution && currentSolution[r] !== c) mistakes++;
-  } else if (!wasMark && nowMark && !nowQueen) {
+  } else if (dotted) {
     playDot();
-  } else if ((wasQueen || wasMark) && !nowQueen && !nowMark) {
+  } else if (cleared) {
     playErase();
   }
   updateBoard();
-  return { ok: true };
+  return { ok: true, placed, dotted, cleared, count: cells.length, changed };
 }
 
 // Route a parsed command into the existing actions.
@@ -2027,15 +2050,20 @@ function handleVoiceCommand(cmd) {
     }
     return;
   }
-  if (cmd.type === 'cell') {
-    const res = voiceApplyCell(cmd.row, cmd.col, cmd.action);
-    if (res.ok) {
-      setVoiceStatus(`${coordLabel(cmd.row, cmd.col)} · ${VOICE_ACTION_LABEL[cmd.action] || ''}`.trim(), 'ok');
-      flashVoiceCell(cmd.row, cmd.col);
-    } else if (res.reason === 'won') {
-      setVoiceStatus('Gelöst – sag „Neues Spiel“.', 'warn');
+  if (cmd.type === 'cell' || cmd.type === 'batch') {
+    const cells = cmd.type === 'cell' ? [{ row: cmd.row, col: cmd.col }] : cmd.cells;
+    const res = voiceApplyCells(cells, cmd.action);
+    if (!res.ok) {
+      setVoiceStatus(res.reason === 'won' ? 'Gelöst – sag „Neues Spiel“.' : 'Kein aktives Spiel.', 'warn');
+      return;
+    }
+    for (const { row, col } of cells) flashVoiceCell(row, col);
+    const label = VOICE_ACTION_LABEL[cmd.action] || '';
+    if (cells.length === 1) {
+      setVoiceStatus(`${coordLabel(cells[0].row, cells[0].col)} · ${label}`.trim(), 'ok');
     } else {
-      setVoiceStatus('Kein aktives Spiel.', 'warn');
+      const list = cells.map((c) => coordLabel(c.row, c.col)).join(', ');
+      setVoiceStatus(`${cells.length} Felder · ${label} (${list})`, 'ok');
     }
   }
 }

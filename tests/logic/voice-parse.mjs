@@ -52,6 +52,36 @@ check('"C4 löschen" → clear', cellIs(parseVoiceCommand('C4 löschen', 8), 3, 
 check('col L on a 5-board → none', parseVoiceCommand('ludwig eins', 5).type === 'none');
 check('row 9 on an 8-board → none', parseVoiceCommand('a neun', 8).type === 'none');
 
+// --- Several coordinates in one breath → a batch with one shared action. ---
+function batchIs(cmd, action, cells) {
+  if (cmd.type !== 'batch' || cmd.action !== action) return false;
+  if (cmd.cells.length !== cells.length) return false;
+  return cmd.cells.every((c, i) => c.row === cells[i][0] && c.col === cells[i][1]);
+}
+check(
+  '"Punkte auf A2, B2, C3" → batch mark of 3',
+  batchIs(parseVoiceCommand('Punkte auf A2, B2, C3', 8), 'mark', [[1, 0], [1, 1], [2, 2]])
+);
+check(
+  '"A2 B2" (no verb) → batch toggle of 2',
+  batchIs(parseVoiceCommand('A2 B2', 8), 'toggle', [[1, 0], [1, 1]])
+);
+check(
+  '"Damen auf A2 und B5" → batch queen of 2',
+  batchIs(parseVoiceCommand('Damen auf A2 und B5', 8), 'queen', [[1, 0], [4, 1]])
+);
+check(
+  '"Cäsar vier Dora zwei" spelled → batch of 2',
+  batchIs(parseVoiceCommand('Cäsar vier Dora zwei', 8), 'toggle', [[3, 2], [1, 3]])
+);
+// A repeat in one breath collapses to a single cell (not a 2-cell batch).
+check('"A2 A2" → single cell (deduped)', cellIs(parseVoiceCommand('A2 A2', 8), 1, 0));
+// Invalid coordinates drop out of a batch; one survivor → a plain cell command.
+check(
+  '"Punkt auf A2 und L1" on 5-board → just A2',
+  cellIs(parseVoiceCommand('Punkt auf A2 und L1', 5), 1, 0, 'mark')
+);
+
 // --- Global actions (no coordinate present). ---
 check('"neues Spiel" → newGame', actionIs(parseVoiceCommand('neues Spiel', 8), 'newGame'));
 check('"Hinweis" → hint', actionIs(parseVoiceCommand('Hinweis bitte', 8), 'hint'));

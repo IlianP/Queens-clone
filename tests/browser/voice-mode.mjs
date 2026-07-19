@@ -133,6 +133,26 @@ async function run() {
   await page.waitForTimeout(60);
   check('picks the parseable alternative "C4" over noise', (await cellState(page, 26)) === 'dot');
 
+  // --- Batch: several cells in one breath (E2,F2,G2 = indices 12,13,14),
+  //     applied as ONE undo step. ---
+  await emit(['Punkte auf E2, F2, G2']);
+  await page.waitForTimeout(60);
+  check(
+    'batch dotted E2/F2/G2 at once',
+    (await cellState(page, 12)) === 'dot' &&
+      (await cellState(page, 13)) === 'dot' &&
+      (await cellState(page, 14)) === 'dot'
+  );
+  check('batch status mentions "3 Felder"', /3 Felder/.test(await page.$eval('#voice-status', (e) => e.textContent)));
+  await emit(['Zurück']);
+  await page.waitForTimeout(60);
+  check(
+    'one undo reverts the whole batch',
+    (await cellState(page, 12)) === 'empty' &&
+      (await cellState(page, 13)) === 'empty' &&
+      (await cellState(page, 14)) === 'empty'
+  );
+
   // --- "Hinweis" opens the hint card (same as the 💡 button). ---
   await emit(['Hinweis']);
   await page.waitForTimeout(80);

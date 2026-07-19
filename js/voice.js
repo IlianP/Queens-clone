@@ -97,51 +97,67 @@ function voiceNum(token, N) {
   return n >= 1 && n <= N ? n : null;
 }
 
-// Scan the tokens for the first valid column and the first valid row, in any
-// order (chess says "C4" but speech is unpredictable). A glued token like "c4"
-// or "4c" is split so it still resolves. Returns { row, col } (0-based) or null.
-function voiceFindCoord(tokens, N) {
-  let col = null;
-  let num = null;
-  const consider = (t) => {
-    if (col === null) {
-      const c = voiceCol(t, N);
-      if (c !== null) col = c;
+// Scan the tokens for EVERY valid coordinate, in order, so one utterance can
+// address several cells ("A2 B2 C3"). Columns and numbers may come in either
+// order (chess says "C4" but speech is unpredictable); a glued token like "c4"
+// or "4c" is split so it still resolves. Returns an array of { row, col }.
+function voiceFindAllCoords(tokens, N) {
+  // Flatten tokens into typed items: a column index or a row number. Anything
+  // else (filler words like "auf"/"und") is dropped.
+  const items = [];
+  const classify = (tok) => {
+    const c = voiceCol(tok, N);
+    if (c !== null) {
+      items.push({ t: 'col', v: c });
+      return;
     }
-    if (num === null) {
-      const n = voiceNum(t, N);
-      if (n !== null) num = n;
-    }
+    const n = voiceNum(tok, N);
+    if (n !== null) items.push({ t: 'num', v: n });
   };
-  for (const t of tokens) {
+  for (const tok of tokens) {
     let m;
-    if ((m = /^([a-zäöü]+)(\d+)$/.exec(t))) {
-      consider(m[1]);
-      consider(m[2]);
-    } else if ((m = /^(\d+)([a-zäöü]+)$/.exec(t))) {
-      consider(m[1]);
-      consider(m[2]);
+    if ((m = /^([a-zäöü]+)(\d+)$/.exec(tok))) {
+      classify(m[1]);
+      classify(m[2]);
+    } else if ((m = /^(\d+)([a-zäöü]+)$/.exec(tok))) {
+      classify(m[1]);
+      classify(m[2]);
     } else {
-      consider(t);
+      classify(tok);
     }
-    if (col !== null && num !== null) break;
   }
-  if (col === null || num === null) return null;
-  return { row: num - 1, col };
+  // Greedily pair a column with a number (either order) into a coordinate.
+  const coords = [];
+  let pendCol = null;
+  let pendNum = null;
+  for (const it of items) {
+    if (it.t === 'col') pendCol = it.v;
+    else pendNum = it.v;
+    if (pendCol !== null && pendNum !== null) {
+      coords.push({ row: pendNum - 1, col: pendCol });
+      pendCol = null;
+      pendNum = null;
+    }
+  }
+  return coords;
 }
 
 // Which cell action a coordinate utterance carries. Default 'toggle' cycles the
-// cell exactly like a tap (empty → dot → queen → empty).
+// cell exactly like a tap (empty → dot → queen → empty). Specific mark/clear
+// verbs are checked before the generic "setzen" so "Punkte auf …" marks rather
+// than placing queens.
 function voiceCellAction(norm) {
-  if (/\b(dame|damen|k[oö]nigin|krone|queen|setzen?|setze|platzier\w*)\b/.test(norm)) return 'queen';
+  if (/\b(dame|damen|k[oö]nigin|krone|queen)\b/.test(norm)) return 'queen';
+  if (/\b(punkt\w*|markier\w*|kreuz|dot)\b/.test(norm)) return 'mark';
   if (/\b(l[oö]sch\w*|leer\w*|entfern\w*|frei|weg|raus)\b/.test(norm)) return 'clear';
-  if (/\b(punkt|markier\w*|kreuz|dot)\b/.test(norm)) return 'mark';
+  if (/\b(setzen?|setze|platzier\w*)\b/.test(norm)) return 'queen';
   return 'toggle';
 }
 
 // Parse a German transcript into a structured command. Pure — safe in Node.
 // Returns one of:
 //   { type: 'cell', row, col, action }  action: 'toggle'|'queen'|'mark'|'clear'
+//   { type: 'batch', action, cells }    several cells, one shared action
 //   { type: 'action', action }          action: 'newGame'|'hint'|'check'|'undo'|'reset'
 //   { type: 'stop' }                    stop listening
 //   { type: 'none' }                    nothing recognised
@@ -153,10 +169,27 @@ export function parseVoiceCommand(transcript, N = 8) {
   // Stop listening — checked first so it always wins.
   if (/\b(stop\w*|pause|h[oö]r\w* auf|ruhe|aus)\b/.test(norm)) return { type: 'stop' };
 
-  // A coordinate makes it a cell command; the verb (if any) picks the action.
-  const coord = voiceFindCoord(tokens, N);
-  if (coord) {
-    return { type: 'cell', row: coord.row, col: coord.col, action: voiceCellAction(norm) };
+  // One or more coordinates make it a cell command; the verb (if any) picks the
+  // shared action. Several coordinates in one breath ("Punkte auf A2, B2, C3")
+  // become a batch.
+  const coords = voiceFindAllCoords(tokens, N);
+  if (coords.length) {
+    const action = voiceCellAction(norm);
+    // Drop duplicates but keep order — a repeat in one breath is almost always a
+    // recogniser hiccup, not intent.
+    const seen = new Set();
+    const cells = [];
+    for (const c of coords) {
+      const k = c.row + ',' + c.col;
+      if (!seen.has(k)) {
+        seen.add(k);
+        cells.push(c);
+      }
+    }
+    if (cells.length === 1) {
+      return { type: 'cell', row: cells[0].row, col: cells[0].col, action };
+    }
+    return { type: 'batch', action, cells };
   }
 
   // No coordinate → a global action. Order matters: "zurücksetzen" contains
