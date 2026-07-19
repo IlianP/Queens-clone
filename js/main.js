@@ -113,6 +113,9 @@ const dom = {
   voiceListenLabel: el('voice-listen-label'),
   voiceTranscript: el('voice-transcript'),
   voiceStatus: el('voice-status'),
+  voiceHelp: el('voice-help'),
+  voiceHelpOverlay: el('voice-help-overlay'),
+  voiceHelpClose: el('voice-help-close'),
 };
 
 let settings = loadSettings();
@@ -1864,6 +1867,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (!dom.settingsOverlay.hidden) closeSettings();
     hide(dom.leaderboardOverlay);
+    hide(dom.voiceHelpOverlay);
     clearHint();
     if (partyActive) stopParty();
   }
@@ -2139,6 +2143,16 @@ dom.voiceEdgeMode.addEventListener('change', () => {
   settings.voiceEdgeLabels = dom.voiceEdgeMode.checked;
   saveSettings(settings);
   applyVoiceSetting();
+});
+
+// The ⓘ tutorial: what you can say and how the board reacts.
+dom.voiceHelp.addEventListener('click', () => {
+  playUi();
+  show(dom.voiceHelpOverlay);
+});
+dom.voiceHelpClose.addEventListener('click', () => hide(dom.voiceHelpOverlay));
+dom.voiceHelpOverlay.addEventListener('click', (e) => {
+  if (e.target === dom.voiceHelpOverlay) hide(dom.voiceHelpOverlay);
 });
 
 // ---------- helpers ----------

@@ -97,6 +97,13 @@ async function run() {
   check('voice panel visible', !(await page.$eval('#voice-panel', (e) => e.hidden)));
   check('board shows coordinate labels', await page.$eval('#board', (e) => e.classList.contains('show-coords')));
 
+  // --- The ⓘ tutorial overlay opens and closes. ---
+  await page.click('#voice-help');
+  check('tutorial overlay opens', !(await page.$eval('#voice-help-overlay', (e) => e.hidden)));
+  check('tutorial lists commands', /C4/.test(await page.$eval('#voice-help-overlay', (e) => e.textContent)));
+  await page.click('#voice-help-close');
+  check('tutorial overlay closes', await page.$eval('#voice-help-overlay', (e) => e.hidden));
+
   // --- Start listening. ---
   await page.click('#voice-listen');
   await page.waitForFunction(() => document.getElementById('voice-listen').classList.contains('listening'));

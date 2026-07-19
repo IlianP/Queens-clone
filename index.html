@@ -68,6 +68,7 @@
             <div class="voice-transcript" id="voice-transcript" aria-live="polite" data-placeholder="Sag z. B. „Cäsar vier“ oder „C4 Dame“ …"></div>
             <div class="voice-status" id="voice-status" role="status" aria-live="polite"></div>
           </div>
+          <button class="btn icon voice-help-btn" id="voice-help" type="button" aria-label="Sprachbefehle – Hilfe" title="Was kann ich sagen?">ⓘ</button>
         </div>
 
         <!-- Kept inside the vertically-centred board group so the controls read
@@ -251,6 +252,47 @@
 
         <div class="settings-buttons">
           <button class="btn subtle" id="lb-close" type="button">Schließen</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voice Mode tutorial: what you can say and how the board reacts. Opened
+         from the ⓘ button in the voice panel. -->
+    <div class="overlay" id="voice-help-overlay" hidden>
+      <div class="overlay-card voice-help-card">
+        <h2>🎤 Sprachsteuerung</h2>
+        <p class="field-hint">
+          Tippe auf <strong>🎤 Zuhören</strong> und erlaube den Mikrofon-Zugriff, dann
+          sprich einen Befehl. Felder heißen wie beim Schach: Spalten-Buchstabe (A…)
+          plus Zeilen-Zahl (1…), z. B. <strong>C4</strong>. Die Koordinaten lassen sich
+          am Feld einblenden (Einstellungen → klein in der Ecke oder groß am Rand).
+        </p>
+
+        <h3 class="voice-help-h">Ein Feld ansprechen</h3>
+        <ul class="voice-help-list">
+          <li><span class="vh-cmd">„C4“</span><span class="vh-desc">durchschalten: leer → Punkt → 👑 → leer (wie Tippen)</span></li>
+          <li><span class="vh-cmd">„C4 Dame“</span><span class="vh-desc">Dame setzen (auch „Dame auf C4“, „C4 setzen“)</span></li>
+          <li><span class="vh-cmd">„C4 Punkt“</span><span class="vh-desc">Ausschluss-Punkt (auch „C4 markieren“)</span></li>
+          <li><span class="vh-cmd">„C4 leeren“</span><span class="vh-desc">Feld leeren (auch „C4 löschen“)</span></li>
+        </ul>
+        <p class="field-hint">
+          Tipp: Buchstaben deutlich ausbuchstabieren hilft der Erkennung – etwa
+          <strong>„Cäsar vier“</strong> für C4.
+        </p>
+
+        <h3 class="voice-help-h">Aktionen</h3>
+        <ul class="voice-help-list">
+          <li><span class="vh-cmd">„Hinweis“</span><span class="vh-desc">nächsten logischen Schritt zeigen</span></li>
+          <li><span class="vh-cmd">„Prüfen“</span><span class="vh-desc">fehlerfrei? – ohne die Stelle zu verraten</span></li>
+          <li><span class="vh-cmd">„Zurück“</span><span class="vh-desc">letzten Zug rückgängig machen</span></li>
+          <li><span class="vh-cmd">„Zurücksetzen“</span><span class="vh-desc">das ganze Feld leeren</span></li>
+          <li><span class="vh-cmd">„Neues Spiel“</span><span class="vh-desc">ein frisches Rätsel starten</span></li>
+          <li><span class="vh-cmd">„Stopp“</span><span class="vh-desc">das Zuhören beenden</span></li>
+        </ul>
+        <p class="field-hint">Benötigt Chrome oder Edge und Mikrofon-Zugriff.</p>
+
+        <div class="settings-buttons">
+          <button class="btn primary" id="voice-help-close" type="button">Verstanden</button>
         </div>
       </div>
     </div>

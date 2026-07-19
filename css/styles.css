@@ -649,6 +649,14 @@ body {
   flex-direction: column;
   gap: 2px;
 }
+.voice-help-btn {
+  flex: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  font-style: normal;
+}
 .voice-transcript {
   font-size: 0.92rem;
   font-weight: 600;
@@ -738,6 +746,36 @@ body {
   align-items: center;
   justify-content: center;
   font-size: clamp(0.62rem, 2.7vw, 0.98rem);
+}
+
+/* Voice Mode tutorial overlay: a compact "phrase → what it does" list. */
+.voice-help-h {
+  margin: 16px 0 8px;
+  font-size: 0.95rem;
+}
+.voice-help-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.voice-help-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.vh-cmd {
+  flex: none;
+  min-width: 6.6em;
+  font-weight: 700;
+  color: var(--ink);
+}
+.vh-desc {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
 }
 
 /* Chess-style coordinate label in each cell's corner, shown only in Voice Mode

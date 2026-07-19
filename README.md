@@ -62,7 +62,8 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 - **Sprachsteuerung (Beta):** Steuere das Spiel per Stimme. Felder werden wie beim
   Schach benannt – ein Spalten-Buchstabe (A…, von links) plus eine Zeilen-Zahl (1…,
   von oben), z. B. **„C4"** oder ausbuchstabiert **„Cäsar vier"**. Ein Panel zeigt einen
-  🎤-Knopf zum Zuhören sowie das zuletzt Erkannte; bei aktivem Modus werden zusätzlich die
+  🎤-Knopf zum Zuhören, ein <strong>ⓘ</strong>-Knopf mit einem kurzen Sprachbefehl-Tutorial
+  sowie das zuletzt Erkannte; bei aktivem Modus werden zusätzlich die
   Koordinaten eingeblendet – wahlweise klein in der Ecke jedes Feldes oder (Unter-Option
   **„Koordinaten groß am Rand"**, nur bei aktiver Sprachsteuerung sichtbar) groß als
   Schachbrett-Leiste am Feldrand. Befehle: **„C4"** durchläuft das Feld (wie
