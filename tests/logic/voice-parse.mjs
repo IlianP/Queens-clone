@@ -1,0 +1,74 @@
+// Pure-logic checks for parseVoiceCommand() — the German-transcript → command
+// parser behind Voice Mode. No browser, no deps (voice.js touches `window` only
+// inside the recogniser wrapper, never at import time):
+//   node tests/logic/voice-parse.mjs
+import { parseVoiceCommand, coordLabel, colLetter } from '../../js/voice.js';
+
+let failed = 0;
+function check(name, cond) {
+  if (cond) {
+    console.log('  ok   ' + name);
+  } else {
+    console.log('  FAIL ' + name);
+    failed++;
+  }
+}
+// Compact equality for the { type, row, col, action } shape.
+function cellIs(cmd, row, col, action) {
+  return (
+    cmd.type === 'cell' && cmd.row === row && cmd.col === col && (!action || cmd.action === action)
+  );
+}
+function actionIs(cmd, action) {
+  return cmd.type === 'action' && cmd.action === action;
+}
+
+// --- Coordinate labelling maps the way the data model expects. ---
+check('coordLabel(3,2) === "C4"', coordLabel(3, 2) === 'C4');
+check('colLetter(0) === "A"', colLetter(0) === 'A');
+check('colLetter(11) === "L"', colLetter(11) === 'L');
+
+// --- Bare coordinate → toggle (cycles like a tap). Letter=col, number=row. ---
+check('"C4" → toggle (3,2)', cellIs(parseVoiceCommand('C4', 8), 3, 2, 'toggle'));
+check('"c 4" spaced → (3,2)', cellIs(parseVoiceCommand('c 4', 8), 3, 2, 'toggle'));
+check('"4c" reversed glued → (3,2)', cellIs(parseVoiceCommand('4c', 8), 3, 2, 'toggle'));
+
+// --- German spelling alphabet + spoken number words. ---
+check('"Cäsar vier" → (3,2)', cellIs(parseVoiceCommand('Cäsar vier', 8), 3, 2));
+check('"anton eins" → (0,0)', cellIs(parseVoiceCommand('anton eins', 8), 0, 0));
+check('"ludwig zwölf" on 12 → (11,11)', cellIs(parseVoiceCommand('ludwig zwölf', 12), 11, 11));
+check('number-before-letter "vier cäsar" → (3,2)', cellIs(parseVoiceCommand('vier cäsar', 8), 3, 2));
+
+// --- Action verbs pick the cell action. ---
+check('"C4 Dame" → queen', cellIs(parseVoiceCommand('C4 Dame', 8), 3, 2, 'queen'));
+check('"Dame auf C4" → queen', cellIs(parseVoiceCommand('Dame auf C4', 8), 3, 2, 'queen'));
+check('"C4 setzen" → queen', cellIs(parseVoiceCommand('C4 setzen', 8), 3, 2, 'queen'));
+check('"C4 Punkt" → mark', cellIs(parseVoiceCommand('C4 Punkt', 8), 3, 2, 'mark'));
+check('"C4 markieren" → mark', cellIs(parseVoiceCommand('C4 markieren', 8), 3, 2, 'mark'));
+check('"C4 leeren" → clear', cellIs(parseVoiceCommand('C4 leeren', 8), 3, 2, 'clear'));
+check('"C4 löschen" → clear', cellIs(parseVoiceCommand('C4 löschen', 8), 3, 2, 'clear'));
+
+// --- Out-of-range coordinates are rejected, not clamped. ---
+check('col L on a 5-board → none', parseVoiceCommand('ludwig eins', 5).type === 'none');
+check('row 9 on an 8-board → none', parseVoiceCommand('a neun', 8).type === 'none');
+
+// --- Global actions (no coordinate present). ---
+check('"neues Spiel" → newGame', actionIs(parseVoiceCommand('neues Spiel', 8), 'newGame'));
+check('"Hinweis" → hint', actionIs(parseVoiceCommand('Hinweis bitte', 8), 'hint'));
+check('"Tipp" → hint', actionIs(parseVoiceCommand('Tipp', 8), 'hint'));
+check('"prüfen" → check', actionIs(parseVoiceCommand('prüfen', 8), 'check'));
+check('"zurück" → undo', actionIs(parseVoiceCommand('zurück', 8), 'undo'));
+check('"rückgängig" → undo', actionIs(parseVoiceCommand('rückgängig', 8), 'undo'));
+// "zurücksetzen" contains "zurück": reset must win over undo.
+check('"zurücksetzen" → reset (not undo)', actionIs(parseVoiceCommand('zurücksetzen', 8), 'reset'));
+
+// --- Stop always wins. ---
+check('"stopp" → stop', parseVoiceCommand('stopp', 8).type === 'stop');
+check('"pause" → stop', parseVoiceCommand('pause', 8).type === 'stop');
+
+// --- Garbage / empty → none. ---
+check('empty → none', parseVoiceCommand('', 8).type === 'none');
+check('"guten morgen" → none', parseVoiceCommand('guten morgen', 8).type === 'none');
+
+console.log(failed === 0 ? '\nvoice-parse: all passed' : `\nvoice-parse: ${failed} FAILED`);
+process.exit(failed === 0 ? 0 : 1);

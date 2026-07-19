@@ -37,7 +37,15 @@
       </header>
 
       <main class="board-wrap">
-        <div class="board" id="board" role="grid" aria-label="Spielfeld"></div>
+        <!-- Stage wraps the board plus the optional edge coordinate rulers
+             (letters on top, numbers on the left). The rulers sit OUTSIDE the
+             board so the intro rotation never carries them, and their auto grid
+             tracks collapse to nothing while hidden. -->
+        <div class="board-stage" id="board-stage">
+          <div class="coord-cols" id="coord-cols" aria-hidden="true"></div>
+          <div class="coord-rows" id="coord-rows" aria-hidden="true"></div>
+          <div class="board" id="board" role="grid" aria-label="Spielfeld"></div>
+        </div>
         <div class="message" id="message"></div>
         <!-- Prüf-Status: kurze Rückmeldung "Fehlerfrei?" ohne Position oder
              Hinweis. Wird per Button ausgelöst oder – wenn aktiviert – als
@@ -45,6 +53,22 @@
              height at all times so showing/hiding it never nudges the board. -->
         <div class="check-slot">
           <div class="check-status" id="check-status" role="status" aria-live="polite" hidden></div>
+        </div>
+
+        <!-- Voice Mode (Beta): steer the board by speaking. Coordinates are
+             chess-like — a column letter A… plus a row number 1…, e.g. "C4".
+             Shown only while the preference is on; the mic starts on demand so
+             the browser's permission prompt is a deliberate tap. -->
+        <div class="voice-panel" id="voice-panel" hidden>
+          <button class="btn voice-listen" id="voice-listen" type="button" aria-pressed="false">
+            <span class="voice-mic" aria-hidden="true">🎤</span>
+            <span id="voice-listen-label">Zuhören</span>
+          </button>
+          <div class="voice-readout">
+            <div class="voice-transcript" id="voice-transcript" aria-live="polite" data-placeholder="Sag z. B. „Cäsar vier“ oder „C4 Dame“ …"></div>
+            <div class="voice-status" id="voice-status" role="status" aria-live="polite"></div>
+          </div>
+          <button class="btn icon voice-help-btn" id="voice-help" type="button" aria-label="Sprachbefehle – Hilfe" title="Was kann ich sagen?">ⓘ</button>
         </div>
 
         <!-- Kept inside the vertically-centred board group so the controls read
@@ -162,6 +186,23 @@
 
         <label class="field toggle-field">
           <span>
+            <span class="field-label">Sprachsteuerung (Beta)</span>
+            <span class="field-hint" id="voice-mode-hint">Steuere das Spiel mit der Stimme. Felder werden wie beim Schach benannt – Spalten-Buchstabe A… plus Zeilen-Zahl 1…, z. B. „C4“ oder „Cäsar vier“. Sag „C4 Dame“, „C4 Punkt“, „C4 leeren“ oder für Aktionen „Hinweis“, „Prüfen“, „Zurück“, „Neues Spiel“. Benötigt Chrome oder Edge und Mikrofon-Zugriff; die Buchstaben-Beschriftung erscheint dann am Feld.</span>
+          </span>
+          <input type="checkbox" id="voice-mode" class="switch" />
+        </label>
+
+        <!-- Sub-option, revealed only while Voice Mode is enabled. -->
+        <label class="field toggle-field voice-suboption" id="voice-edge-field" hidden>
+          <span>
+            <span class="field-label">Koordinaten groß am Rand</span>
+            <span class="field-hint">Zeigt die Spalten-Buchstaben und Zeilen-Zahlen groß am Rand des Feldes an – wie beim Schachbrett – statt klein in der Ecke jedes Feldes.</span>
+          </span>
+          <input type="checkbox" id="voice-edge-mode" class="switch" />
+        </label>
+
+        <label class="field toggle-field">
+          <span>
             <span class="field-label">Debug-Modus</span>
             <span class="field-hint">Zeigt einen Button, der alle Infos zum aktuellen Spielstand (inkl. Hinweis) in die Zwischenablage kopiert – hilfreich beim Melden von Problemen.</span>
           </span>
@@ -211,6 +252,47 @@
 
         <div class="settings-buttons">
           <button class="btn subtle" id="lb-close" type="button">Schließen</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voice Mode tutorial: what you can say and how the board reacts. Opened
+         from the ⓘ button in the voice panel. -->
+    <div class="overlay" id="voice-help-overlay" hidden>
+      <div class="overlay-card voice-help-card">
+        <h2>🎤 Sprachsteuerung</h2>
+        <p class="field-hint">
+          Tippe auf <strong>🎤 Zuhören</strong> und erlaube den Mikrofon-Zugriff, dann
+          sprich einen Befehl. Felder heißen wie beim Schach: Spalten-Buchstabe (A…)
+          plus Zeilen-Zahl (1…), z. B. <strong>C4</strong>. Die Koordinaten lassen sich
+          am Feld einblenden (Einstellungen → klein in der Ecke oder groß am Rand).
+        </p>
+
+        <h3 class="voice-help-h">Ein Feld ansprechen</h3>
+        <ul class="voice-help-list">
+          <li><span class="vh-cmd">„C4“</span><span class="vh-desc">durchschalten: leer → Punkt → 👑 → leer (wie Tippen)</span></li>
+          <li><span class="vh-cmd">„C4 Dame“</span><span class="vh-desc">Dame setzen (auch „Dame auf C4“, „C4 setzen“)</span></li>
+          <li><span class="vh-cmd">„C4 Punkt“</span><span class="vh-desc">Ausschluss-Punkt (auch „C4 markieren“)</span></li>
+          <li><span class="vh-cmd">„C4 leeren“</span><span class="vh-desc">Feld leeren (auch „C4 löschen“)</span></li>
+        </ul>
+        <p class="field-hint">
+          Tipp: Buchstaben deutlich ausbuchstabieren hilft der Erkennung – etwa
+          <strong>„Cäsar vier“</strong> für C4.
+        </p>
+
+        <h3 class="voice-help-h">Aktionen</h3>
+        <ul class="voice-help-list">
+          <li><span class="vh-cmd">„Hinweis“</span><span class="vh-desc">nächsten logischen Schritt zeigen</span></li>
+          <li><span class="vh-cmd">„Prüfen“</span><span class="vh-desc">fehlerfrei? – ohne die Stelle zu verraten</span></li>
+          <li><span class="vh-cmd">„Zurück“</span><span class="vh-desc">letzten Zug rückgängig machen</span></li>
+          <li><span class="vh-cmd">„Zurücksetzen“</span><span class="vh-desc">das ganze Feld leeren</span></li>
+          <li><span class="vh-cmd">„Neues Spiel“</span><span class="vh-desc">ein frisches Rätsel starten</span></li>
+          <li><span class="vh-cmd">„Stopp“</span><span class="vh-desc">das Zuhören beenden</span></li>
+        </ul>
+        <p class="field-hint">Benötigt Chrome oder Edge und Mikrofon-Zugriff.</p>
+
+        <div class="settings-buttons">
+          <button class="btn primary" id="voice-help-close" type="button">Verstanden</button>
         </div>
       </div>
     </div>
