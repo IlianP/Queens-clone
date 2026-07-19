@@ -30,6 +30,14 @@ Supabase leaderboard. It asserts `submitScore` retries transient failures
 up after a bounded number of attempts. It exercises the real backoff schedule,
 so it takes a few seconds.
 
+`voice-parse.mjs` covers `parseVoiceCommand` in `js/voice.js` — the pure German
+transcript → command parser behind Voice Mode. It checks the chess-style
+coordinate mapping (letter=column, number=row, e.g. "C4"), the German spelling
+alphabet + spoken number words, the cell-action verbs (Dame/Punkt/leeren),
+out-of-range rejection, the global actions, and that `stopp` always wins. Pure
+logic — `voice.js` only touches `window` inside its recogniser wrapper, never at
+import time.
+
 ## `browser/` — Playwright, environment-provided
 
 These drive the real DOM (`js/main.js`) in Chromium. Use them for interaction
@@ -60,6 +68,15 @@ checks the global-submit flow: it **intercepts every Supabase RPC with
 submit endpoint to drive the auto-retry + manual *"Erneut versuchen"* path, then
 lets it succeed and verifies the same solve can't be submitted twice
 (`pendingWin.submittedGlobal`). Slow by design (it waits out the real backoff).
+
+`voice-mode.mjs` drives Voice Mode end-to-end through the real DOM. There's no
+microphone here, so it **injects a fake `SpeechRecognition`** (via
+`addInitScript`) and pushes transcripts at it with `window.__fakeVoice.emitFinal`
+— exercising the whole path a real utterance would (recogniser →
+`parseVoiceCommand` → the same internal calls a tap/button makes → the board).
+It enables the mode through the settings UI, places/clears a queen by voice,
+opens a hint, stops on "stopp", and confirms the feature gates itself off in a
+browser without the Web Speech API.
 
 ### Writing a new browser test
 

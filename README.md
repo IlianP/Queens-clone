@@ -59,6 +59,17 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   flackert. Ohne diese Option lässt sich der Status jederzeit über **Prüfen** abrufen.
 - **Ton:** Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise
   und beim Lösen. Lässt sich hier oder direkt über das 🔊/🔇-Symbol oben stummschalten.
+- **Sprachsteuerung (Beta):** Steuere das Spiel per Stimme. Felder werden wie beim
+  Schach benannt – ein Spalten-Buchstabe (A…, von links) plus eine Zeilen-Zahl (1…,
+  von oben), z. B. **„C4"** oder ausbuchstabiert **„Cäsar vier"**. Ein Panel zeigt einen
+  🎤-Knopf zum Zuhören sowie das zuletzt Erkannte; bei aktivem Modus wird zusätzlich die
+  Koordinate in jedes Feld eingeblendet. Befehle: **„C4"** durchläuft das Feld (wie
+  Tippen), **„C4 Dame"** setzt eine Dame, **„C4 Punkt"** einen Ausschluss, **„C4 leeren"**
+  räumt es; dazu **„Hinweis"**, **„Prüfen"**, **„Zurück"**, **„Zurücksetzen"**,
+  **„Neues Spiel"** und **„Stopp"** (Zuhören beenden). Nutzt die im Browser eingebaute
+  Spracherkennung (Web Speech API) – ohne zusätzliche Abhängigkeit oder Server, aber
+  aktuell nur in **Chrome/Edge** und mit Mikrofon-Freigabe. Wo die Erkennung fehlt, ist
+  die Option deaktiviert und das Spiel läuft unverändert weiter.
 
 Diese Einstellungen, der zuletzt genutzte Name und die lokalen Bestzeiten werden im
 `localStorage` gespeichert (siehe *Bestenliste* unten). Ein laufender **Spielstand**
@@ -146,6 +157,7 @@ js/highscores.js          – Score-Modell & lokale Bestzeiten (localStorage)
 js/leaderboard.js         – Optionale globale Online-Rangliste (Supabase, fällt still auf lokal zurück)
 js/settings.js            – Einstellungen & letzter Name (localStorage)
 js/audio.js               – Minimalistische Soundeffekte (Web Audio API, ohne Asset-Dateien)
+js/voice.js               – Sprachsteuerung: reiner Befehls-Parser + Web-Speech-Wrapper (ohne DOM)
 js/main.js                – DOM-Anbindung, Rendering, Steuerung
 levels/                   – Vorberechnete Rätsel-Pools (JSON, pro Größe × Schwierigkeit)
 docs/leaderboard-setup.sql – SQL zum Einrichten der optionalen Supabase-Rangliste

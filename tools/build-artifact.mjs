@@ -28,6 +28,7 @@ function strip(code) {
 
 const settings = strip(read('js/settings.js'));
 const audio = strip(read('js/audio.js'));
+const voice = strip(read('js/voice.js'));
 const solver = strip(read('js/solver.js'));
 const generator = strip(read('js/generator.js'));
 const levels = strip(read('js/levels.js'));
@@ -67,13 +68,15 @@ const workerSrc =
   '  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs }));\n' +
   '};\n';
 
-// Page bundle: settings -> audio -> solver -> generator -> levels ->
+// Page bundle: settings -> audio -> voice -> solver -> generator -> levels ->
 // highscores -> game -> hint -> leaderboard -> main (boots). The online
 // leaderboard's fetch calls are CSP-blocked inside the Artifact, so it stays
 // disabled there and the bundle runs local-only — the same graceful fallback the
 // game uses elsewhere. (The synthesised sounds need no assets, so they work
-// under the Artifact CSP unchanged.)
-const pageBundle = [settings, audio, solver, generator, levels, highscores, game, hint, leaderboard, main].join(
+// under the Artifact CSP unchanged. Voice Mode degrades the same way: the
+// sandboxed Artifact frame can't grant mic access, so voiceSupported() gates it
+// off there and the panel simply doesn't run.)
+const pageBundle = [settings, audio, voice, solver, generator, levels, highscores, game, hint, leaderboard, main].join(
   '\n\n'
 );
 

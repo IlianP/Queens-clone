@@ -600,6 +600,124 @@ body {
   flex-wrap: wrap;
 }
 
+/* ---------- Voice Mode ---------- */
+/* Inline card (not fixed) so it never fights the bottom-anchored hint/win
+   cards. Only shown while the preference is on. */
+.voice-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(460px, calc(100vw - 24px));
+  padding: 10px 12px;
+  background: var(--panel);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+  animation: check-pop 0.18s ease;
+}
+.voice-panel[hidden] {
+  display: none;
+}
+.voice-listen {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.voice-mic {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+/* Listening: a soft red pulse so it's obvious the mic is live. */
+.voice-listen.listening {
+  background: var(--accent);
+  color: var(--accent-ink);
+  animation: voice-pulse 1.4s ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+.voice-readout {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.voice-transcript {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-transcript:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  font-weight: 400;
+}
+.voice-status {
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-height: 1.1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-status.ok {
+  color: #17a06a;
+}
+.voice-status.warn {
+  color: var(--danger);
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-panel,
+  .voice-listen.listening {
+    animation: none;
+  }
+}
+
+/* Chess-style coordinate label in each cell's corner, shown only in Voice Mode
+   so a player can read out exactly what to say. A pseudo-element (not a child)
+   so updateBoard's innerHTML rewrites can't wipe it. */
+.board.show-coords .cell::before {
+  content: attr(data-coord);
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  z-index: 1;
+  font-size: clamp(0.42rem, 1.9vw, 0.66rem);
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(31, 37, 68, 0.6);
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
+
+/* Brief highlight on the cell a voice command just addressed. */
+.cell.voice-flash {
+  animation: voice-flash 0.65s ease;
+}
+@keyframes voice-flash {
+  0% {
+    box-shadow: inset 0 0 0 3px var(--accent);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.voice-flash {
+    animation: none;
+  }
+}
+
 .hint {
   text-align: center;
   color: var(--muted);

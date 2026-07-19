@@ -47,6 +47,21 @@
           <div class="check-status" id="check-status" role="status" aria-live="polite" hidden></div>
         </div>
 
+        <!-- Voice Mode (Beta): steer the board by speaking. Coordinates are
+             chess-like — a column letter A… plus a row number 1…, e.g. "C4".
+             Shown only while the preference is on; the mic starts on demand so
+             the browser's permission prompt is a deliberate tap. -->
+        <div class="voice-panel" id="voice-panel" hidden>
+          <button class="btn voice-listen" id="voice-listen" type="button" aria-pressed="false">
+            <span class="voice-mic" aria-hidden="true">🎤</span>
+            <span id="voice-listen-label">Zuhören</span>
+          </button>
+          <div class="voice-readout">
+            <div class="voice-transcript" id="voice-transcript" aria-live="polite" data-placeholder="Sag z. B. „Cäsar vier“ oder „C4 Dame“ …"></div>
+            <div class="voice-status" id="voice-status" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+
         <!-- Kept inside the vertically-centred board group so the controls read
              as one unit with the board instead of floating far below it. -->
         <div class="actions">
@@ -158,6 +173,14 @@
             <span class="field-hint">Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise und beim Lösen. Lässt sich auch direkt oben über das Lautsprecher-Symbol stummschalten.</span>
           </span>
           <input type="checkbox" id="sound-toggle" class="switch" />
+        </label>
+
+        <label class="field toggle-field">
+          <span>
+            <span class="field-label">Sprachsteuerung (Beta)</span>
+            <span class="field-hint" id="voice-mode-hint">Steuere das Spiel mit der Stimme. Felder werden wie beim Schach benannt – Spalten-Buchstabe A… plus Zeilen-Zahl 1…, z. B. „C4“ oder „Cäsar vier“. Sag „C4 Dame“, „C4 Punkt“, „C4 leeren“ oder für Aktionen „Hinweis“, „Prüfen“, „Zurück“, „Neues Spiel“. Benötigt Chrome oder Edge und Mikrofon-Zugriff; die Buchstaben-Beschriftung erscheint dann am Feld.</span>
+          </span>
+          <input type="checkbox" id="voice-mode" class="switch" />
         </label>
 
         <label class="field toggle-field">

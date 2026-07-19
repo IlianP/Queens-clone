@@ -22,6 +22,12 @@ import {
   playWin,
   playParty,
 } from './audio.js';
+import {
+  voiceSupported,
+  createVoiceController,
+  parseVoiceCommand,
+  coordLabel,
+} from './voice.js';
 
 // Distinct, mildly pastel region colours (supports up to 12 regions).
 const PALETTE = [
@@ -92,8 +98,15 @@ const dom = {
   quickMode: el('quick-mode'),
   liveCheck: el('live-check'),
   introAnimation: el('intro-animation'),
+  voiceMode: el('voice-mode'),
+  voiceModeHint: el('voice-mode-hint'),
   settingsApply: el('settings-apply'),
   settingsClose: el('settings-close'),
+  voicePanel: el('voice-panel'),
+  voiceListen: el('voice-listen'),
+  voiceListenLabel: el('voice-listen-label'),
+  voiceTranscript: el('voice-transcript'),
+  voiceStatus: el('voice-status'),
 };
 
 let settings = loadSettings();
@@ -520,6 +533,9 @@ function buildBoard(N, region, reveal = false) {
       div.dataset.r = r;
       div.dataset.c = c;
       div.dataset.region = region[r][c];
+      // Chess-style coordinate (e.g. "C4"); surfaced as a label only in Voice
+      // Mode (.board.show-coords), but always stamped so it's ready on toggle.
+      div.dataset.coord = coordLabel(r, c);
       // Use background-COLOR (not the `background` shorthand) so a hint's
       // hatch (a background-image) can layer on top instead of being reset.
       div.style.backgroundColor = colorMap[region[r][c]];
@@ -1638,6 +1654,7 @@ function openSettings() {
   dom.liveCheck.checked = settings.liveCheck;
   dom.introAnimation.checked = settings.introAnimation;
   dom.soundToggle.checked = settings.sound;
+  dom.voiceMode.checked = settings.voice;
   dom.debugMode.checked = settings.debug;
   show(dom.settingsOverlay);
 }
@@ -1706,7 +1723,9 @@ dom.settingsApply.addEventListener('click', () => {
   settings.quickMode = dom.quickMode.checked;
   settings.liveCheck = dom.liveCheck.checked;
   settings.introAnimation = dom.introAnimation.checked;
+  settings.voice = dom.voiceMode.checked;
   saveSettings(settings);
+  applyVoiceSetting();
   hide(dom.settingsOverlay);
   newGame();
 });
@@ -1836,6 +1855,237 @@ function setSound(on) {
 dom.toggleSound.addEventListener('click', () => setSound(!settings.sound));
 dom.soundToggle.addEventListener('change', () => setSound(dom.soundToggle.checked));
 
+// ---------- Voice Mode ----------
+// Steer the board by speaking (Beta). The recogniser (js/voice.js) only emits
+// raw text; parseVoiceCommand turns it into a structured command, and here we
+// route that command into the SAME internal calls a tap or a button would make
+// — no duplicate game logic. Coordinates are chess-like: a column letter + a row
+// number ("C4"), surfaced as per-cell labels while Voice Mode is on.
+let voiceController = null;
+
+const VOICE_ACTION_LABEL = {
+  toggle: 'umgeschaltet',
+  queen: 'Dame gesetzt',
+  mark: 'Punkt',
+  clear: 'geleert',
+};
+
+function setVoiceTranscript(text) {
+  dom.voiceTranscript.textContent = text || '';
+}
+function setVoiceStatus(text, kind = '') {
+  dom.voiceStatus.textContent = text || '';
+  dom.voiceStatus.className = 'voice-status' + (kind ? ' ' + kind : '');
+}
+function updateVoiceListenButton(listening) {
+  dom.voiceListen.classList.toggle('listening', !!listening);
+  dom.voiceListen.setAttribute('aria-pressed', String(!!listening));
+  dom.voiceListenLabel.textContent = listening ? 'Stopp' : 'Zuhören';
+}
+
+// Brief accent outline on the cell a command just addressed, so the player sees
+// which square was hit even if the label was mis-heard.
+function flashVoiceCell(r, c) {
+  const cell = cells[r] && cells[r][c];
+  if (!cell) return;
+  cell.classList.remove('voice-flash');
+  void cell.offsetWidth; // restart the animation
+  cell.classList.add('voice-flash');
+}
+
+// Apply a cell command with the same guards, undo snapshot, mistake counting and
+// sounds as a real tap. `action`: 'toggle' cycles like a tap; 'queen'/'mark'/
+// 'clear' force a state. Returns { ok, reason }.
+function voiceApplyCell(r, c, action) {
+  if (!game) return { ok: false, reason: 'no-game' };
+  if (game.isWon()) return { ok: false, reason: 'won' };
+  clearHint();
+  pushUndo();
+  const wasQueen = game.queen[r][c];
+  const wasMark = game.mark[r][c];
+  if (action === 'toggle') {
+    game.tap(r, c);
+  } else if (action === 'queen') {
+    if (!game.queen[r][c]) {
+      game.queen[r][c] = true;
+      game.queenCount++;
+      game.mark[r][c] = false;
+    }
+  } else if (action === 'mark') {
+    if (!game.queen[r][c]) game.mark[r][c] = true;
+  } else if (action === 'clear') {
+    if (game.queen[r][c]) {
+      game.queen[r][c] = false;
+      game.queenCount--;
+    }
+    game.mark[r][c] = false;
+  }
+  const nowQueen = game.queen[r][c];
+  const nowMark = game.mark[r][c];
+  const changed = wasQueen !== nowQueen || wasMark !== nowMark;
+  if (!changed) {
+    // No-op command (e.g. "Dame" on an existing queen): don't clutter undo.
+    undoStack.pop();
+    updateActionButtons();
+  }
+  if (!wasQueen && nowQueen) {
+    lastPlaced = { r, c };
+    playPlace();
+    // A queen off the unique solution is a wrong deduction — count it once.
+    if (currentSolution && currentSolution[r] !== c) mistakes++;
+  } else if (!wasMark && nowMark && !nowQueen) {
+    playDot();
+  } else if ((wasQueen || wasMark) && !nowQueen && !nowMark) {
+    playErase();
+  }
+  updateBoard();
+  return { ok: true };
+}
+
+// Route a parsed command into the existing actions.
+function handleVoiceCommand(cmd) {
+  if (!cmd || cmd.type === 'none') {
+    setVoiceStatus('Nicht verstanden – bitte wiederholen.', 'warn');
+    return;
+  }
+  if (cmd.type === 'stop') {
+    stopVoiceListening();
+    setVoiceStatus('Zuhören beendet.');
+    return;
+  }
+  if (cmd.type === 'action') {
+    switch (cmd.action) {
+      case 'newGame':
+        setVoiceStatus('Neues Spiel', 'ok');
+        newGame();
+        break;
+      case 'hint':
+        showHint();
+        setVoiceStatus('Hinweis', 'ok');
+        break;
+      case 'check':
+        runCheck();
+        setVoiceStatus('Prüfen', 'ok');
+        break;
+      case 'undo':
+        clearHint();
+        doUndo();
+        setVoiceStatus('Rückgängig', 'ok');
+        break;
+      case 'reset':
+        if (game && !game.isWon()) {
+          clearHint();
+          pushUndo();
+          game.reset();
+          startTimer();
+          updateBoard();
+          setVoiceStatus('Zurückgesetzt', 'ok');
+        }
+        break;
+    }
+    return;
+  }
+  if (cmd.type === 'cell') {
+    const res = voiceApplyCell(cmd.row, cmd.col, cmd.action);
+    if (res.ok) {
+      setVoiceStatus(`${coordLabel(cmd.row, cmd.col)} · ${VOICE_ACTION_LABEL[cmd.action] || ''}`.trim(), 'ok');
+      flashVoiceCell(cmd.row, cmd.col);
+    } else if (res.reason === 'won') {
+      setVoiceStatus('Gelöst – sag „Neues Spiel“.', 'warn');
+    } else {
+      setVoiceStatus('Kein aktives Spiel.', 'warn');
+    }
+  }
+}
+
+// A final result arrives as ranked alternatives; take the first that parses to a
+// real command (recovers a mis-heard letter far better than trusting only the
+// top guess).
+function handleVoiceFinal(alts) {
+  const N = game ? game.N : settings.size;
+  let cmd = { type: 'none' };
+  let used = alts && alts.length ? alts[0] : '';
+  if (alts) {
+    for (const a of alts) {
+      const parsed = parseVoiceCommand(a, N);
+      if (parsed.type !== 'none') {
+        cmd = parsed;
+        used = a;
+        break;
+      }
+    }
+  }
+  setVoiceTranscript(used);
+  handleVoiceCommand(cmd);
+}
+
+function ensureVoiceController() {
+  if (voiceController || !voiceSupported()) return voiceController;
+  voiceController = createVoiceController({
+    onInterim: (text) => setVoiceTranscript(text),
+    onFinal: (alts) => handleVoiceFinal(alts),
+    onStateChange: (state) => updateVoiceListenButton(state === 'listening'),
+    onError: (kind) => {
+      if (kind === 'not-allowed' || kind === 'service-not-allowed') {
+        setVoiceStatus('Mikrofon-Zugriff verweigert.', 'warn');
+        stopVoiceListening();
+      } else if (kind === 'audio-capture') {
+        setVoiceStatus('Kein Mikrofon gefunden.', 'warn');
+        stopVoiceListening();
+      }
+      // 'no-speech'/'aborted' are benign — the controller keeps listening.
+    },
+  });
+  return voiceController;
+}
+
+function startVoiceListening() {
+  const c = ensureVoiceController();
+  if (!c) return;
+  setVoiceStatus('Zuhören … sprich einen Befehl.');
+  updateVoiceListenButton(true); // optimistic; onStateChange corrects it
+  c.start();
+}
+function stopVoiceListening() {
+  if (voiceController) voiceController.stop();
+  updateVoiceListenButton(false);
+}
+function toggleVoiceListening() {
+  const c = ensureVoiceController();
+  if (!c) return;
+  if (c.isListening()) stopVoiceListening();
+  else startVoiceListening();
+}
+
+// Show/hide the panel + coordinate labels from the preference, and disable the
+// whole feature where the Web Speech API is missing (Safari/Firefox).
+function applyVoiceSetting() {
+  const supported = voiceSupported();
+  if (dom.voiceMode) dom.voiceMode.disabled = !supported;
+  if (!supported && dom.voiceModeHint && !dom.voiceModeHint.dataset.unsupported) {
+    dom.voiceModeHint.dataset.unsupported = '1';
+    dom.voiceModeHint.textContent += ' Hinweis: In diesem Browser nicht verfügbar.';
+  }
+  const on = !!settings.voice && supported;
+  dom.voicePanel.hidden = !on;
+  dom.board.classList.toggle('show-coords', on);
+  if (!on) {
+    stopVoiceListening();
+    setVoiceTranscript('');
+    setVoiceStatus('');
+  }
+}
+
+dom.voiceListen.addEventListener('click', () => {
+  playUi();
+  toggleVoiceListening();
+});
+dom.voiceMode.addEventListener('change', () => {
+  settings.voice = dom.voiceMode.checked;
+  saveSettings(settings);
+  applyVoiceSetting();
+});
+
 // ---------- helpers ----------
 function show(node) {
   node.hidden = false;
@@ -1847,4 +2097,5 @@ function hide(node) {
 // ---------- boot ----------
 updateDebugButton();
 applySoundSetting();
+applyVoiceSetting();
 newGame();

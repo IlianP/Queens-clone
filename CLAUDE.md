@@ -63,8 +63,8 @@ Because the app is multi-file ESM **plus a Web Worker**, and an Artifact must be
 a single self-contained file under a strict CSP, bundle it (don't hand-write a
 copy) — the reproducible builder lives in git history for this branch
 (`build-artifact.mjs`): it concatenates the real sources in dependency order
-(`settings → audio → solver → generator → levels → highscores → game → hint →
-leaderboard → main`, stripping `import`/`export` — the strip handles multi-line
+(`settings → audio → voice → solver → generator → levels → highscores → game →
+hint → leaderboard → main`, stripping `import`/`export` — the strip handles multi-line
 imports and a post-strip guard throws if any survive), inlines the `levels/`
 pools as the `__QUEENS_LEVELS__` global (the Artifact CSP blocks fetch, so the
 online leaderboard is disabled in the Artifact and it runs local-only),
@@ -92,9 +92,10 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`; pure logic |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Fails soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback |
-| `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted |
+| `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
-| `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, debug export |
+| `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r). Mirrors the audio/leaderboard layering |
+| `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, voice panel + coordinate labels, debug export. Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
 
 ### Difficulty ↔ solver ↔ hint (keep these aligned)
 

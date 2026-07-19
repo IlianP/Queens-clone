@@ -1,0 +1,172 @@
+// Browser test for Voice Mode end-to-end wiring, driven through the REAL DOM.
+//
+// There's no microphone in this environment, so we inject a fake
+// SpeechRecognition before the page loads (addInitScript) and push transcripts
+// at it via window.__fakeVoice. That exercises the whole path a real utterance
+// would: recogniser → parseVoiceCommand → the same internal calls a tap/button
+// makes → the board. The parser itself is unit-tested in tests/logic.
+//
+// Playwright + Chromium are environment-provided at fixed /opt paths (see
+// tests/README.md); this only runs in that kind of environment. Start a static
+// server first: `python3 -m http.server 8000`.
+
+const PLAYWRIGHT = '/opt/node22/lib/node_modules/playwright/index.js';
+const CHROMIUM = '/opt/pw-browsers/chromium';
+const BASE = process.env.BASE_URL || 'http://localhost:8000';
+
+// A minimal SpeechRecognition stand-in. Fires onstart/onend and lets the test
+// emit final results shaped like the real API (results[i][a].transcript).
+const FAKE = `
+class FakeRecognition {
+  constructor() {
+    this.lang = ''; this.continuous = false; this.interimResults = false; this.maxAlternatives = 1;
+    this.onstart = null; this.onresult = null; this.onend = null; this.onerror = null;
+    this._started = false;
+    window.__fakeVoiceInstance = this;
+  }
+  start() {
+    if (this._started) throw new Error('already started');
+    this._started = true;
+    setTimeout(() => { if (this.onstart) this.onstart(); }, 0);
+  }
+  stop() {
+    if (!this._started) return;
+    this._started = false;
+    setTimeout(() => { if (this.onend) this.onend(); }, 0);
+  }
+  abort() { this.stop(); }
+}
+window.SpeechRecognition = FakeRecognition;
+delete window.webkitSpeechRecognition;
+window.__fakeVoice = {
+  emitFinal(alternatives) {
+    const inst = window.__fakeVoiceInstance;
+    if (!inst || !inst.onresult) return false;
+    const result = { isFinal: true, length: alternatives.length };
+    alternatives.forEach((t, a) => { result[a] = { transcript: t }; });
+    const results = { length: 1, 0: result };
+    inst.onresult({ resultIndex: 0, results });
+    return true;
+  },
+};
+`;
+
+let failed = 0;
+function check(name, cond) {
+  console.log((cond ? '  ok   ' : '  FAIL ') + name);
+  if (!cond) failed++;
+}
+
+const cellState = (page, idx) =>
+  page.evaluate((i) => document.querySelectorAll('.cell')[i].dataset.state, idx);
+
+async function run() {
+  const pw = (await import(PLAYWRIGHT)).default;
+  const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+
+  const errors = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+
+  await page.addInitScript(FAKE);
+  await page.goto(BASE + '/index.html');
+  await page.waitForSelector('.cell');
+  await page.waitForFunction(() => {
+    const c = document.querySelector('.cell');
+    return c && c.dataset.state !== undefined;
+  });
+
+  const N = await page.$$eval('.cell', (cs) => Math.round(Math.sqrt(cs.length)));
+  check('default board is 8×8', N === 8);
+
+  // Every cell carries its chess coordinate, ready for the label overlay.
+  const coord26 = await page.evaluate(() => document.querySelectorAll('.cell')[26].dataset.coord);
+  check('cell (row3,col2) is labelled "C4"', coord26 === 'C4');
+
+  // --- Turn Voice Mode on through the settings UI. ---
+  await page.click('#open-settings');
+  await page.waitForSelector('#settings-overlay:not([hidden])');
+  check('voice toggle enabled (fake API supported)', !(await page.$eval('#voice-mode', (e) => e.disabled)));
+  await page.check('#voice-mode');
+  await page.click('#settings-close');
+  check('voice panel visible', !(await page.$eval('#voice-panel', (e) => e.hidden)));
+  check('board shows coordinate labels', await page.$eval('#board', (e) => e.classList.contains('show-coords')));
+
+  // --- Start listening. ---
+  await page.click('#voice-listen');
+  await page.waitForFunction(() => document.getElementById('voice-listen').classList.contains('listening'));
+  check('listen button shows the listening state', true);
+
+  const emit = (alts) => page.evaluate((a) => window.__fakeVoice.emitFinal(a), alts);
+
+  // --- "C4 Dame" places a queen at (row3,col2) = flat index 26. ---
+  await emit(['C4 Dame']);
+  await page.waitForTimeout(60);
+  check('"C4 Dame" placed a queen at C4', (await cellState(page, 26)) === 'queen');
+  check('voice status echoes C4', (await page.$eval('#voice-status', (e) => e.textContent)).includes('C4'));
+
+  // --- A bare coordinate cycles like a tap: "A1" dots (0,0) = index 0. ---
+  await emit(['A1']);
+  await page.waitForTimeout(60);
+  check('"A1" dotted A1 (tap cycle)', (await cellState(page, 0)) === 'dot');
+
+  // --- "C4 leeren" clears the queen again. ---
+  await emit(['C4 leeren']);
+  await page.waitForTimeout(60);
+  check('"C4 leeren" cleared C4', (await cellState(page, 26)) === 'empty');
+
+  // --- Alternatives: the first that parses wins (recovers a mis-heard letter). ---
+  await emit(['see for', 'C4']);
+  await page.waitForTimeout(60);
+  check('picks the parseable alternative "C4" over noise', (await cellState(page, 26)) === 'dot');
+
+  // --- "Hinweis" opens the hint card (same as the 💡 button). ---
+  await emit(['Hinweis']);
+  await page.waitForTimeout(80);
+  check('"Hinweis" opened the hint card', !(await page.$eval('#hint-card', (e) => e.hidden)));
+  await page.click('#hint-close');
+
+  // --- "stopp" ends listening. ---
+  await emit(['stopp']);
+  await page.waitForFunction(
+    () => !document.getElementById('voice-listen').classList.contains('listening')
+  );
+  check('"stopp" stopped listening', true);
+
+  // --- Turning Voice Mode off hides the panel and the labels. ---
+  await page.click('#open-settings');
+  await page.waitForSelector('#settings-overlay:not([hidden])');
+  await page.uncheck('#voice-mode');
+  await page.click('#settings-close');
+  check('voice panel hidden again', await page.$eval('#voice-panel', (e) => e.hidden));
+  check('coordinate labels removed', !(await page.$eval('#board', (e) => e.classList.contains('show-coords'))));
+
+  check('no console/page errors', errors.length === 0);
+  if (errors.length) console.log('   errors:', errors);
+
+  // --- Unsupported browser (no Web Speech API, e.g. Safari/Firefox): the
+  //     feature must gate itself off cleanly. ---
+  const page2 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page2.addInitScript(`delete window.SpeechRecognition; delete window.webkitSpeechRecognition;`);
+  await page2.goto(BASE + '/index.html');
+  await page2.waitForSelector('.cell');
+  await page2.click('#open-settings');
+  await page2.waitForSelector('#settings-overlay:not([hidden])');
+  check('unsupported → voice toggle disabled', await page2.$eval('#voice-mode', (e) => e.disabled));
+  check(
+    'unsupported → hint says so',
+    /nicht verfügbar/.test(await page2.$eval('#voice-mode-hint', (e) => e.textContent))
+  );
+
+  await browser.close();
+  console.log(failed === 0 ? '\nvoice-mode: all passed' : `\nvoice-mode: ${failed} FAILED`);
+  process.exit(failed === 0 ? 0 : 1);
+}
+
+run().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
