@@ -90,7 +90,9 @@ async function run() {
   await page.click('#open-settings');
   await page.waitForSelector('#settings-overlay:not([hidden])');
   check('voice toggle enabled (fake API supported)', !(await page.$eval('#voice-mode', (e) => e.disabled)));
+  check('edge sub-option hidden before Voice Mode', await page.$eval('#voice-edge-field', (e) => e.hidden));
   await page.check('#voice-mode');
+  check('edge sub-option shown once Voice Mode on', !(await page.$eval('#voice-edge-field', (e) => e.hidden)));
   await page.click('#settings-close');
   check('voice panel visible', !(await page.$eval('#voice-panel', (e) => e.hidden)));
   check('board shows coordinate labels', await page.$eval('#board', (e) => e.classList.contains('show-coords')));
@@ -108,15 +110,16 @@ async function run() {
   check('"C4 Dame" placed a queen at C4', (await cellState(page, 26)) === 'queen');
   check('voice status echoes C4', (await page.$eval('#voice-status', (e) => e.textContent)).includes('C4'));
 
-  // --- A bare coordinate cycles like a tap: "A1" dots (0,0) = index 0. ---
-  await emit(['A1']);
-  await page.waitForTimeout(60);
-  check('"A1" dotted A1 (tap cycle)', (await cellState(page, 0)) === 'dot');
-
-  // --- "C4 leeren" clears the queen again. ---
+  // --- "C4 leeren" clears the queen again (board is empty afterwards). ---
   await emit(['C4 leeren']);
   await page.waitForTimeout(60);
   check('"C4 leeren" cleared C4', (await cellState(page, 26)) === 'empty');
+
+  // --- A bare coordinate cycles like a tap: "A1" dots (0,0) = index 0. On the
+  //     now-empty board nothing is auto-marked, so this is deterministic. ---
+  await emit(['A1']);
+  await page.waitForTimeout(60);
+  check('"A1" dotted A1 (tap cycle)', (await cellState(page, 0)) === 'dot');
 
   // --- Alternatives: the first that parses wins (recovers a mis-heard letter). ---
   await emit(['see for', 'C4']);
@@ -129,6 +132,20 @@ async function run() {
   check('"Hinweis" opened the hint card', !(await page.$eval('#hint-card', (e) => e.hidden)));
   await page.click('#hint-close');
 
+  // --- Edge coordinate rulers: a large chess-style ruler instead of the
+  //     per-cell corner labels (tested while Voice Mode is still on). ---
+  await page.click('#open-settings');
+  await page.waitForSelector('#settings-overlay:not([hidden])');
+  await page.check('#voice-edge-mode');
+  await page.click('#settings-close');
+  check('edge rulers on (stage.show-edge-coords)', await page.$eval('#board-stage', (e) => e.classList.contains('show-edge-coords')));
+  check('corner labels off in edge mode', !(await page.$eval('#board', (e) => e.classList.contains('show-coords'))));
+  check('column ruler has N letters', (await page.$eval('#coord-cols', (e) => e.children.length)) === N);
+  check('row ruler has N numbers', (await page.$eval('#coord-rows', (e) => e.children.length)) === N);
+  check('first column label is "A"', (await page.$eval('#coord-cols', (e) => e.children[0].textContent)) === 'A');
+  check('first row label is "1"', (await page.$eval('#coord-rows', (e) => e.children[0].textContent)) === '1');
+  check('no horizontal page overflow with rulers', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+
   // --- "stopp" ends listening. ---
   await emit(['stopp']);
   await page.waitForFunction(
@@ -136,13 +153,15 @@ async function run() {
   );
   check('"stopp" stopped listening', true);
 
-  // --- Turning Voice Mode off hides the panel and the labels. ---
+  // --- Turning Voice Mode off hides the panel, the labels and the rulers. ---
   await page.click('#open-settings');
   await page.waitForSelector('#settings-overlay:not([hidden])');
   await page.uncheck('#voice-mode');
+  check('edge sub-option hidden when Voice Mode off', await page.$eval('#voice-edge-field', (e) => e.hidden));
   await page.click('#settings-close');
   check('voice panel hidden again', await page.$eval('#voice-panel', (e) => e.hidden));
   check('coordinate labels removed', !(await page.$eval('#board', (e) => e.classList.contains('show-coords'))));
+  check('edge rulers removed', !(await page.$eval('#board-stage', (e) => e.classList.contains('show-edge-coords'))));
 
   check('no console/page errors', errors.length === 0);
   if (errors.length) console.log('   errors:', errors);

@@ -27,6 +27,7 @@ import {
   createVoiceController,
   parseVoiceCommand,
   coordLabel,
+  colLetter,
 } from './voice.js';
 
 // Distinct, mildly pastel region colours (supports up to 12 regions).
@@ -44,6 +45,9 @@ const el = (id) => document.getElementById(id);
 
 const dom = {
   board: el('board'),
+  boardStage: el('board-stage'),
+  coordCols: el('coord-cols'),
+  coordRows: el('coord-rows'),
   timer: el('timer'),
   message: el('message'),
   newGame: el('new-game'),
@@ -100,6 +104,8 @@ const dom = {
   introAnimation: el('intro-animation'),
   voiceMode: el('voice-mode'),
   voiceModeHint: el('voice-mode-hint'),
+  voiceEdgeField: el('voice-edge-field'),
+  voiceEdgeMode: el('voice-edge-mode'),
   settingsApply: el('settings-apply'),
   settingsClose: el('settings-close'),
   voicePanel: el('voice-panel'),
@@ -390,6 +396,7 @@ const intro = (() => {
       cancel();
       dom.board.classList.remove('intro-revealing');
       dom.board.style.setProperty('--n', N);
+      buildCoordRulers(N); // keep the edge rulers in step with the new size
       dom.board.innerHTML = '';
       placeholder = [];
       cells = []; // no interactive cells during the compute phase
@@ -512,10 +519,38 @@ function regionRevealDelays(N, region) {
   return delays;
 }
 
+// Fill the edge rulers with N column letters (A…) and row numbers (1…). Cheap,
+// so it's simply rebuilt whenever the board is (size can change per game). The
+// rulers are only visible in Voice Mode's edge-label option, but building them
+// unconditionally keeps the code path simple.
+function buildCoordRulers(N) {
+  dom.boardStage.style.setProperty('--n', N);
+  const cf = document.createDocumentFragment();
+  const rf = document.createDocumentFragment();
+  for (let c = 0; c < N; c++) {
+    const s = document.createElement('span');
+    s.className = 'coord-label';
+    s.textContent = colLetter(c);
+    cf.appendChild(s);
+  }
+  for (let r = 0; r < N; r++) {
+    const s = document.createElement('span');
+    s.className = 'coord-label';
+    s.textContent = String(r + 1);
+    rf.appendChild(s);
+  }
+  dom.coordCols.innerHTML = '';
+  dom.coordRows.innerHTML = '';
+  dom.coordCols.appendChild(cf);
+  dom.coordRows.appendChild(rf);
+}
+
 function buildBoard(N, region, reveal = false) {
   // Assign a distinct palette colour per region.
   colorMap = shuffledPalette(N);
   dom.board.style.setProperty('--n', N);
+  dom.boardStage.style.setProperty('--n', N);
+  buildCoordRulers(N);
   dom.board.classList.remove('intro-revealing');
   dom.board.style.setProperty('--intro-rot', '0deg');
   dom.board.innerHTML = '';
@@ -1655,6 +1690,8 @@ function openSettings() {
   dom.introAnimation.checked = settings.introAnimation;
   dom.soundToggle.checked = settings.sound;
   dom.voiceMode.checked = settings.voice;
+  dom.voiceEdgeMode.checked = settings.voiceEdgeLabels;
+  updateVoiceSubOptions();
   dom.debugMode.checked = settings.debug;
   show(dom.settingsOverlay);
 }
@@ -1724,6 +1761,7 @@ dom.settingsApply.addEventListener('click', () => {
   settings.liveCheck = dom.liveCheck.checked;
   settings.introAnimation = dom.introAnimation.checked;
   settings.voice = dom.voiceMode.checked;
+  settings.voiceEdgeLabels = dom.voiceEdgeMode.checked;
   saveSettings(settings);
   applyVoiceSetting();
   hide(dom.settingsOverlay);
@@ -2067,13 +2105,24 @@ function applyVoiceSetting() {
     dom.voiceModeHint.textContent += ' Hinweis: In diesem Browser nicht verfügbar.';
   }
   const on = !!settings.voice && supported;
+  // Two mutually exclusive coordinate styles: small labels in each cell's corner
+  // (default) or a large chess-style ruler along the board's edges.
+  const edge = on && !!settings.voiceEdgeLabels;
   dom.voicePanel.hidden = !on;
-  dom.board.classList.toggle('show-coords', on);
+  dom.board.classList.toggle('show-coords', on && !edge);
+  dom.boardStage.classList.toggle('show-edge-coords', edge);
   if (!on) {
     stopVoiceListening();
     setVoiceTranscript('');
     setVoiceStatus('');
   }
+}
+
+// The edge-labels sub-option only makes sense with Voice Mode on, so it's shown
+// in the settings modal only while the Voice Mode switch is checked (and the
+// browser supports the feature).
+function updateVoiceSubOptions() {
+  dom.voiceEdgeField.hidden = !(voiceSupported() && dom.voiceMode.checked);
 }
 
 dom.voiceListen.addEventListener('click', () => {
@@ -2082,6 +2131,12 @@ dom.voiceListen.addEventListener('click', () => {
 });
 dom.voiceMode.addEventListener('change', () => {
   settings.voice = dom.voiceMode.checked;
+  saveSettings(settings);
+  updateVoiceSubOptions();
+  applyVoiceSetting();
+});
+dom.voiceEdgeMode.addEventListener('change', () => {
+  settings.voiceEdgeLabels = dom.voiceEdgeMode.checked;
   saveSettings(settings);
   applyVoiceSetting();
 });

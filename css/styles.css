@@ -683,6 +683,63 @@ body {
   }
 }
 
+/* Board stage: the board plus the optional edge coordinate rulers. The board
+   keeps its own explicit size and defines the grid tracks; the ruler tracks are
+   `auto`, so they collapse to zero (board sits exactly where it did before)
+   until Voice Mode's edge option turns them on. The rulers live outside .board
+   so the intro rotation/scale never carries them. */
+.board-stage {
+  --n: 8;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  justify-items: center;
+}
+.board-stage .board {
+  grid-column: 2;
+  grid-row: 2;
+}
+.coord-cols,
+.coord-rows {
+  display: none;
+  color: var(--muted);
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.coord-cols {
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
+  grid-template-columns: repeat(var(--n), 1fr);
+  padding-bottom: 5px;
+}
+.coord-rows {
+  grid-column: 1;
+  grid-row: 2;
+  height: 100%;
+  grid-template-rows: repeat(var(--n), 1fr);
+  padding-right: 7px;
+}
+.board-stage.show-edge-coords .coord-cols,
+.board-stage.show-edge-coords .coord-rows {
+  display: grid;
+}
+/* Leave room for the rulers by trimming the board a touch when they're shown,
+   so the left number strip never gets clipped on a full-width phone board. */
+.board-stage.show-edge-coords .board {
+  width: min(84vw, 66vh, 528px);
+}
+.coord-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(0.62rem, 2.7vw, 0.98rem);
+}
+
 /* Chess-style coordinate label in each cell's corner, shown only in Voice Mode
    so a player can read out exactly what to say. A pseudo-element (not a child)
    so updateBoard's innerHTML rewrites can't wipe it. */

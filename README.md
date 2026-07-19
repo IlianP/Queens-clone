@@ -62,8 +62,10 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 - **Sprachsteuerung (Beta):** Steuere das Spiel per Stimme. Felder werden wie beim
   Schach benannt – ein Spalten-Buchstabe (A…, von links) plus eine Zeilen-Zahl (1…,
   von oben), z. B. **„C4"** oder ausbuchstabiert **„Cäsar vier"**. Ein Panel zeigt einen
-  🎤-Knopf zum Zuhören sowie das zuletzt Erkannte; bei aktivem Modus wird zusätzlich die
-  Koordinate in jedes Feld eingeblendet. Befehle: **„C4"** durchläuft das Feld (wie
+  🎤-Knopf zum Zuhören sowie das zuletzt Erkannte; bei aktivem Modus werden zusätzlich die
+  Koordinaten eingeblendet – wahlweise klein in der Ecke jedes Feldes oder (Unter-Option
+  **„Koordinaten groß am Rand"**, nur bei aktiver Sprachsteuerung sichtbar) groß als
+  Schachbrett-Leiste am Feldrand. Befehle: **„C4"** durchläuft das Feld (wie
   Tippen), **„C4 Dame"** setzt eine Dame, **„C4 Punkt"** einen Ausschluss, **„C4 leeren"**
   räumt es; dazu **„Hinweis"**, **„Prüfen"**, **„Zurück"**, **„Zurücksetzen"**,
   **„Neues Spiel"** und **„Stopp"** (Zuhören beenden). Nutzt die im Browser eingebaute

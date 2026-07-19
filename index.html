@@ -37,7 +37,15 @@
       </header>
 
       <main class="board-wrap">
-        <div class="board" id="board" role="grid" aria-label="Spielfeld"></div>
+        <!-- Stage wraps the board plus the optional edge coordinate rulers
+             (letters on top, numbers on the left). The rulers sit OUTSIDE the
+             board so the intro rotation never carries them, and their auto grid
+             tracks collapse to nothing while hidden. -->
+        <div class="board-stage" id="board-stage">
+          <div class="coord-cols" id="coord-cols" aria-hidden="true"></div>
+          <div class="coord-rows" id="coord-rows" aria-hidden="true"></div>
+          <div class="board" id="board" role="grid" aria-label="Spielfeld"></div>
+        </div>
         <div class="message" id="message"></div>
         <!-- Prüf-Status: kurze Rückmeldung "Fehlerfrei?" ohne Position oder
              Hinweis. Wird per Button ausgelöst oder – wenn aktiviert – als
@@ -181,6 +189,15 @@
             <span class="field-hint" id="voice-mode-hint">Steuere das Spiel mit der Stimme. Felder werden wie beim Schach benannt – Spalten-Buchstabe A… plus Zeilen-Zahl 1…, z. B. „C4“ oder „Cäsar vier“. Sag „C4 Dame“, „C4 Punkt“, „C4 leeren“ oder für Aktionen „Hinweis“, „Prüfen“, „Zurück“, „Neues Spiel“. Benötigt Chrome oder Edge und Mikrofon-Zugriff; die Buchstaben-Beschriftung erscheint dann am Feld.</span>
           </span>
           <input type="checkbox" id="voice-mode" class="switch" />
+        </label>
+
+        <!-- Sub-option, revealed only while Voice Mode is enabled. -->
+        <label class="field toggle-field voice-suboption" id="voice-edge-field" hidden>
+          <span>
+            <span class="field-label">Koordinaten groß am Rand</span>
+            <span class="field-hint">Zeigt die Spalten-Buchstaben und Zeilen-Zahlen groß am Rand des Feldes an – wie beim Schachbrett – statt klein in der Ecke jedes Feldes.</span>
+          </span>
+          <input type="checkbox" id="voice-edge-mode" class="switch" />
         </label>
 
         <label class="field toggle-field">
