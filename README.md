@@ -29,8 +29,9 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   grünes „✓ Keine Fehler" bzw. rotes „✗ Es gibt Fehler", **ohne** zu
   verraten, wo ein Fehler liegt, und **ohne** den nächsten Zug vorzuschlagen
   (das bleibt dem Hinweis vorbehalten). Als Fehler zählt jeder Regelverstoß im
-  aktuellen Stand **und** eine gesetzte Dame, die nicht zur eindeutigen Lösung
-  gehört – so fällt auch ein Abweichen vom Lösungsweg auf, bevor eine Regel bricht.
+  aktuellen Stand **und** ein Abweichen von der eindeutigen Lösung, bevor eine
+  Regel bricht: eine gesetzte Dame, die nicht zur Lösung gehört, ebenso wie ein
+  Punkt auf einem Feld, auf dem laut Lösung eine Dame stehen muss.
 - Fehler (sich berührende / kollidierende Damen) werden rot markiert.
 - Eine Zeile, Spalte oder Farbregion, in der jedes Feld ausgeschlossen ist und
   keine Dame steht, wird rot pulsierend umrandet – dort ist keine Dame mehr
