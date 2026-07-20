@@ -184,3 +184,12 @@ another `KEY`) and **no `import.meta`**.
   If GitHub reports the branch as out-of-date, merge/update from `main` first
   (e.g. `git fetch origin main && git merge origin/main`, then push) — don't
   assume a green CI run on an older base is enough to merge.
+- **Don't push follow-up commits onto a branch whose PR is already merged.** A
+  merged PR is finished — it won't pick up new commits, so they strand on the
+  branch, off `main`, looking "pushed" but never shipping (nothing is lost; it's
+  just invisible until noticed). Before pushing follow-up work to a branch that
+  already had a PR, confirm the PR is still open (e.g. `gh pr view` / a
+  `list_pull_requests` check). If it merged, start the follow-up on a fresh
+  branch cut from the latest `main` and open a new PR — carry any not-yet-merged
+  commits over by rebasing them onto the new base, don't stack them on the
+  merged history.
