@@ -61,6 +61,34 @@ const VOICE_NUM_WORDS = {
   'zwölf': 12, zwoelf: 12,
 };
 
+// Unit words for whole-line/region fills. Regions are named by COLOUR (the game
+// shuffles colours per puzzle, so the pure parser can't know which colour is
+// which region — it emits a canonical colour key and main.js resolves it).
+const VOICE_COLUMN_WORDS = new Set(['spalte', 'spalten']);
+const VOICE_ROW_WORDS = new Set(['zeile', 'zeilen', 'reihe', 'reihen']);
+const VOICE_REGION_WORDS = new Set(['farbe', 'farben', 'region', 'regionen']);
+// Exclusion markers: everything after one is the "except" set.
+const VOICE_EXCLUDE_WORDS = new Set(['außer', 'ausser', 'ohne', 'ausgenommen', 'exkl', 'exklusive']);
+
+// Spoken colour → canonical key (main.js maps the key to a palette colour).
+const VOICE_COLOR_WORDS = {
+  rot: 'red', hellrot: 'red',
+  orange: 'orange',
+  gelb: 'yellow',
+  'hellgrün': 'lime', hellgruen: 'lime', limette: 'lime', limone: 'lime',
+  'grün': 'green', gruen: 'green',
+  'türkis': 'teal', tuerkis: 'teal', cyan: 'teal', mint: 'teal',
+  hellblau: 'lightblue',
+  blau: 'blue',
+  lila: 'purple', violett: 'purple', purpur: 'purple', purple: 'purple',
+  rosa: 'pink', pink: 'pink', magenta: 'pink',
+  braun: 'brown', brown: 'brown',
+  grau: 'gray', grey: 'gray', gray: 'gray',
+};
+function voiceColorKey(tok) {
+  return Object.prototype.hasOwnProperty.call(VOICE_COLOR_WORDS, tok) ? VOICE_COLOR_WORDS[tok] : null;
+}
+
 // Column index (0-based) → its letter. A, B, C, …
 export function colLetter(c) {
   return String.fromCharCode(65 + c);
@@ -97,51 +125,153 @@ function voiceNum(token, N) {
   return n >= 1 && n <= N ? n : null;
 }
 
-// Scan the tokens for the first valid column and the first valid row, in any
-// order (chess says "C4" but speech is unpredictable). A glued token like "c4"
-// or "4c" is split so it still resolves. Returns { row, col } (0-based) or null.
-function voiceFindCoord(tokens, N) {
-  let col = null;
-  let num = null;
-  const consider = (t) => {
-    if (col === null) {
-      const c = voiceCol(t, N);
-      if (c !== null) col = c;
+// Scan the tokens for EVERY valid coordinate, in order, so one utterance can
+// address several cells ("A2 B2 C3"). Columns and numbers may come in either
+// order (chess says "C4" but speech is unpredictable); a glued token like "c4"
+// or "4c" is split so it still resolves. Returns an array of { row, col }.
+function voiceFindAllCoords(tokens, N) {
+  // Flatten tokens into typed items: a column index or a row number. Anything
+  // else (filler words like "auf"/"und") is dropped.
+  const items = [];
+  const classify = (tok) => {
+    const c = voiceCol(tok, N);
+    if (c !== null) {
+      items.push({ t: 'col', v: c });
+      return;
     }
-    if (num === null) {
-      const n = voiceNum(t, N);
-      if (n !== null) num = n;
-    }
+    const n = voiceNum(tok, N);
+    if (n !== null) items.push({ t: 'num', v: n });
   };
-  for (const t of tokens) {
+  for (const tok of tokens) {
     let m;
-    if ((m = /^([a-zäöü]+)(\d+)$/.exec(t))) {
-      consider(m[1]);
-      consider(m[2]);
-    } else if ((m = /^(\d+)([a-zäöü]+)$/.exec(t))) {
-      consider(m[1]);
-      consider(m[2]);
+    if ((m = /^([a-zäöü]+)(\d+)$/.exec(tok))) {
+      classify(m[1]);
+      classify(m[2]);
+    } else if ((m = /^(\d+)([a-zäöü]+)$/.exec(tok))) {
+      classify(m[1]);
+      classify(m[2]);
     } else {
-      consider(t);
+      classify(tok);
     }
-    if (col !== null && num !== null) break;
   }
-  if (col === null || num === null) return null;
-  return { row: num - 1, col };
+  // Greedily pair a column with a number (either order) into a coordinate.
+  const coords = [];
+  let pendCol = null;
+  let pendNum = null;
+  for (const it of items) {
+    if (it.t === 'col') pendCol = it.v;
+    else pendNum = it.v;
+    if (pendCol !== null && pendNum !== null) {
+      coords.push({ row: pendNum - 1, col: pendCol });
+      pendCol = null;
+      pendNum = null;
+    }
+  }
+  return coords;
 }
 
 // Which cell action a coordinate utterance carries. Default 'toggle' cycles the
-// cell exactly like a tap (empty → dot → queen → empty).
+// cell exactly like a tap (empty → dot → queen → empty). Specific mark/clear
+// verbs are checked before the generic "setzen" so "Punkte auf …" marks rather
+// than placing queens.
 function voiceCellAction(norm) {
-  if (/\b(dame|damen|k[oö]nigin|krone|queen|setzen?|setze|platzier\w*)\b/.test(norm)) return 'queen';
+  if (/\b(dame|damen|k[oö]nigin|krone|queen)\b/.test(norm)) return 'queen';
+  if (/\b(punkt\w*|markier\w*|kreuz|dot)\b/.test(norm)) return 'mark';
   if (/\b(l[oö]sch\w*|leer\w*|entfern\w*|frei|weg|raus)\b/.test(norm)) return 'clear';
-  if (/\b(punkt|markier\w*|kreuz|dot)\b/.test(norm)) return 'mark';
+  if (/\b(setzen?|setze|platzier\w*)\b/.test(norm)) return 'queen';
   return 'toggle';
+}
+
+// The action a whole-line/region fill carries. Bulk work is almost always
+// dotting, so 'mark' is the default (unlike a bare cell, which toggles).
+function voiceFillAction(norm) {
+  if (/\b(l[oö]sch\w*|leer\w*|entfern\w*|frei|weg|raus)\b/.test(norm)) return 'clear';
+  if (/\b(dame|damen|k[oö]nigin|setzen?|setze|platzier\w*)\b/.test(norm)) return 'queen';
+  if (/\b(durchschalt\w*|umschalt\w*|toggle)\b/.test(norm)) return 'toggle';
+  return 'mark';
+}
+
+// Scan tokens into fill selectors, each one of:
+//   { kind:'col', v } | { kind:'row', v } | { kind:'color', name } |
+//   { kind:'regionAt', row, col }
+// A unit word ("Spalte"/"Zeile"/"Region") sets the context for what follows:
+// letters after "Spalte", numbers after "Zeile", and after "Region" either a
+// colour ("Region Rot") or a cell that identifies the region ("Region von C3").
+// Colours are self-identifying anywhere. Rows/cols are 0-based. Used for both
+// the include and the exclude ("außer …") side of a fill.
+function voiceScanSelectors(tokens, N) {
+  // Pre-split glued letter+digit tokens ("c3") so "Region von C3" resolves.
+  const flat = [];
+  for (const tok of tokens) {
+    let m;
+    if ((m = /^([a-zäöü]+)(\d+)$/.exec(tok))) {
+      flat.push(m[1], m[2]);
+    } else if ((m = /^(\d+)([a-zäöü]+)$/.exec(tok))) {
+      flat.push(m[1], m[2]);
+    } else {
+      flat.push(tok);
+    }
+  }
+  const specs = [];
+  let unit = null;
+  let pendCol = null;
+  let pendNum = null;
+  const flushRegionAt = () => {
+    if (pendCol !== null && pendNum !== null) {
+      specs.push({ kind: 'regionAt', row: pendNum - 1, col: pendCol });
+      pendCol = null;
+      pendNum = null;
+    }
+  };
+  for (const tok of flat) {
+    if (VOICE_COLUMN_WORDS.has(tok)) {
+      unit = 'col';
+      pendCol = pendNum = null;
+      continue;
+    }
+    if (VOICE_ROW_WORDS.has(tok)) {
+      unit = 'row';
+      pendCol = pendNum = null;
+      continue;
+    }
+    if (VOICE_REGION_WORDS.has(tok)) {
+      unit = 'region';
+      pendCol = pendNum = null;
+      continue;
+    }
+    const color = voiceColorKey(tok);
+    if (color) {
+      specs.push({ kind: 'color', name: color });
+      continue;
+    }
+    if (unit === 'col') {
+      const c = voiceCol(tok, N);
+      if (c !== null) specs.push({ kind: 'col', v: c });
+    } else if (unit === 'row') {
+      const n = voiceNum(tok, N);
+      if (n !== null) specs.push({ kind: 'row', v: n - 1 });
+    } else if (unit === 'region') {
+      // A cell coordinate identifies the region it lies in.
+      const c = voiceCol(tok, N);
+      if (c !== null) {
+        pendCol = c;
+        flushRegionAt();
+        continue;
+      }
+      const n = voiceNum(tok, N);
+      if (n !== null) {
+        pendNum = n;
+        flushRegionAt();
+      }
+    }
+  }
+  return specs;
 }
 
 // Parse a German transcript into a structured command. Pure — safe in Node.
 // Returns one of:
 //   { type: 'cell', row, col, action }  action: 'toggle'|'queen'|'mark'|'clear'
+//   { type: 'batch', action, cells }    several cells, one shared action
 //   { type: 'action', action }          action: 'newGame'|'hint'|'check'|'undo'|'reset'
 //   { type: 'stop' }                    stop listening
 //   { type: 'none' }                    nothing recognised
@@ -153,10 +283,60 @@ export function parseVoiceCommand(transcript, N = 8) {
   // Stop listening — checked first so it always wins.
   if (/\b(stop\w*|pause|h[oö]r\w* auf|ruhe|aus)\b/.test(norm)) return { type: 'stop' };
 
-  // A coordinate makes it a cell command; the verb (if any) picks the action.
-  const coord = voiceFindCoord(tokens, N);
-  if (coord) {
-    return { type: 'cell', row: coord.row, col: coord.col, action: voiceCellAction(norm) };
+  // Confirm / dismiss / re-read — context commands for an open card (e.g. a hint
+  // pop-up). The dispatcher decides what they mean given the current UI. Matched
+  // by exact token (not \b regex): ß/ü aren't \w, so a word boundary before "ü"
+  // in "übernehmen" would never fire.
+  const tokenSet = new Set(tokens);
+  const anyToken = (...words) => words.some((w) => tokenSet.has(w));
+  if (anyToken('ok', 'okay', 'okey', 'übernehmen', 'uebernehmen', 'annehmen', 'passt', 'jawohl', 'ja'))
+    return { type: 'action', action: 'apply' };
+  if (anyToken('schließen', 'schliessen', 'verwerfen', 'abbrechen', 'nein'))
+    return { type: 'action', action: 'dismiss' };
+  if (anyToken('vorlesen', 'wiederholen', 'wiederhole', 'wiederhol', 'nochmal') || /noch\s+(mal|einmal)/.test(norm))
+    return { type: 'action', action: 'repeat' };
+
+  // Whole-line/region fill: "Punkte Spalte B und C außer Rot". Split on the
+  // exclusion marker, then scan each side into unit/colour selectors. Detected
+  // before coordinates so a unit word wins over a stray letter/number.
+  const exclIdx = tokens.findIndex((t) => VOICE_EXCLUDE_WORDS.has(t));
+  const inclTokens = exclIdx === -1 ? tokens : tokens.slice(0, exclIdx);
+  const inclHasUnit = inclTokens.some(
+    (t) =>
+      VOICE_COLUMN_WORDS.has(t) ||
+      VOICE_ROW_WORDS.has(t) ||
+      VOICE_REGION_WORDS.has(t) ||
+      voiceColorKey(t)
+  );
+  if (inclHasUnit) {
+    const include = voiceScanSelectors(inclTokens, N);
+    if (include.length) {
+      const exclude = exclIdx === -1 ? [] : voiceScanSelectors(tokens.slice(exclIdx + 1), N);
+      return { type: 'fill', action: voiceFillAction(norm), include, exclude };
+    }
+  }
+
+  // One or more coordinates make it a cell command; the verb (if any) picks the
+  // shared action. Several coordinates in one breath ("Punkte auf A2, B2, C3")
+  // become a batch.
+  const coords = voiceFindAllCoords(tokens, N);
+  if (coords.length) {
+    const action = voiceCellAction(norm);
+    // Drop duplicates but keep order — a repeat in one breath is almost always a
+    // recogniser hiccup, not intent.
+    const seen = new Set();
+    const cells = [];
+    for (const c of coords) {
+      const k = c.row + ',' + c.col;
+      if (!seen.has(k)) {
+        seen.add(k);
+        cells.push(c);
+      }
+    }
+    if (cells.length === 1) {
+      return { type: 'cell', row: cells[0].row, col: cells[0].col, action };
+    }
+    return { type: 'batch', action, cells };
   }
 
   // No coordinate → a global action. Order matters: "zurücksetzen" contains
@@ -177,6 +357,52 @@ export function voiceSupported() {
     typeof window !== 'undefined' &&
     !!(window.SpeechRecognition || window.webkitSpeechRecognition)
   );
+}
+
+// Is speech synthesis (reading text aloud) available? Safe in Node.
+export function voiceSpeechSupported() {
+  return (
+    typeof window !== 'undefined' &&
+    'speechSynthesis' in window &&
+    typeof window.SpeechSynthesisUtterance !== 'undefined'
+  );
+}
+
+// Read `text` aloud (German by default). Fails soft — if synthesis is missing or
+// throws, onEnd still fires so callers can lift a "speaking" suppression. Any
+// queued/ongoing utterance is cancelled first so hints don't pile up.
+export function voiceSpeak(text, opts = {}) {
+  const { lang = VOICE_LANG, onStart, onEnd } = opts;
+  const done = () => {
+    if (onEnd) onEnd();
+  };
+  try {
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+    if (!synth || !text || typeof window.SpeechSynthesisUtterance === 'undefined') {
+      done();
+      return false;
+    }
+    synth.cancel();
+    const u = new window.SpeechSynthesisUtterance(String(text));
+    u.lang = lang;
+    if (onStart) u.onstart = onStart;
+    u.onend = done;
+    u.onerror = done;
+    synth.speak(u);
+    return true;
+  } catch (e) {
+    done();
+    return false;
+  }
+}
+
+// Stop any ongoing/queued speech. Fails soft.
+export function voiceCancelSpeech() {
+  try {
+    if (typeof window !== 'undefined' && window.speechSynthesis) window.speechSynthesis.cancel();
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 // A thin, self-restarting wrapper around SpeechRecognition. It emits raw text

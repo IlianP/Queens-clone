@@ -52,6 +52,98 @@ check('"C4 löschen" → clear', cellIs(parseVoiceCommand('C4 löschen', 8), 3, 
 check('col L on a 5-board → none', parseVoiceCommand('ludwig eins', 5).type === 'none');
 check('row 9 on an 8-board → none', parseVoiceCommand('a neun', 8).type === 'none');
 
+// --- Several coordinates in one breath → a batch with one shared action. ---
+function batchIs(cmd, action, cells) {
+  if (cmd.type !== 'batch' || cmd.action !== action) return false;
+  if (cmd.cells.length !== cells.length) return false;
+  return cmd.cells.every((c, i) => c.row === cells[i][0] && c.col === cells[i][1]);
+}
+check(
+  '"Punkte auf A2, B2, C3" → batch mark of 3',
+  batchIs(parseVoiceCommand('Punkte auf A2, B2, C3', 8), 'mark', [[1, 0], [1, 1], [2, 2]])
+);
+check(
+  '"A2 B2" (no verb) → batch toggle of 2',
+  batchIs(parseVoiceCommand('A2 B2', 8), 'toggle', [[1, 0], [1, 1]])
+);
+check(
+  '"Damen auf A2 und B5" → batch queen of 2',
+  batchIs(parseVoiceCommand('Damen auf A2 und B5', 8), 'queen', [[1, 0], [4, 1]])
+);
+check(
+  '"Cäsar vier Dora zwei" spelled → batch of 2',
+  batchIs(parseVoiceCommand('Cäsar vier Dora zwei', 8), 'toggle', [[3, 2], [1, 3]])
+);
+// A repeat in one breath collapses to a single cell (not a 2-cell batch).
+check('"A2 A2" → single cell (deduped)', cellIs(parseVoiceCommand('A2 A2', 8), 1, 0));
+// Invalid coordinates drop out of a batch; one survivor → a plain cell command.
+check(
+  '"Punkt auf A2 und L1" on 5-board → just A2',
+  cellIs(parseVoiceCommand('Punkt auf A2 und L1', 5), 1, 0, 'mark')
+);
+
+// --- Whole-line / region fills with an exclusion set. ---
+function specEq(s, w) {
+  if (s.kind !== w[0]) return false;
+  if (w[0] === 'color') return s.name === w[1];
+  if (w[0] === 'regionAt') return s.row === w[1] && s.col === w[2];
+  return s.v === w[1]; // col / row
+}
+function specsEqual(got, want) {
+  return got.length === want.length && got.every((s, i) => specEq(s, want[i]));
+}
+function fillIs(cmd, action, include, exclude) {
+  return (
+    cmd.type === 'fill' &&
+    cmd.action === action &&
+    specsEqual(cmd.include, include) &&
+    specsEqual(cmd.exclude, exclude)
+  );
+}
+check(
+  '"Punkte Spalte B und C außer rot" → fill mark, cols B/C, except red',
+  fillIs(parseVoiceCommand('Punkte Spalte B und C außer rot', 8), 'mark', [['col', 1], ['col', 2]], [['color', 'red']])
+);
+check(
+  '"Punkte Zeile 2 und 3 außer Spalte D" → fill mark, rows 2/3, except col D',
+  fillIs(parseVoiceCommand('Punkte Zeile zwei und drei außer Spalte D', 8), 'mark', [['row', 1], ['row', 2]], [['col', 3]])
+);
+check(
+  '"leere Spalte A" → fill clear of col A',
+  fillIs(parseVoiceCommand('leere Spalte A', 8), 'clear', [['col', 0]], [])
+);
+check(
+  '"Punkte grün" → fill mark of the green region',
+  fillIs(parseVoiceCommand('Punkte grün', 8), 'mark', [['color', 'green']], [])
+);
+// A bare coordinate list stays a batch (no unit word → not a fill).
+check('"A2 B2" stays a batch (not a fill)', parseVoiceCommand('A2 B2', 8).type === 'batch');
+
+// Region-by-cell: name a region by a cell that lies in it.
+check(
+  '"Punkte Region von C3" → fill mark, region at C3',
+  fillIs(parseVoiceCommand('Punkte Region von C3', 8), 'mark', [['regionAt', 2, 2]], [])
+);
+check(
+  '"Punkte Spalte B außer Region C3" → col B, except region at C3',
+  fillIs(parseVoiceCommand('Punkte Spalte B außer Region C3', 8), 'mark', [['col', 1]], [['regionAt', 2, 2]])
+);
+// "alles" was dropped: dotting the whole board has no solving logic, so it's not
+// a fill command any more.
+check('"Punkte alles" is not a fill', parseVoiceCommand('Punkte alles', 8).type !== 'fill');
+// A colour still wins inside a region context ("Region Rot" = the red region).
+check(
+  '"Punkte Region rot" → colour, not region-at',
+  fillIs(parseVoiceCommand('Punkte Region rot', 8), 'mark', [['color', 'red']], [])
+);
+
+// --- Context commands for an open card (hint pop-up). ---
+check('"ok" → apply', actionIs(parseVoiceCommand('ok', 8), 'apply'));
+check('"übernehmen" → apply (ü boundary)', actionIs(parseVoiceCommand('übernehmen', 8), 'apply'));
+check('"schließen" → dismiss', actionIs(parseVoiceCommand('schließen', 8), 'dismiss'));
+check('"wiederholen" → repeat', actionIs(parseVoiceCommand('wiederholen', 8), 'repeat'));
+check('"vorlesen" → repeat', actionIs(parseVoiceCommand('vorlesen', 8), 'repeat'));
+
 // --- Global actions (no coordinate present). ---
 check('"neues Spiel" → newGame', actionIs(parseVoiceCommand('neues Spiel', 8), 'newGame'));
 check('"Hinweis" → hint', actionIs(parseVoiceCommand('Hinweis bitte', 8), 'hint'));

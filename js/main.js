@@ -28,6 +28,9 @@ import {
   parseVoiceCommand,
   coordLabel,
   colLetter,
+  voiceSpeak,
+  voiceSpeechSupported,
+  voiceCancelSpeech,
 } from './voice.js';
 
 // Distinct, mildly pastel region colours (supports up to 12 regions).
@@ -1373,6 +1376,9 @@ function renderHint(hint) {
   dom.hintApply.hidden = !hint.applyLabel;
   if (hint.applyLabel) dom.hintApply.textContent = hint.applyLabel;
   show(dom.hintCard);
+
+  // In a hands-free voice session, read the hint and its choices aloud.
+  if (settings.voice && voiceListening) voiceSayHint(hint);
 }
 
 function clearHintClasses() {
@@ -1904,6 +1910,8 @@ dom.soundToggle.addEventListener('change', () => setSound(dom.soundToggle.checke
 // — no duplicate game logic. Coordinates are chess-like: a column letter + a row
 // number ("C4"), surfaced as per-cell labels while Voice Mode is on.
 let voiceController = null;
+let voiceListening = false; // reflects the recogniser state (for TTS gating)
+let voiceSpeaking = false; // true while reading a hint aloud — suppress commands
 
 const VOICE_ACTION_LABEL = {
   toggle: 'umgeschaltet',
@@ -1911,6 +1919,92 @@ const VOICE_ACTION_LABEL = {
   mark: 'Punkt',
   clear: 'geleert',
 };
+
+// Canonical colour key (from voice.js) → the palette colour it names. Kept in
+// sync with PALETTE; the parser only knows colour words, main.js owns the map.
+const COLOR_KEY_TO_HEX = {
+  red: '#ff8a8a',
+  orange: '#ffb26b',
+  yellow: '#ffe066',
+  lime: '#c1e15b',
+  green: '#7ed99a',
+  teal: '#66d9cd',
+  lightblue: '#79c7ff',
+  blue: '#8aa2ff',
+  purple: '#bd93f9',
+  pink: '#ff9ed8',
+  brown: '#d0a679',
+  gray: '#c9cdd6',
+};
+
+// Region ids currently rendered in the named colour (colorMap[id] = hex). Empty
+// when that colour isn't on the board this puzzle.
+function regionsForColorKey(key) {
+  const ids = new Set();
+  const hex = COLOR_KEY_TO_HEX[key];
+  if (!hex) return ids;
+  for (let id = 0; id < colorMap.length; id++) if (colorMap[id] === hex) ids.add(id);
+  return ids;
+}
+
+// Expand a list of fill selectors (whole columns / rows / colour-regions) into a
+// Set of "r,c" keys, plus any colour names that weren't on the board.
+function fillSelectorCells(specs) {
+  const N = game.N;
+  const set = new Set();
+  const missingColors = [];
+  const addRegion = (id) => {
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) if (game.region[r][c] === id) set.add(`${r},${c}`);
+  };
+  for (const spec of specs) {
+    if (spec.kind === 'col') {
+      for (let r = 0; r < N; r++) set.add(`${r},${spec.v}`);
+    } else if (spec.kind === 'row') {
+      for (let c = 0; c < N; c++) set.add(`${spec.v},${c}`);
+    } else if (spec.kind === 'regionAt') {
+      if (spec.row >= 0 && spec.row < N && spec.col >= 0 && spec.col < N) {
+        addRegion(game.region[spec.row][spec.col]);
+      }
+    } else if (spec.kind === 'color') {
+      const ids = regionsForColorKey(spec.name);
+      if (ids.size === 0) {
+        missingColors.push(spec.name);
+        continue;
+      }
+      for (const id of ids) addRegion(id);
+    }
+  }
+  return { set, missingColors };
+}
+
+// Does a fill's cell set completely cover at least one whole row, column or
+// region? Dotting a whole unit is always a dead end (each unit needs a queen) —
+// the game outlines it red, and we warn about it in the voice status. The useful
+// "unit außer …" confinement forms leave a gap, so they don't trigger this.
+function fillCoversWholeUnit(cells) {
+  const N = game.N;
+  const inSet = new Set(cells.map((c) => `${c.row},${c.col}`));
+  for (let i = 0; i < N; i++) {
+    let rowFull = true;
+    let colFull = true;
+    for (let j = 0; j < N; j++) {
+      if (!inSet.has(`${i},${j}`)) rowFull = false;
+      if (!inSet.has(`${j},${i}`)) colFull = false;
+    }
+    if (rowFull || colFull) return true;
+  }
+  const regionTotal = new Map();
+  const regionHit = new Map();
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const id = game.region[r][c];
+      regionTotal.set(id, (regionTotal.get(id) || 0) + 1);
+      if (inSet.has(`${r},${c}`)) regionHit.set(id, (regionHit.get(id) || 0) + 1);
+    }
+  for (const [id, total] of regionTotal) if (regionHit.get(id) === total) return true;
+  return false;
+}
 
 function setVoiceTranscript(text) {
   dom.voiceTranscript.textContent = text || '';
@@ -1920,9 +2014,37 @@ function setVoiceStatus(text, kind = '') {
   dom.voiceStatus.className = 'voice-status' + (kind ? ' ' + kind : '');
 }
 function updateVoiceListenButton(listening) {
+  voiceListening = !!listening;
   dom.voiceListen.classList.toggle('listening', !!listening);
   dom.voiceListen.setAttribute('aria-pressed', String(!!listening));
   dom.voiceListenLabel.textContent = listening ? 'Stopp' : 'Zuhören';
+  if (!listening) voiceCancelSpeech();
+}
+
+// Read text aloud, and suppress command processing while it plays so the mic
+// doesn't transcribe our own voice (which could e.g. re-trigger "OK"). The
+// suppression lifts a beat after speech ends — with a hard safety timeout so a
+// browser that never fires `onend` (some headless engines) can't wedge it on.
+let voiceSpeakTimer = null;
+function releaseSpeaking(delay) {
+  if (voiceSpeakTimer) clearTimeout(voiceSpeakTimer);
+  voiceSpeakTimer = setTimeout(() => {
+    voiceSpeaking = false;
+  }, delay);
+}
+function voiceSay(text) {
+  if (!settings.voice || !voiceSpeechSupported() || !text) return;
+  voiceSpeaking = true;
+  releaseSpeaking(8000); // safety net if onend never arrives
+  voiceSpeak(text, { onEnd: () => releaseSpeaking(350) });
+}
+
+// Speak a hint and its choices, so the pop-up is usable hands-free.
+function voiceSayHint(hint) {
+  if (!hint) return;
+  let text = `${hint.title}. ${hint.text}`;
+  if (hint.applyLabel) text += ' Sag OK zum Übernehmen, oder Schließen zum Verwerfen.';
+  voiceSay(text);
 }
 
 // Brief accent outline on the cell a command just addressed, so the player sees
@@ -1935,16 +2057,9 @@ function flashVoiceCell(r, c) {
   cell.classList.add('voice-flash');
 }
 
-// Apply a cell command with the same guards, undo snapshot, mistake counting and
-// sounds as a real tap. `action`: 'toggle' cycles like a tap; 'queen'/'mark'/
-// 'clear' force a state. Returns { ok, reason }.
-function voiceApplyCell(r, c, action) {
-  if (!game) return { ok: false, reason: 'no-game' };
-  if (game.isWon()) return { ok: false, reason: 'won' };
-  clearHint();
-  pushUndo();
-  const wasQueen = game.queen[r][c];
-  const wasMark = game.mark[r][c];
+// Mutate one cell's state for `action` (no undo/sound/render — the caller rolls
+// those up). 'toggle' cycles like a tap; the rest force a state.
+function applyCellStateChange(r, c, action) {
   if (action === 'toggle') {
     game.tap(r, c);
   } else if (action === 'queen') {
@@ -1962,26 +2077,56 @@ function voiceApplyCell(r, c, action) {
     }
     game.mark[r][c] = false;
   }
-  const nowQueen = game.queen[r][c];
-  const nowMark = game.mark[r][c];
-  const changed = wasQueen !== nowQueen || wasMark !== nowMark;
+}
+
+// Apply `action` to one OR MANY cells as a single gesture: the same guards as a
+// tap, one undo snapshot, one board render, and the sounds/mistake-counting
+// rolled up. A spoken batch ("Punkte auf A2, B2, C3") is thus one undo step.
+// Returns { ok, reason, placed, dotted, cleared, count, changed }.
+function voiceApplyCells(cells, action) {
+  if (!game) return { ok: false, reason: 'no-game' };
+  if (game.isWon()) return { ok: false, reason: 'won' };
+  clearHint();
+  pushUndo();
+  let placed = 0;
+  let dotted = 0;
+  let cleared = 0;
+  let changed = 0;
+  let lastQueen = null;
+  for (const { row: r, col: c } of cells) {
+    const wasQueen = game.queen[r][c];
+    const wasMark = game.mark[r][c];
+    applyCellStateChange(r, c, action);
+    const nowQueen = game.queen[r][c];
+    const nowMark = game.mark[r][c];
+    if (wasQueen !== nowQueen || wasMark !== nowMark) changed++;
+    if (!wasQueen && nowQueen) {
+      placed++;
+      lastQueen = { r, c };
+      // A queen off the unique solution is a wrong deduction — count each once.
+      if (currentSolution && currentSolution[r] !== c) mistakes++;
+    } else if (!wasMark && nowMark && !nowQueen) {
+      dotted++;
+    } else if ((wasQueen || wasMark) && !nowQueen && !nowMark) {
+      cleared++;
+    }
+  }
   if (!changed) {
-    // No-op command (e.g. "Dame" on an existing queen): don't clutter undo.
+    // Nothing actually changed (e.g. "Dame" on existing queens) — keep undo clean.
     undoStack.pop();
     updateActionButtons();
   }
-  if (!wasQueen && nowQueen) {
-    lastPlaced = { r, c };
+  // One representative cue for the whole gesture (place > dot > erase), like a tap.
+  if (placed) {
+    lastPlaced = lastQueen;
     playPlace();
-    // A queen off the unique solution is a wrong deduction — count it once.
-    if (currentSolution && currentSolution[r] !== c) mistakes++;
-  } else if (!wasMark && nowMark && !nowQueen) {
+  } else if (dotted) {
     playDot();
-  } else if ((wasQueen || wasMark) && !nowQueen && !nowMark) {
+  } else if (cleared) {
     playErase();
   }
   updateBoard();
-  return { ok: true };
+  return { ok: true, placed, dotted, cleared, count: cells.length, changed };
 }
 
 // Route a parsed command into the existing actions.
@@ -2024,18 +2169,85 @@ function handleVoiceCommand(cmd) {
           setVoiceStatus('Zurückgesetzt', 'ok');
         }
         break;
+      // Context commands for the hint pop-up (say "OK" to take the hint).
+      case 'apply':
+        if (hintActive) {
+          applyHint();
+          setVoiceStatus('Hinweis übernommen', 'ok');
+        } else {
+          setVoiceStatus('Kein Hinweis offen.', 'warn');
+        }
+        break;
+      case 'dismiss':
+        if (hintActive) {
+          clearHint();
+          setVoiceStatus('Hinweis geschlossen');
+        }
+        break;
+      case 'repeat':
+        if (hintActive && currentHint) voiceSayHint(currentHint);
+        else setVoiceStatus('Nichts zum Vorlesen.', 'warn');
+        break;
     }
     return;
   }
-  if (cmd.type === 'cell') {
-    const res = voiceApplyCell(cmd.row, cmd.col, cmd.action);
-    if (res.ok) {
-      setVoiceStatus(`${coordLabel(cmd.row, cmd.col)} · ${VOICE_ACTION_LABEL[cmd.action] || ''}`.trim(), 'ok');
-      flashVoiceCell(cmd.row, cmd.col);
-    } else if (res.reason === 'won') {
-      setVoiceStatus('Gelöst – sag „Neues Spiel“.', 'warn');
+  if (cmd.type === 'cell' || cmd.type === 'batch') {
+    const cells = cmd.type === 'cell' ? [{ row: cmd.row, col: cmd.col }] : cmd.cells;
+    const res = voiceApplyCells(cells, cmd.action);
+    if (!res.ok) {
+      setVoiceStatus(res.reason === 'won' ? 'Gelöst – sag „Neues Spiel“.' : 'Kein aktives Spiel.', 'warn');
+      return;
+    }
+    for (const { row, col } of cells) flashVoiceCell(row, col);
+    const label = VOICE_ACTION_LABEL[cmd.action] || '';
+    if (cells.length === 1) {
+      setVoiceStatus(`${coordLabel(cells[0].row, cells[0].col)} · ${label}`.trim(), 'ok');
     } else {
+      const list = cells.map((c) => coordLabel(c.row, c.col)).join(', ');
+      setVoiceStatus(`${cells.length} Felder · ${label} (${list})`, 'ok');
+    }
+    return;
+  }
+
+  if (cmd.type === 'fill') {
+    if (!game) {
       setVoiceStatus('Kein aktives Spiel.', 'warn');
+      return;
+    }
+    if (game.isWon()) {
+      setVoiceStatus('Gelöst – sag „Neues Spiel“.', 'warn');
+      return;
+    }
+    const inc = fillSelectorCells(cmd.include);
+    const exc = fillSelectorCells(cmd.exclude);
+    const cells = [];
+    for (const key of inc.set) {
+      if (exc.set.has(key)) continue;
+      const [r, c] = key.split(',').map(Number);
+      cells.push({ row: r, col: c });
+    }
+    const missing = [...inc.missingColors, ...exc.missingColors];
+    if (cells.length === 0) {
+      setVoiceStatus(
+        missing.length ? 'Diese Farbe ist nicht auf dem Feld.' : 'Keine passenden Felder gefunden.',
+        'warn'
+      );
+      return;
+    }
+    const res = voiceApplyCells(cells, cmd.action);
+    if (!res.ok) {
+      setVoiceStatus(res.reason === 'won' ? 'Gelöst – sag „Neues Spiel“.' : 'Kein aktives Spiel.', 'warn');
+      return;
+    }
+    for (const { row, col } of cells) flashVoiceCell(row, col);
+    let status = `${res.count} Felder · ${VOICE_ACTION_LABEL[cmd.action] || ''}`.trim();
+    if (missing.length) status += ' · Farbe nicht gefunden';
+    // Dotting a whole row/column/region can never be right (each needs a queen).
+    // Flag it — the command still runs, but as a warning, not a plain OK.
+    if (cmd.action === 'mark' && fillCoversWholeUnit(cells)) {
+      setVoiceStatus(`${status} · ganze Einheit = Sackgasse`, 'warn');
+    } else {
+      setVoiceStatus(status, 'ok');
     }
   }
 }
@@ -2044,6 +2256,9 @@ function handleVoiceCommand(cmd) {
 // real command (recovers a mis-heard letter far better than trusting only the
 // top guess).
 function handleVoiceFinal(alts) {
+  // Ignore whatever the mic heard while we were reading a hint aloud — it's most
+  // likely our own synthesised voice echoing back.
+  if (voiceSpeaking) return;
   const N = game ? game.N : settings.size;
   let cmd = { type: 'none' };
   let used = alts && alts.length ? alts[0] : '';

@@ -38,6 +38,9 @@ class FakeRecognition {
 }
 window.SpeechRecognition = FakeRecognition;
 delete window.webkitSpeechRecognition;
+// Disable speech synthesis so command processing is never suppressed by TTS
+// (headless engines fire onend unreliably); the read-aloud path is fail-soft.
+try { delete window.speechSynthesis; } catch (e) { window.speechSynthesis = undefined; }
 window.__fakeVoice = {
   emitFinal(alternatives) {
     const inst = window.__fakeVoiceInstance;
@@ -133,11 +136,91 @@ async function run() {
   await page.waitForTimeout(60);
   check('picks the parseable alternative "C4" over noise', (await cellState(page, 26)) === 'dot');
 
-  // --- "Hinweis" opens the hint card (same as the 💡 button). ---
+  // --- Batch: several cells in one breath (E2,F2,G2 = indices 12,13,14),
+  //     applied as ONE undo step. ---
+  await emit(['Punkte auf E2, F2, G2']);
+  await page.waitForTimeout(60);
+  check(
+    'batch dotted E2/F2/G2 at once',
+    (await cellState(page, 12)) === 'dot' &&
+      (await cellState(page, 13)) === 'dot' &&
+      (await cellState(page, 14)) === 'dot'
+  );
+  check('batch status mentions "3 Felder"', /3 Felder/.test(await page.$eval('#voice-status', (e) => e.textContent)));
+  await emit(['Zurück']);
+  await page.waitForTimeout(60);
+  check(
+    'one undo reverts the whole batch',
+    (await cellState(page, 12)) === 'empty' &&
+      (await cellState(page, 13)) === 'empty' &&
+      (await cellState(page, 14)) === 'empty'
+  );
+
+  // --- Fill: whole columns/rows, with an exclusion. ---
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte Spalte A']);
+  await page.waitForTimeout(60);
+  check(
+    '"Punkte Spalte A" dotted the whole column',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let r = 0; r < 8; r++) if (cells[r * 8].dataset.state !== 'dot') return false;
+      return true;
+    })
+  );
+  // Dotting a whole unit is flagged as a dead end (warning), not a plain OK.
+  check(
+    'whole-column fill warns about the dead end',
+    await page.$eval('#voice-status', (e) => e.classList.contains('warn') && /Sackgasse/.test(e.textContent))
+  );
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte Zeile eins außer Spalte C']);
+  await page.waitForTimeout(60);
+  check(
+    '"Zeile eins außer Spalte C" dotted row 1 but skipped C1',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let c = 0; c < 8; c++) {
+        const st = cells[c].dataset.state;
+        if (c === 2 ? st !== 'empty' : st !== 'dot') return false;
+      }
+      return true;
+    })
+  );
+
+  // --- Region by cell: "Region von A1" targets the region A1 lies in. ---
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte Region von A1']);
+  await page.waitForTimeout(60);
+  check(
+    '"Region von A1" dotted the whole region of A1',
+    await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('.cell')];
+      const reg = cells[0].dataset.region;
+      return cells.every((c) => c.dataset.region !== reg || c.dataset.state === 'dot');
+    })
+  );
+
+  // --- Hint pop-up by voice: opens, "OK" applies it, "Schließen" closes it. ---
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
   await emit(['Hinweis']);
   await page.waitForTimeout(80);
   check('"Hinweis" opened the hint card', !(await page.$eval('#hint-card', (e) => e.hidden)));
-  await page.click('#hint-close');
+  const filledBefore = await page.$$eval('.cell', (cs) => cs.filter((c) => c.dataset.state !== 'empty').length);
+  await emit(['ok']);
+  await page.waitForTimeout(80);
+  check('"OK" closed the hint card (applied)', await page.$eval('#hint-card', (e) => e.hidden));
+  const filledAfter = await page.$$eval('.cell', (cs) => cs.filter((c) => c.dataset.state !== 'empty').length);
+  check('"OK" applied the hint (board changed)', filledAfter > filledBefore);
+  await emit(['Hinweis']);
+  await page.waitForTimeout(80);
+  await emit(['schließen']);
+  await page.waitForTimeout(60);
+  check('"Schließen" closed the hint card', await page.$eval('#hint-card', (e) => e.hidden));
 
   // --- Edge coordinate rulers: a large chess-style ruler instead of the
   //     per-cell corner labels (tested while Voice Mode is still on). ---

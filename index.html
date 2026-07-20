@@ -194,7 +194,7 @@
         <label class="field toggle-field">
           <span>
             <span class="field-label">Sprachsteuerung (Beta)</span>
-            <span class="field-hint" id="voice-mode-hint">Steuere das Spiel mit der Stimme. Felder werden wie beim Schach benannt – Spalten-Buchstabe A… plus Zeilen-Zahl 1…, z. B. „C4“ oder „Cäsar vier“. Sag „C4 Dame“, „C4 Punkt“, „C4 leeren“ oder für Aktionen „Hinweis“, „Prüfen“, „Zurück“, „Neues Spiel“. Benötigt Chrome oder Edge und Mikrofon-Zugriff; die Buchstaben-Beschriftung erscheint dann am Feld.</span>
+            <span class="field-hint" id="voice-mode-hint">Steuere das Spiel mit der Stimme (Chrome/Edge, Mikrofon nötig). Alle Sprachbefehle erklärt das ⓘ im Sprach-Panel.</span>
           </span>
           <input type="checkbox" id="voice-mode" class="switch" />
         </label>
@@ -283,8 +283,25 @@
           <li><span class="vh-cmd">„C4 leeren“</span><span class="vh-desc">Feld leeren (auch „C4 löschen“)</span></li>
         </ul>
         <p class="field-hint">
+          Mehrere Felder auf einmal: einfach aufzählen – z. B.
+          <strong>„Punkte auf A2, B2, C3“</strong> oder <strong>„Damen auf A2 und B5“</strong>.
+        </p>
+        <p class="field-hint">
           Tipp: Buchstaben deutlich ausbuchstabieren hilft der Erkennung – etwa
           <strong>„Cäsar vier“</strong> für C4.
+        </p>
+
+        <h3 class="voice-help-h">Ganze Spalten, Zeilen &amp; Regionen</h3>
+        <p class="field-hint">
+          Punkte oder leere ganze Bereiche: <strong>„Punkte Spalte B und C“</strong>,
+          <strong>„Punkte Zeile 2 und 3“</strong>, eine Farbregion mit <strong>„Punkte Rot“</strong>
+          oder über eine Zelle darin mit <strong>„Punkte Region von C3“</strong>. Der eigentliche
+          Nutzen steckt im „außer“: <strong>„Punkte Zeile 2 außer Region C3“</strong> lässt genau
+          die Felder offen, wo die Dame hin muss.
+        </p>
+        <p class="field-hint">
+          Eine ganze Zeile, Spalte oder Farbe <em>komplett</em> auszupunkten ergibt nie eine
+          Lösung (jede braucht eine Dame) – der Status meldet dann „Sackgasse“.
         </p>
 
         <h3 class="voice-help-h">Aktionen</h3>
@@ -296,6 +313,13 @@
           <li><span class="vh-cmd">„Neues Spiel“</span><span class="vh-desc">ein frisches Rätsel starten</span></li>
           <li><span class="vh-cmd">„Stopp“</span><span class="vh-desc">das Zuhören beenden</span></li>
         </ul>
+
+        <h3 class="voice-help-h">Hinweis-Fenster</h3>
+        <p class="field-hint">
+          Erscheint ein Hinweis, wird er vorgelesen. Sag <strong>„OK“</strong> zum Übernehmen,
+          <strong>„Schließen“</strong> zum Verwerfen oder <strong>„Wiederholen“</strong> zum
+          erneuten Vorlesen.
+        </p>
         <p class="field-hint">Benötigt Chrome oder Edge und Mikrofon-Zugriff.</p>
 
         <div class="settings-buttons">

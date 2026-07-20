@@ -69,7 +69,14 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   Schachbrett-Leiste am Feldrand. Befehle: **„C4"** durchläuft das Feld (wie
   Tippen), **„C4 Dame"** setzt eine Dame, **„C4 Punkt"** einen Ausschluss, **„C4 leeren"**
   räumt es; dazu **„Hinweis"**, **„Prüfen"**, **„Zurück"**, **„Zurücksetzen"**,
-  **„Neues Spiel"** und **„Stopp"** (Zuhören beenden). Nutzt die im Browser eingebaute
+  **„Neues Spiel"** und **„Stopp"** (Zuhören beenden). Mehrere Felder lassen sich in
+  einem Befehl aufzählen (**„Punkte auf A2, B2, C3"**) und auch ganze Spalten, Zeilen
+  oder Farbregionen mit Ausnahmen ansprechen, z. B. **„Punkte Spalte B und C außer Rot"**
+  oder **„Punkte Zeile 2 und 3 außer Spalte D"**. Eine Region lässt sich auch über eine
+  Zelle darin ansprechen (**„Punkte Region von C3"**). Der eigentliche Nutzen steckt im
+  „außer" – eine ganze Zeile/Spalte/Farbe *komplett* auszupunkten ergibt nie eine Lösung
+  (jede braucht eine Dame) und wird als „Sackgasse" gemeldet. Erscheint ein Hinweis, wird
+  er vorgelesen und lässt sich mit **„OK"** übernehmen bzw. **„Schließen"** verwerfen. Nutzt die im Browser eingebaute
   Spracherkennung (Web Speech API) – ohne zusätzliche Abhängigkeit oder Server, aber
   aktuell nur in **Chrome/Edge** und mit Mikrofon-Freigabe. Wo die Erkennung fehlt, ist
   die Option deaktiviert und das Spiel läuft unverändert weiter.
