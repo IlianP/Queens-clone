@@ -67,6 +67,8 @@ const VOICE_NUM_WORDS = {
 const VOICE_COLUMN_WORDS = new Set(['spalte', 'spalten']);
 const VOICE_ROW_WORDS = new Set(['zeile', 'zeilen', 'reihe', 'reihen']);
 const VOICE_REGION_WORDS = new Set(['farbe', 'farben', 'region', 'regionen']);
+// "The whole board" — pairs naturally with an exclusion ("alles außer Rot").
+const VOICE_ALL_WORDS = new Set(['alles', 'alle', 'gesamt', 'komplett']);
 // Exclusion markers: everything after one is the "except" set.
 const VOICE_EXCLUDE_WORDS = new Set(['außer', 'ausser', 'ohne', 'ausgenommen', 'exkl', 'exklusive']);
 
@@ -191,24 +193,56 @@ function voiceFillAction(norm) {
   return 'mark';
 }
 
-// Scan tokens into whole-unit selectors: { kind:'col', v } | { kind:'row', v }
-// | { kind:'color', name }. A unit word ("Spalte"/"Zeile") sets the context for
-// the letters/numbers that follow; colours are self-identifying. Rows/cols are
-// 0-based. Used for both the include and the exclude ("außer …") side of a fill.
+// Scan tokens into fill selectors, each one of:
+//   { kind:'col', v } | { kind:'row', v } | { kind:'color', name } |
+//   { kind:'regionAt', row, col } | { kind:'all' }
+// A unit word ("Spalte"/"Zeile"/"Region") sets the context for what follows:
+// letters after "Spalte", numbers after "Zeile", and after "Region" either a
+// colour ("Region Rot") or a cell that identifies the region ("Region von C3").
+// Colours are self-identifying anywhere. Rows/cols are 0-based. Used for both
+// the include and the exclude ("außer …") side of a fill.
 function voiceScanSelectors(tokens, N) {
+  // Pre-split glued letter+digit tokens ("c3") so "Region von C3" resolves.
+  const flat = [];
+  for (const tok of tokens) {
+    let m;
+    if ((m = /^([a-zäöü]+)(\d+)$/.exec(tok))) {
+      flat.push(m[1], m[2]);
+    } else if ((m = /^(\d+)([a-zäöü]+)$/.exec(tok))) {
+      flat.push(m[1], m[2]);
+    } else {
+      flat.push(tok);
+    }
+  }
   const specs = [];
   let unit = null;
-  for (const tok of tokens) {
+  let pendCol = null;
+  let pendNum = null;
+  const flushRegionAt = () => {
+    if (pendCol !== null && pendNum !== null) {
+      specs.push({ kind: 'regionAt', row: pendNum - 1, col: pendCol });
+      pendCol = null;
+      pendNum = null;
+    }
+  };
+  for (const tok of flat) {
     if (VOICE_COLUMN_WORDS.has(tok)) {
       unit = 'col';
+      pendCol = pendNum = null;
       continue;
     }
     if (VOICE_ROW_WORDS.has(tok)) {
       unit = 'row';
+      pendCol = pendNum = null;
       continue;
     }
     if (VOICE_REGION_WORDS.has(tok)) {
       unit = 'region';
+      pendCol = pendNum = null;
+      continue;
+    }
+    if (VOICE_ALL_WORDS.has(tok)) {
+      specs.push({ kind: 'all' });
       continue;
     }
     const color = voiceColorKey(tok);
@@ -222,8 +256,20 @@ function voiceScanSelectors(tokens, N) {
     } else if (unit === 'row') {
       const n = voiceNum(tok, N);
       if (n !== null) specs.push({ kind: 'row', v: n - 1 });
+    } else if (unit === 'region') {
+      // A cell coordinate identifies the region it lies in.
+      const c = voiceCol(tok, N);
+      if (c !== null) {
+        pendCol = c;
+        flushRegionAt();
+        continue;
+      }
+      const n = voiceNum(tok, N);
+      if (n !== null) {
+        pendNum = n;
+        flushRegionAt();
+      }
     }
-    // 'region' context expects a colour, already handled above.
   }
   return specs;
 }
@@ -266,6 +312,7 @@ export function parseVoiceCommand(transcript, N = 8) {
       VOICE_COLUMN_WORDS.has(t) ||
       VOICE_ROW_WORDS.has(t) ||
       VOICE_REGION_WORDS.has(t) ||
+      VOICE_ALL_WORDS.has(t) ||
       voiceColorKey(t)
   );
   if (inclHasUnit) {

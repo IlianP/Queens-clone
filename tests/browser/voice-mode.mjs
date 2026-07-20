@@ -185,6 +185,34 @@ async function run() {
     })
   );
 
+  // --- Region by cell: "Region von A1" targets the region A1 lies in. ---
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte Region von A1']);
+  await page.waitForTimeout(60);
+  check(
+    '"Region von A1" dotted the whole region of A1',
+    await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('.cell')];
+      const reg = cells[0].dataset.region;
+      return cells.every((c) => c.dataset.region !== reg || c.dataset.state === 'dot');
+    })
+  );
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte alles außer Region A1']);
+  await page.waitForTimeout(60);
+  check(
+    '"alles außer Region A1" dotted everything but A1\'s region',
+    await page.evaluate(() => {
+      const cells = [...document.querySelectorAll('.cell')];
+      const reg = cells[0].dataset.region;
+      return cells.every((c) =>
+        c.dataset.region === reg ? c.dataset.state === 'empty' : c.dataset.state === 'dot'
+      );
+    })
+  );
+
   // --- Hint pop-up by voice: opens, "OK" applies it, "Schließen" closes it. ---
   await emit(['Zurücksetzen']);
   await page.waitForTimeout(40);

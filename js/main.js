@@ -1953,19 +1953,28 @@ function fillSelectorCells(specs) {
   const N = game.N;
   const set = new Set();
   const missingColors = [];
+  const addRegion = (id) => {
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) if (game.region[r][c] === id) set.add(`${r},${c}`);
+  };
   for (const spec of specs) {
     if (spec.kind === 'col') {
       for (let r = 0; r < N; r++) set.add(`${r},${spec.v}`);
     } else if (spec.kind === 'row') {
       for (let c = 0; c < N; c++) set.add(`${spec.v},${c}`);
+    } else if (spec.kind === 'all') {
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) set.add(`${r},${c}`);
+    } else if (spec.kind === 'regionAt') {
+      if (spec.row >= 0 && spec.row < N && spec.col >= 0 && spec.col < N) {
+        addRegion(game.region[spec.row][spec.col]);
+      }
     } else if (spec.kind === 'color') {
       const ids = regionsForColorKey(spec.name);
       if (ids.size === 0) {
         missingColors.push(spec.name);
         continue;
       }
-      for (let r = 0; r < N; r++)
-        for (let c = 0; c < N; c++) if (ids.has(game.region[r][c])) set.add(`${r},${c}`);
+      for (const id of ids) addRegion(id);
     }
   }
   return { set, missingColors };

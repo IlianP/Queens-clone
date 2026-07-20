@@ -83,12 +83,15 @@ check(
 );
 
 // --- Whole-line / region fills with an exclusion set. ---
+function specEq(s, w) {
+  if (s.kind !== w[0]) return false;
+  if (w[0] === 'color') return s.name === w[1];
+  if (w[0] === 'regionAt') return s.row === w[1] && s.col === w[2];
+  if (w[0] === 'all') return true;
+  return s.v === w[1]; // col / row
+}
 function specsEqual(got, want) {
-  if (got.length !== want.length) return false;
-  return got.every((s, i) => {
-    const w = want[i];
-    return s.kind === w[0] && (w[0] === 'color' ? s.name === w[1] : s.v === w[1]);
-  });
+  return got.length === want.length && got.every((s, i) => specEq(s, want[i]));
 }
 function fillIs(cmd, action, include, exclude) {
   return (
@@ -116,6 +119,26 @@ check(
 );
 // A bare coordinate list stays a batch (no unit word → not a fill).
 check('"A2 B2" stays a batch (not a fill)', parseVoiceCommand('A2 B2', 8).type === 'batch');
+
+// Region-by-cell: name a region by a cell that lies in it.
+check(
+  '"Punkte Region von C3" → fill mark, region at C3',
+  fillIs(parseVoiceCommand('Punkte Region von C3', 8), 'mark', [['regionAt', 2, 2]], [])
+);
+check(
+  '"Punkte Spalte B außer Region C3" → col B, except region at C3',
+  fillIs(parseVoiceCommand('Punkte Spalte B außer Region C3', 8), 'mark', [['col', 1]], [['regionAt', 2, 2]])
+);
+// "alles" fills the whole board; pairs with an exclusion.
+check(
+  '"Punkte alles außer Rot" → fill mark, all, except red',
+  fillIs(parseVoiceCommand('Punkte alles außer Rot', 8), 'mark', [['all']], [['color', 'red']])
+);
+// A colour still wins inside a region context ("Region Rot" = the red region).
+check(
+  '"Punkte Region rot" → colour, not region-at',
+  fillIs(parseVoiceCommand('Punkte Region rot', 8), 'mark', [['color', 'red']], [])
+);
 
 // --- Context commands for an open card (hint pop-up). ---
 check('"ok" → apply', actionIs(parseVoiceCommand('ok', 8), 'apply'));

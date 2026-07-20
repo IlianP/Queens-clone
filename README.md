@@ -72,8 +72,10 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   **„Neues Spiel"** und **„Stopp"** (Zuhören beenden). Mehrere Felder lassen sich in
   einem Befehl aufzählen (**„Punkte auf A2, B2, C3"**) und auch ganze Spalten, Zeilen
   oder Farbregionen mit Ausnahmen ansprechen, z. B. **„Punkte Spalte B und C außer Rot"**
-  oder **„Punkte Zeile 2 und 3 außer Spalte D"**. Erscheint ein Hinweis, wird er
-  vorgelesen und lässt sich mit **„OK"** übernehmen bzw. **„Schließen"** verwerfen. Nutzt die im Browser eingebaute
+  oder **„Punkte Zeile 2 und 3 außer Spalte D"**. Eine Region lässt sich auch über eine
+  Zelle darin ansprechen (**„Punkte Region von C3"**), und das ganze Feld mit **„Punkte
+  alles außer Rot"**. Erscheint ein Hinweis, wird er vorgelesen und lässt sich mit
+  **„OK"** übernehmen bzw. **„Schließen"** verwerfen. Nutzt die im Browser eingebaute
   Spracherkennung (Web Speech API) – ohne zusätzliche Abhängigkeit oder Server, aber
   aktuell nur in **Chrome/Edge** und mit Mikrofon-Freigabe. Wo die Erkennung fehlt, ist
   die Option deaktiviert und das Spiel läuft unverändert weiter.
