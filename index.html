@@ -37,42 +37,49 @@
       </header>
 
       <main class="board-wrap">
-        <!-- Stage wraps the board plus the optional edge coordinate rulers
-             (letters on top, numbers on the left). The rulers sit OUTSIDE the
-             board so the intro rotation never carries them, and their auto grid
-             tracks collapse to nothing while hidden. -->
-        <div class="board-stage" id="board-stage">
-          <div class="coord-cols" id="coord-cols" aria-hidden="true"></div>
-          <div class="coord-rows" id="coord-rows" aria-hidden="true"></div>
-          <div class="board" id="board" role="grid" aria-label="Spielfeld"></div>
-        </div>
-        <div class="message" id="message"></div>
-        <!-- Prüf-Status: kurze Rückmeldung "Fehlerfrei?" ohne Position oder
-             Hinweis. Wird per Button ausgelöst oder – wenn aktiviert – als
-             Live-Lämpchen automatisch aktualisiert. The slot reserves the pill's
-             height at all times so showing/hiding it never nudges the board. -->
-        <div class="check-slot">
-          <div class="check-status" id="check-status" role="status" aria-live="polite" hidden></div>
-        </div>
-
-        <!-- Voice Mode (Beta): steer the board by speaking. Coordinates are
-             chess-like — a column letter A… plus a row number 1…, e.g. "C4".
-             Shown only while the preference is on; the mic starts on demand so
-             the browser's permission prompt is a deliberate tap. -->
-        <div class="voice-panel" id="voice-panel" hidden>
-          <button class="btn voice-listen" id="voice-listen" type="button" aria-pressed="false">
-            <span class="voice-mic" aria-hidden="true">🎤</span>
-            <span id="voice-listen-label">Zuhören</span>
-          </button>
-          <div class="voice-readout">
-            <div class="voice-transcript" id="voice-transcript" aria-live="polite" data-placeholder="Sag z. B. „Cäsar vier“ oder „C4 Dame“ …"></div>
-            <div class="voice-status" id="voice-status" role="status" aria-live="polite"></div>
+        <!-- Board + its inline status readouts, grouped so that in landscape
+             the action column can sit BESIDE this group (see the
+             `orientation: landscape` block in the CSS) while portrait keeps the
+             plain vertical stack. -->
+        <div class="board-main">
+          <!-- Stage wraps the board plus the optional edge coordinate rulers
+               (letters on top, numbers on the left). The rulers sit OUTSIDE the
+               board so the intro rotation never carries them, and their auto grid
+               tracks collapse to nothing while hidden. -->
+          <div class="board-stage" id="board-stage">
+            <div class="coord-cols" id="coord-cols" aria-hidden="true"></div>
+            <div class="coord-rows" id="coord-rows" aria-hidden="true"></div>
+            <div class="board" id="board" role="grid" aria-label="Spielfeld"></div>
           </div>
-          <button class="btn icon voice-help-btn" id="voice-help" type="button" aria-label="Sprachbefehle – Hilfe" title="Was kann ich sagen?">ⓘ</button>
+          <div class="message" id="message"></div>
+          <!-- Prüf-Status: kurze Rückmeldung "Fehlerfrei?" ohne Position oder
+               Hinweis. Wird per Button ausgelöst oder – wenn aktiviert – als
+               Live-Lämpchen automatisch aktualisiert. The slot reserves the pill's
+               height at all times so showing/hiding it never nudges the board. -->
+          <div class="check-slot">
+            <div class="check-status" id="check-status" role="status" aria-live="polite" hidden></div>
+          </div>
+
+          <!-- Voice Mode (Beta): steer the board by speaking. Coordinates are
+               chess-like — a column letter A… plus a row number 1…, e.g. "C4".
+               Shown only while the preference is on; the mic starts on demand so
+               the browser's permission prompt is a deliberate tap. -->
+          <div class="voice-panel" id="voice-panel" hidden>
+            <button class="btn voice-listen" id="voice-listen" type="button" aria-pressed="false">
+              <span class="voice-mic" aria-hidden="true">🎤</span>
+              <span id="voice-listen-label">Zuhören</span>
+            </button>
+            <div class="voice-readout">
+              <div class="voice-transcript" id="voice-transcript" aria-live="polite" data-placeholder="Sag z. B. „Cäsar vier“ oder „C4 Dame“ …"></div>
+              <div class="voice-status" id="voice-status" role="status" aria-live="polite"></div>
+            </div>
+            <button class="btn icon voice-help-btn" id="voice-help" type="button" aria-label="Sprachbefehle – Hilfe" title="Was kann ich sagen?">ⓘ</button>
+          </div>
         </div>
 
         <!-- Kept inside the vertically-centred board group so the controls read
-             as one unit with the board instead of floating far below it. -->
+             as one unit with the board instead of floating far below it. In
+             landscape these move into a side column (see CSS). -->
         <div class="actions">
           <button class="btn subtle" id="check" type="button">🔎 Prüfen</button>
           <button class="btn subtle" id="hint" type="button">💡 Hinweis</button>
