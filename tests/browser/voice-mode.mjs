@@ -169,6 +169,11 @@ async function run() {
       return true;
     })
   );
+  // Dotting a whole unit is flagged as a dead end (warning), not a plain OK.
+  check(
+    'whole-column fill warns about the dead end',
+    await page.$eval('#voice-status', (e) => e.classList.contains('warn') && /Sackgasse/.test(e.textContent))
+  );
   await emit(['Zurücksetzen']);
   await page.waitForTimeout(40);
   await emit(['Punkte Zeile eins außer Spalte C']);
@@ -196,20 +201,6 @@ async function run() {
       const cells = [...document.querySelectorAll('.cell')];
       const reg = cells[0].dataset.region;
       return cells.every((c) => c.dataset.region !== reg || c.dataset.state === 'dot');
-    })
-  );
-  await emit(['Zurücksetzen']);
-  await page.waitForTimeout(40);
-  await emit(['Punkte alles außer Region A1']);
-  await page.waitForTimeout(60);
-  check(
-    '"alles außer Region A1" dotted everything but A1\'s region',
-    await page.evaluate(() => {
-      const cells = [...document.querySelectorAll('.cell')];
-      const reg = cells[0].dataset.region;
-      return cells.every((c) =>
-        c.dataset.region === reg ? c.dataset.state === 'empty' : c.dataset.state === 'dot'
-      );
     })
   );
 

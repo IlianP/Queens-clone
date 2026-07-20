@@ -87,7 +87,6 @@ function specEq(s, w) {
   if (s.kind !== w[0]) return false;
   if (w[0] === 'color') return s.name === w[1];
   if (w[0] === 'regionAt') return s.row === w[1] && s.col === w[2];
-  if (w[0] === 'all') return true;
   return s.v === w[1]; // col / row
 }
 function specsEqual(got, want) {
@@ -129,11 +128,9 @@ check(
   '"Punkte Spalte B außer Region C3" → col B, except region at C3',
   fillIs(parseVoiceCommand('Punkte Spalte B außer Region C3', 8), 'mark', [['col', 1]], [['regionAt', 2, 2]])
 );
-// "alles" fills the whole board; pairs with an exclusion.
-check(
-  '"Punkte alles außer Rot" → fill mark, all, except red',
-  fillIs(parseVoiceCommand('Punkte alles außer Rot', 8), 'mark', [['all']], [['color', 'red']])
-);
+// "alles" was dropped: dotting the whole board has no solving logic, so it's not
+// a fill command any more.
+check('"Punkte alles" is not a fill', parseVoiceCommand('Punkte alles', 8).type !== 'fill');
 // A colour still wins inside a region context ("Region Rot" = the red region).
 check(
   '"Punkte Region rot" → colour, not region-at',

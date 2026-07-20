@@ -67,8 +67,6 @@ const VOICE_NUM_WORDS = {
 const VOICE_COLUMN_WORDS = new Set(['spalte', 'spalten']);
 const VOICE_ROW_WORDS = new Set(['zeile', 'zeilen', 'reihe', 'reihen']);
 const VOICE_REGION_WORDS = new Set(['farbe', 'farben', 'region', 'regionen']);
-// "The whole board" — pairs naturally with an exclusion ("alles außer Rot").
-const VOICE_ALL_WORDS = new Set(['alles', 'alle', 'gesamt', 'komplett']);
 // Exclusion markers: everything after one is the "except" set.
 const VOICE_EXCLUDE_WORDS = new Set(['außer', 'ausser', 'ohne', 'ausgenommen', 'exkl', 'exklusive']);
 
@@ -195,7 +193,7 @@ function voiceFillAction(norm) {
 
 // Scan tokens into fill selectors, each one of:
 //   { kind:'col', v } | { kind:'row', v } | { kind:'color', name } |
-//   { kind:'regionAt', row, col } | { kind:'all' }
+//   { kind:'regionAt', row, col }
 // A unit word ("Spalte"/"Zeile"/"Region") sets the context for what follows:
 // letters after "Spalte", numbers after "Zeile", and after "Region" either a
 // colour ("Region Rot") or a cell that identifies the region ("Region von C3").
@@ -239,10 +237,6 @@ function voiceScanSelectors(tokens, N) {
     if (VOICE_REGION_WORDS.has(tok)) {
       unit = 'region';
       pendCol = pendNum = null;
-      continue;
-    }
-    if (VOICE_ALL_WORDS.has(tok)) {
-      specs.push({ kind: 'all' });
       continue;
     }
     const color = voiceColorKey(tok);
@@ -312,7 +306,6 @@ export function parseVoiceCommand(transcript, N = 8) {
       VOICE_COLUMN_WORDS.has(t) ||
       VOICE_ROW_WORDS.has(t) ||
       VOICE_REGION_WORDS.has(t) ||
-      VOICE_ALL_WORDS.has(t) ||
       voiceColorKey(t)
   );
   if (inclHasUnit) {

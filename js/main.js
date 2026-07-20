@@ -1962,8 +1962,6 @@ function fillSelectorCells(specs) {
       for (let r = 0; r < N; r++) set.add(`${r},${spec.v}`);
     } else if (spec.kind === 'row') {
       for (let c = 0; c < N; c++) set.add(`${spec.v},${c}`);
-    } else if (spec.kind === 'all') {
-      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) set.add(`${r},${c}`);
     } else if (spec.kind === 'regionAt') {
       if (spec.row >= 0 && spec.row < N && spec.col >= 0 && spec.col < N) {
         addRegion(game.region[spec.row][spec.col]);
@@ -1978,6 +1976,34 @@ function fillSelectorCells(specs) {
     }
   }
   return { set, missingColors };
+}
+
+// Does a fill's cell set completely cover at least one whole row, column or
+// region? Dotting a whole unit is always a dead end (each unit needs a queen) —
+// the game outlines it red, and we warn about it in the voice status. The useful
+// "unit außer …" confinement forms leave a gap, so they don't trigger this.
+function fillCoversWholeUnit(cells) {
+  const N = game.N;
+  const inSet = new Set(cells.map((c) => `${c.row},${c.col}`));
+  for (let i = 0; i < N; i++) {
+    let rowFull = true;
+    let colFull = true;
+    for (let j = 0; j < N; j++) {
+      if (!inSet.has(`${i},${j}`)) rowFull = false;
+      if (!inSet.has(`${j},${i}`)) colFull = false;
+    }
+    if (rowFull || colFull) return true;
+  }
+  const regionTotal = new Map();
+  const regionHit = new Map();
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const id = game.region[r][c];
+      regionTotal.set(id, (regionTotal.get(id) || 0) + 1);
+      if (inSet.has(`${r},${c}`)) regionHit.set(id, (regionHit.get(id) || 0) + 1);
+    }
+  for (const [id, total] of regionTotal) if (regionHit.get(id) === total) return true;
+  return false;
 }
 
 function setVoiceTranscript(text) {
@@ -2216,7 +2242,13 @@ function handleVoiceCommand(cmd) {
     for (const { row, col } of cells) flashVoiceCell(row, col);
     let status = `${res.count} Felder · ${VOICE_ACTION_LABEL[cmd.action] || ''}`.trim();
     if (missing.length) status += ' · Farbe nicht gefunden';
-    setVoiceStatus(status, 'ok');
+    // Dotting a whole row/column/region can never be right (each needs a queen).
+    // Flag it — the command still runs, but as a warning, not a plain OK.
+    if (cmd.action === 'mark' && fillCoversWholeUnit(cells)) {
+      setVoiceStatus(`${status} · ganze Einheit = Sackgasse`, 'warn');
+    } else {
+      setVoiceStatus(status, 'ok');
+    }
   }
 }
 
