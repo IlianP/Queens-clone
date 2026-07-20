@@ -141,6 +141,11 @@ let currentHint = null;
 // winHandled; pendingWin holds that result until it's committed to the local
 // list (on submit, or when the board is left).
 let hintsUsed = 0;
+// Signatures of hints already counted this attempt. Re-requesting the exact same
+// deduction (e.g. shown, dismissed unapplied, then asked for again on an
+// unchanged board) must not bump hintsUsed a second time — only *unique* hints
+// count toward the score (issue #37).
+let seenHints = new Set();
 let mistakes = 0;
 let winHandled = false;
 // pendingWin: { size, difficulty, seconds, hints, mistakes, score, saved,
@@ -184,6 +189,7 @@ function startTimer() {
   timerRunStart = isWindowActive() ? Date.now() : 0;
   timerDone = false;
   hintsUsed = 0;
+  seenHints = new Set();
   mistakes = 0;
   winHandled = false;
   stickyForced = null;
@@ -1361,11 +1367,37 @@ function collectQueens() {
   return out;
 }
 
+// A stable identity for a hint, so the same deduction asked for twice is
+// recognised as one. A hint is a pure function of the board, so identical advice
+// carries the same target/reason/line/excluded cells — sort them so ordering
+// never makes two equal hints look different.
+function hintSignature(h) {
+  if (!h || h.kind === 'none') return null;
+  const sig = (arr) =>
+    (arr || [])
+      .map(([r, c]) => `${r},${c}`)
+      .sort()
+      .join(';');
+  return [
+    h.kind,
+    sig(h.targetCells),
+    sig(h.reasonCells),
+    sig(h.lineCells),
+    sig(h.excludedCells),
+  ].join('|');
+}
+
 function showHint() {
   if (!game || hintActive || game.isWon()) return;
-  hintsUsed++; // asking for help counts toward the score, even if not applied
   playHint();
   const hint = computeHint(game.N, game.region, currentSolution, collectQueens(), game.mark);
+  // Only count a hint once: re-requesting the same deduction (dismissed unapplied
+  // then asked again on an unchanged board) must not penalise the score twice.
+  const sig = hintSignature(hint);
+  if (sig && !seenHints.has(sig)) {
+    seenHints.add(sig);
+    hintsUsed++; // asking for a new deduction counts, even if not applied
+  }
   renderHint(hint);
 }
 

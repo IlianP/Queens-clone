@@ -150,9 +150,12 @@ better), bucketed per `(size, difficulty)`. **`computeScore` in
 `js/highscores.js` and `queens_score()` in `docs/leaderboard-setup.sql` must
 stay identical** — if you retune a penalty, change both. Raw components are
 stored (not just the final score) so weights can move without a data migration.
-Counters live in `main.js`: `hintsUsed` bumps in `showHint`, `mistakes` bumps in
-the tap handler when a queen lands off `currentSolution`; both reset in
-`startTimer`. `onWin` is guarded by `winHandled` (fires once per solve) and a
+Counters live in `main.js`: `hintsUsed` bumps in `showHint` but only for
+**unique** deductions — a `seenHints` set of hint signatures (`hintSignature`)
+dedupes, so re-requesting the same hint (shown, dismissed unapplied, asked
+again on an unchanged board) doesn't penalise the score twice; `mistakes` bumps
+in the tap handler when a queen lands off `currentSolution`; both (and
+`seenHints`) reset in `startTimer`. `onWin` is guarded by `winHandled` (fires once per solve) and a
 `pendingWin` is committed to the local list on submit or when the board is left
 (`flushPendingWin`). A global submit **auto-retries transient failures** with
 backoff (`submitScore` → `rpcWithRetry` in `leaderboard.js`: up to 4 tries; a
