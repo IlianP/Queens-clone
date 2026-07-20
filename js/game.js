@@ -203,17 +203,26 @@ export class Game {
   // where. Used by the "Prüfen" status and the live lamp — a pure yes/no so the
   // UI never leaks a position or the next move. Reuses the existing rule logic
   // (conflicts + dead units) and, given the puzzle's unique solution, also flags
-  // a placed queen that isn't on that solution (the player left the solution
-  // path even before a rule breaks). `solution` is cols[r] = the column of the
-  // queen in row r; pass it for the solution-aware check, omit it for rules only.
+  // two ways of leaving the solution path even before a rule breaks: a placed
+  // queen that isn't on that solution, and a manual dot on a cell that must hold
+  // a queen (a solution cell). The dot case matches what the hint already spots;
+  // without it, wrongly excluding a solution cell stayed invisible unless the dot
+  // happened to kill the last open cell of a unit (a dead unit). Only manual
+  // marks matter: a correctly placed queen never auto-marks another solution cell
+  // (two solution cells never share a row/column/region and never touch), and a
+  // wrongly placed queen is already caught above. `solution` is cols[r] = the
+  // column of the queen in row r; pass it for the solution-aware check, omit it
+  // for rules only.
   hasError(solution) {
     if (this.conflicts().size > 0) return true;
     const dead = this.deadUnits();
     if (dead.regions.size || dead.rows.size || dead.cols.size) return true;
     if (solution) {
       for (let r = 0; r < this.N; r++)
-        for (let c = 0; c < this.N; c++)
+        for (let c = 0; c < this.N; c++) {
           if (this.queen[r][c] && solution[r] !== c) return true;
+          if (this.mark[r][c] && solution[r] === c) return true;
+        }
     }
     return false;
   }
