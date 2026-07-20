@@ -1107,6 +1107,12 @@ body {
   display: block;
   margin: 16px 0;
 }
+/* A hidden sub-option (e.g. the Voice edge-coords / Extended-Debug toggles) must
+   actually collapse. `.toggle-field { display: flex }` is an author rule and so
+   overrides the UA `[hidden] { display: none }`; this wins it back. */
+.field[hidden] {
+  display: none;
+}
 .field-label {
   display: block;
   font-weight: 700;

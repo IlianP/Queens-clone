@@ -92,10 +92,10 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`; pure logic |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Fails soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback |
-| `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted |
+| `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
 | `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. Mirrors the audio/leaderboard layering |
-| `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, voice panel + coordinate labels (per-cell corner labels or an edge ruler — the `.board-stage` wraps the board so the rulers sit outside the intro rotation), debug export. Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
+| `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, voice panel + coordinate labels (per-cell corner labels or an edge ruler — the `.board-stage` wraps the board so the rulers sit outside the intro rotation), debug export (with an optional `debugExtended` move journal — the last 10 gestures incl. the raw voice transcript and exactly what each undo removed). Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
 
 ### Difficulty ↔ solver ↔ hint (keep these aligned)
 
@@ -184,3 +184,12 @@ another `KEY`) and **no `import.meta`**.
   If GitHub reports the branch as out-of-date, merge/update from `main` first
   (e.g. `git fetch origin main && git merge origin/main`, then push) — don't
   assume a green CI run on an older base is enough to merge.
+- **Don't push follow-up commits onto a branch whose PR is already merged.** A
+  merged PR is finished — it won't pick up new commits, so they strand on the
+  branch, off `main`, looking "pushed" but never shipping (nothing is lost; it's
+  just invisible until noticed). Before pushing follow-up work to a branch that
+  already had a PR, confirm the PR is still open (e.g. `gh pr view` / a
+  `list_pull_requests` check). If it merged, start the follow-up on a fresh
+  branch cut from the latest `main` and open a new PR — carry any not-yet-merged
+  commits over by rebasing them onto the new base, don't stack them on the
+  merged history.

@@ -283,19 +283,6 @@ export function parseVoiceCommand(transcript, N = 8) {
   // Stop listening — checked first so it always wins.
   if (/\b(stop\w*|pause|h[oö]r\w* auf|ruhe|aus)\b/.test(norm)) return { type: 'stop' };
 
-  // Confirm / dismiss / re-read — context commands for an open card (e.g. a hint
-  // pop-up). The dispatcher decides what they mean given the current UI. Matched
-  // by exact token (not \b regex): ß/ü aren't \w, so a word boundary before "ü"
-  // in "übernehmen" would never fire.
-  const tokenSet = new Set(tokens);
-  const anyToken = (...words) => words.some((w) => tokenSet.has(w));
-  if (anyToken('ok', 'okay', 'okey', 'übernehmen', 'uebernehmen', 'annehmen', 'passt', 'jawohl', 'ja'))
-    return { type: 'action', action: 'apply' };
-  if (anyToken('schließen', 'schliessen', 'verwerfen', 'abbrechen', 'nein'))
-    return { type: 'action', action: 'dismiss' };
-  if (anyToken('vorlesen', 'wiederholen', 'wiederhole', 'wiederhol', 'nochmal') || /noch\s+(mal|einmal)/.test(norm))
-    return { type: 'action', action: 'repeat' };
-
   // Whole-line/region fill: "Punkte Spalte B und C außer Rot". Split on the
   // exclusion marker, then scan each side into unit/colour selectors. Detected
   // before coordinates so a unit word wins over a stray letter/number.
@@ -344,9 +331,30 @@ export function parseVoiceCommand(transcript, N = 8) {
   if (/\b(neues? spiel|neustart|neu)\b/.test(norm)) return { type: 'action', action: 'newGame' };
   if (/\b(hinweis|tipp|hilfe)\b/.test(norm)) return { type: 'action', action: 'hint' };
   if (/\b(pr[uü]f\w*|check|kontrolle)\b/.test(norm)) return { type: 'action', action: 'check' };
-  if (/\b(zur[uü]cksetzen|reset|alles l[oö]schen|leer\w*|neu anfangen)\b/.test(norm))
+  // Board reset needs an explicit phrase. A bare "leeren"/"löschen" is the
+  // cell-clear verb — if the coordinate was mis-heard it must NOT wipe the whole
+  // board, so it deliberately falls through to "none" here.
+  if (
+    /\b(zur[uü]cksetzen|reset|neu anfangen)\b/.test(norm) ||
+    /\balles (l[oö]sch\w*|leer\w*)\b/.test(norm) ||
+    /\bfeld (l[oö]sch\w*|leer\w*)\b/.test(norm)
+  )
     return { type: 'action', action: 'reset' };
   if (/\b(zur[uü]ck|r[uü]ckg[aä]ngig|undo)\b/.test(norm)) return { type: 'action', action: 'undo' };
+
+  // Confirm / dismiss / re-read — context commands for an open card (e.g. a hint
+  // pop-up). Checked LAST, so a real cell/fill/action command containing a filler
+  // like "ja"/"ok" wins (e.g. "ja C4 Dame" places C4, it isn't swallowed as
+  // "apply"). Matched by exact token (not \b regex): ß/ü aren't \w, so a word
+  // boundary before "ü" in "übernehmen" would never fire.
+  const tokenSet = new Set(tokens);
+  const anyToken = (...words) => words.some((w) => tokenSet.has(w));
+  if (anyToken('ok', 'okay', 'okey', 'übernehmen', 'uebernehmen', 'annehmen', 'passt', 'jawohl', 'ja'))
+    return { type: 'action', action: 'apply' };
+  if (anyToken('schließen', 'schliessen', 'verwerfen', 'abbrechen', 'nein'))
+    return { type: 'action', action: 'dismiss' };
+  if (anyToken('vorlesen', 'wiederholen', 'wiederhole', 'wiederhol', 'nochmal') || /noch\s+(mal|einmal)/.test(norm))
+    return { type: 'action', action: 'repeat' };
 
   return { type: 'none' };
 }
