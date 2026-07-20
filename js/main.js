@@ -69,6 +69,8 @@ const dom = {
   hintApply: el('hint-apply'),
   hintClose: el('hint-close'),
   debugMode: el('debug-mode'),
+  debugExtended: el('debug-extended'),
+  debugExtendedField: el('debug-extended-field'),
   debugCopy: el('debug-copy'),
   loading: el('loading'),
   partyOverlay: el('party-overlay'),
@@ -185,6 +187,7 @@ function startTimer() {
   mistakes = 0;
   winHandled = false;
   stickyForced = null;
+  resetJournal(); // fresh board → fresh move journal (coords refer to this board)
   if (timerRunStart) tick();
   renderTime();
 }
@@ -1065,8 +1068,9 @@ function updateActionButtons() {
   dom.undo.disabled = won || undoStack.length === 0;
   dom.resetBoard.disabled = won;
 }
-function doUndo() {
+function doUndo(src, heard) {
   if (!game || game.isWon() || undoStack.length === 0) return;
+  const before = journalEnabled() ? queenCoords() : null;
   const s = undoStack.pop();
   game.mark = s.mark;
   game.queen = s.queen;
@@ -1074,6 +1078,19 @@ function doUndo() {
   lastPlaced = null;
   updateBoard();
   updateActionButtons();
+  if (before) {
+    const after = queenCoords();
+    const bset = new Set(before);
+    const aset = new Set(after);
+    journalPush({
+      src: src || 'button',
+      op: 'undo',
+      heard,
+      removed: before.filter((q) => !aset.has(q)),
+      added: after.filter((q) => !bset.has(q)),
+      queens: after,
+    });
+  }
 }
 
 // ---------- Interaction (tap + swipe) ----------
@@ -1316,6 +1333,20 @@ function endDrag(e) {
     // second tap of the placement is just as forgiving as the first.
     stickyForced = target.grown && game.mark[r][c] && !game.queen[r][c] ? { r, c } : null;
     updateBoard();
+    if (journalEnabled()) {
+      let op = null;
+      if (!wasQueen && game.queen[r][c]) op = `Dame ${coordLabel(r, c)}`;
+      else if (!wasMark && game.mark[r][c]) op = `Punkt ${coordLabel(r, c)}`;
+      else if ((wasQueen || wasMark) && !game.queen[r][c] && !game.mark[r][c]) op = `leer ${coordLabel(r, c)}`;
+      if (op) journalPush({ src: 'tap', op, queens: queenCoords() });
+    }
+  } else if (drag.snapshotted && journalEnabled()) {
+    // A press-and-drag paint stroke (dots only; queens are tap-only).
+    journalPush({
+      src: 'swipe',
+      op: drag.mode === 'mark' ? 'Punkte (Wisch)' : 'löschen (Wisch)',
+      queens: queenCoords(),
+    });
   }
   drag = null;
 }
@@ -1423,6 +1454,10 @@ function applyHint() {
   }
   clearHint();
   updateBoard();
+  if (journalEnabled()) {
+    const opMap = { place: 'Hinweis: Dame', eliminate: 'Hinweis: Punkte', mistake: 'Hinweis: entfernen' };
+    journalPush({ src: 'hint', op: opMap[h.kind] || 'Hinweis', queens: queenCoords() });
+  }
 }
 
 dom.hint.addEventListener('click', showHint);
@@ -1516,6 +1551,13 @@ function updateDebugButton() {
   dom.debugCopy.hidden = !settings.debug;
 }
 
+// The extended-debug sub-option only makes sense with Debug on, so it's shown in
+// the settings modal only while the Debug switch is checked (mirrors how the edge
+// coordinate option tracks the Voice Mode switch).
+function updateDebugSubOptions() {
+  dom.debugExtendedField.hidden = !dom.debugMode.checked;
+}
+
 function cellList(pred) {
   const out = [];
   for (let r = 0; r < game.N; r++)
@@ -1542,7 +1584,7 @@ function asciiBoard() {
 
 function buildDebugInfo() {
   const hint = computeHint(game.N, game.region, currentSolution, collectQueens(), game.mark);
-  return {
+  const info = {
     app: 'queens-debug/1',
     when: new Date().toISOString(),
     size: game.N,
@@ -1564,6 +1606,14 @@ function buildDebugInfo() {
     },
     board: asciiBoard(),
   };
+  // Extended debug: the last 10 board-changing events, newest last. An 'undo'
+  // entry lists exactly which queens it removed/re-added, so it's traceable what
+  // "Rückgängig" undid. `t` is seconds on the clock; `n` is the running order.
+  if (journalEnabled()) {
+    info.app = 'queens-debug/2+journal';
+    info.journal = moveJournal;
+  }
+  return info;
 }
 
 // Pretty-print the debug JSON without exploding every number onto its own line.
@@ -1632,6 +1682,12 @@ dom.debugMode.addEventListener('change', () => {
   settings.debug = dom.debugMode.checked;
   saveSettings(settings);
   updateDebugButton();
+  updateDebugSubOptions();
+});
+dom.debugExtended.addEventListener('change', () => {
+  settings.debugExtended = dom.debugExtended.checked;
+  saveSettings(settings);
+  if (settings.debugExtended) resetJournal(); // start a clean recording
 });
 
 // ---------- Controls ----------
@@ -1666,8 +1722,9 @@ dom.resetBoard.addEventListener('click', () => {
   clearHint();
   pushUndo();
   game.reset();
-  startTimer(); // clear the board -> clean clock
+  startTimer(); // clear the board -> clean clock (clears the journal too)
   updateBoard();
+  if (journalEnabled()) journalPush({ src: 'button', op: 'reset', queens: [] });
 });
 
 // ---------- Settings modal ----------
@@ -1702,6 +1759,8 @@ function openSettings() {
   dom.voiceEdgeMode.checked = settings.voiceEdgeLabels;
   updateVoiceSubOptions();
   dom.debugMode.checked = settings.debug;
+  dom.debugExtended.checked = settings.debugExtended;
+  updateDebugSubOptions();
   show(dom.settingsOverlay);
 }
 
@@ -2079,15 +2138,54 @@ function applyCellStateChange(r, c, action) {
   }
 }
 
-// Apply `action` to one OR MANY cells as a single gesture: the same guards as a
-// tap, one undo snapshot, one board render, and the sounds/mistake-counting
-// rolled up. A spoken batch ("Punkte auf A2, B2, C3") is thus one undo step.
-// Returns { ok, reason, placed, dotted, cleared, count, changed }.
-function voiceApplyCells(cells, action) {
+// ---------- Extended debug journal ----------
+// A ring buffer of the last 10 board-changing events (moves + undos + resets),
+// kept only when Debug + Extended Debug are both on. Each entry records the
+// source and the resulting queen list, and — key for diagnosing voice bugs — the
+// raw transcript that produced it and exactly what an undo removed/re-added.
+let moveJournal = [];
+let moveSeq = 0;
+
+function journalEnabled() {
+  return settings.debug && settings.debugExtended;
+}
+function resetJournal() {
+  moveJournal = [];
+  moveSeq = 0;
+}
+function queenCoords() {
+  return collectQueens().map(([r, c]) => coordLabel(r, c));
+}
+function journalPush(entry) {
+  if (!journalEnabled()) return;
+  const e = { n: ++moveSeq, t: currentElapsed() };
+  for (const k of Object.keys(entry)) if (entry[k] !== undefined) e[k] = entry[k];
+  moveJournal.push(e);
+  if (moveJournal.length > 10) moveJournal.shift();
+}
+// Compact one-line summary of a parsed voice command, for the journal.
+function voiceCmdSummary(cmd) {
+  if (!cmd) return '';
+  if (cmd.type === 'cell') return `cell ${coordLabel(cmd.row, cmd.col)} ${cmd.action}`;
+  if (cmd.type === 'batch')
+    return `batch ${cmd.action} [${cmd.cells.map((c) => coordLabel(c.row, c.col)).join(',')}]`;
+  if (cmd.type === 'fill') return `fill ${cmd.action}`;
+  if (cmd.type === 'action') return `action ${cmd.action}`;
+  return cmd.type;
+}
+
+// Apply `action` to one OR MANY cells. Bulk dots/clears/fills are a single
+// gesture (one undo snapshot). Queen placements, however, get ONE undo snapshot
+// EACH (B2), so a single "zurück" removes exactly one queen even when the
+// recogniser merged several "X Dame" utterances into one transcript. `meta`
+// (optional { heard, cmd }) feeds the extended-debug journal. Returns
+// { ok, reason, placed, dotted, cleared, count, changed }.
+function voiceApplyCells(cells, action, meta) {
   if (!game) return { ok: false, reason: 'no-game' };
   if (game.isWon()) return { ok: false, reason: 'won' };
   clearHint();
-  pushUndo();
+  const perCell = action === 'queen';
+  if (!perCell) pushUndo();
   let placed = 0;
   let dotted = 0;
   let cleared = 0;
@@ -2096,23 +2194,38 @@ function voiceApplyCells(cells, action) {
   for (const { row: r, col: c } of cells) {
     const wasQueen = game.queen[r][c];
     const wasMark = game.mark[r][c];
+    if (perCell) pushUndo();
     applyCellStateChange(r, c, action);
     const nowQueen = game.queen[r][c];
     const nowMark = game.mark[r][c];
-    if (wasQueen !== nowQueen || wasMark !== nowMark) changed++;
+    const cellChanged = wasQueen !== nowQueen || wasMark !== nowMark;
+    if (perCell && !cellChanged) {
+      // No-op queen (already there) — drop its snapshot to keep undo clean.
+      undoStack.pop();
+      updateActionButtons();
+    }
+    if (cellChanged) changed++;
     if (!wasQueen && nowQueen) {
       placed++;
       lastQueen = { r, c };
       // A queen off the unique solution is a wrong deduction — count each once.
       if (currentSolution && currentSolution[r] !== c) mistakes++;
+      if (perCell && journalEnabled())
+        journalPush({
+          src: 'voice',
+          op: `Dame ${coordLabel(r, c)}`,
+          heard: meta && meta.heard,
+          cmd: meta && meta.cmd,
+          queens: queenCoords(),
+        });
     } else if (!wasMark && nowMark && !nowQueen) {
       dotted++;
     } else if ((wasQueen || wasMark) && !nowQueen && !nowMark) {
       cleared++;
     }
   }
-  if (!changed) {
-    // Nothing actually changed (e.g. "Dame" on existing queens) — keep undo clean.
+  if (!perCell && !changed) {
+    // Nothing actually changed (e.g. "Punkt" on existing dots) — keep undo clean.
     undoStack.pop();
     updateActionButtons();
   }
@@ -2125,12 +2238,23 @@ function voiceApplyCells(cells, action) {
   } else if (cleared) {
     playErase();
   }
+  // Bulk (non-queen) gestures log a single journal entry; queens logged per cell.
+  if (!perCell && changed && journalEnabled())
+    journalPush({
+      src: 'voice',
+      op: `${VOICE_ACTION_LABEL[action] || action} ×${changed}`,
+      heard: meta && meta.heard,
+      cmd: meta && meta.cmd,
+      queens: queenCoords(),
+    });
   updateBoard();
   return { ok: true, placed, dotted, cleared, count: cells.length, changed };
 }
 
-// Route a parsed command into the existing actions.
-function handleVoiceCommand(cmd) {
+// Route a parsed command into the existing actions. `heard` is the raw
+// transcript (fed into the extended-debug journal).
+function handleVoiceCommand(cmd, heard) {
+  const meta = { heard, cmd: voiceCmdSummary(cmd) };
   if (!cmd || cmd.type === 'none') {
     setVoiceStatus('Nicht verstanden – bitte wiederholen.', 'warn');
     return;
@@ -2156,7 +2280,7 @@ function handleVoiceCommand(cmd) {
         break;
       case 'undo':
         clearHint();
-        doUndo();
+        doUndo('voice', heard);
         setVoiceStatus('Rückgängig', 'ok');
         break;
       case 'reset':
@@ -2164,8 +2288,9 @@ function handleVoiceCommand(cmd) {
           clearHint();
           pushUndo();
           game.reset();
-          startTimer();
+          startTimer(); // clears the journal too
           updateBoard();
+          if (journalEnabled()) journalPush({ src: 'voice', op: 'reset', heard, queens: [] });
           setVoiceStatus('Zurückgesetzt', 'ok');
         }
         break;
@@ -2193,7 +2318,7 @@ function handleVoiceCommand(cmd) {
   }
   if (cmd.type === 'cell' || cmd.type === 'batch') {
     const cells = cmd.type === 'cell' ? [{ row: cmd.row, col: cmd.col }] : cmd.cells;
-    const res = voiceApplyCells(cells, cmd.action);
+    const res = voiceApplyCells(cells, cmd.action, meta);
     if (!res.ok) {
       setVoiceStatus(res.reason === 'won' ? 'Gelöst – sag „Neues Spiel“.' : 'Kein aktives Spiel.', 'warn');
       return;
@@ -2234,7 +2359,7 @@ function handleVoiceCommand(cmd) {
       );
       return;
     }
-    const res = voiceApplyCells(cells, cmd.action);
+    const res = voiceApplyCells(cells, cmd.action, meta);
     if (!res.ok) {
       setVoiceStatus(res.reason === 'won' ? 'Gelöst – sag „Neues Spiel“.' : 'Kein aktives Spiel.', 'warn');
       return;
@@ -2273,7 +2398,7 @@ function handleVoiceFinal(alts) {
     }
   }
   setVoiceTranscript(used);
-  handleVoiceCommand(cmd);
+  handleVoiceCommand(cmd, used);
 }
 
 function ensureVoiceController() {

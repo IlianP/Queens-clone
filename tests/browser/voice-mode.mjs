@@ -93,9 +93,9 @@ async function run() {
   await page.click('#open-settings');
   await page.waitForSelector('#settings-overlay:not([hidden])');
   check('voice toggle enabled (fake API supported)', !(await page.$eval('#voice-mode', (e) => e.disabled)));
-  check('edge sub-option hidden before Voice Mode', await page.$eval('#voice-edge-field', (e) => e.hidden));
+  check('edge sub-option hidden before Voice Mode', !(await page.isVisible('#voice-edge-field')));
   await page.check('#voice-mode');
-  check('edge sub-option shown once Voice Mode on', !(await page.$eval('#voice-edge-field', (e) => e.hidden)));
+  check('edge sub-option shown once Voice Mode on', !(!(await page.isVisible('#voice-edge-field'))));
   await page.click('#settings-close');
   check('voice panel visible', !(await page.$eval('#voice-panel', (e) => e.hidden)));
   check('board shows coordinate labels', await page.$eval('#board', (e) => e.classList.contains('show-coords')));
@@ -113,6 +113,7 @@ async function run() {
   check('listen button shows the listening state', true);
 
   const emit = (alts) => page.evaluate((a) => window.__fakeVoice.emitFinal(a), alts);
+  const qcoords = () => page.$$eval('.cell', (cs) => cs.filter((c) => c.dataset.state === 'queen').map((c) => c.dataset.coord));
 
   // --- "C4 Dame" places a queen at (row3,col2) = flat index 26. ---
   await emit(['C4 Dame']);
@@ -155,6 +156,48 @@ async function run() {
       (await cellState(page, 13)) === 'empty' &&
       (await cellState(page, 14)) === 'empty'
   );
+
+  // --- B2 + extended-debug journal + destructive-reset guard. ---
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
+  await page.click('#open-settings');
+  await page.waitForSelector('#settings-overlay:not([hidden])');
+  check('extended-debug sub-option hidden before Debug on', !(await page.isVisible('#debug-extended-field')));
+  await page.check('#debug-mode');
+  check('extended-debug sub-option shown after Debug on', !(!(await page.isVisible('#debug-extended-field'))));
+  await page.check('#debug-extended');
+  await page.click('#settings-close');
+
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  // B2: A1 Dame, then a MERGED "D2 Dame E4 Dame" (recogniser fused two commands).
+  await emit(['A1 Dame']);
+  await page.waitForTimeout(40);
+  await emit(['D2 Dame E4 Dame']);
+  await page.waitForTimeout(50);
+  check('merged queen utterance placed A1,D2,E4', JSON.stringify(await qcoords()) === JSON.stringify(['A1', 'D2', 'E4']));
+  await emit(['zurück']);
+  await page.waitForTimeout(50);
+  check('B2: one "zurück" removes ONLY the last queen', JSON.stringify(await qcoords()) === JSON.stringify(['A1', 'D2']));
+
+  // Journal: the two Dame moves carry the SAME transcript (proves the merge), and
+  // the undo entry records exactly which queen it removed.
+  await page.click('#debug-copy');
+  await page.waitForTimeout(150);
+  const dbg = await page.evaluate(() => navigator.clipboard.readText());
+  check('debug copy includes the move journal', /"journal"/.test(dbg));
+  check(
+    'journal shows the merged transcript on two moves',
+    (dbg.match(/"heard": "D2 Dame E4 Dame"/g) || []).length >= 2
+  );
+  check('journal undo entry is traceable (removed E4)', /"op": "undo"[\s\S]*?"removed": \["E4"\]/.test(dbg));
+
+  // A2: a bare "leeren" (mis-heard cell-clear) must NOT wipe the whole board.
+  const beforeBare = JSON.stringify(await qcoords());
+  await emit(['leeren']);
+  await page.waitForTimeout(50);
+  check('bare "leeren" does not reset the board', JSON.stringify(await qcoords()) === beforeBare);
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
 
   // --- Fill: whole columns/rows, with an exclusion. ---
   await emit(['Zurücksetzen']);
@@ -247,7 +290,7 @@ async function run() {
   await page.click('#open-settings');
   await page.waitForSelector('#settings-overlay:not([hidden])');
   await page.uncheck('#voice-mode');
-  check('edge sub-option hidden when Voice Mode off', await page.$eval('#voice-edge-field', (e) => e.hidden));
+  check('edge sub-option hidden when Voice Mode off', !(await page.isVisible('#voice-edge-field')));
   await page.click('#settings-close');
   check('voice panel hidden again', await page.$eval('#voice-panel', (e) => e.hidden));
   check('coordinate labels removed', !(await page.$eval('#board', (e) => e.classList.contains('show-coords'))));

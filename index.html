@@ -216,6 +216,15 @@
           <input type="checkbox" id="debug-mode" class="switch" />
         </label>
 
+        <!-- Sub-option, revealed only while Debug-Modus is enabled. -->
+        <label class="field toggle-field debug-suboption" id="debug-extended-field" hidden>
+          <span>
+            <span class="field-label">Erweiterter Debug-Modus</span>
+            <span class="field-hint">Zeichnet die letzten 10 Züge auf (inkl. Sprachbefehl-Transkript) und was „Rückgängig" jeweils entfernt hat. Dieses Protokoll wird beim „Debug kopieren" mit rauskopiert – hilfreich beim Melden von Sprachmodus-Fehlern.</span>
+          </span>
+          <input type="checkbox" id="debug-extended" class="switch" />
+        </label>
+
         <p class="settings-note">Änderungen an Größe oder Schwierigkeit gelten für das nächste neue Spiel.</p>
 
         <div class="settings-buttons">

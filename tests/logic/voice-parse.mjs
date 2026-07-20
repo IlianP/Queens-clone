@@ -144,6 +144,17 @@ check('"schließen" → dismiss', actionIs(parseVoiceCommand('schließen', 8), '
 check('"wiederholen" → repeat', actionIs(parseVoiceCommand('wiederholen', 8), 'repeat'));
 check('"vorlesen" → repeat', actionIs(parseVoiceCommand('vorlesen', 8), 'repeat'));
 
+// --- A1: a real cell/fill command beats a leading filler word (ja/ok/…). ---
+check('"ja C4 Dame" → cell C4 queen (filler doesn\'t hijack)', cellIs(parseVoiceCommand('ja C4 Dame', 8), 3, 2, 'queen'));
+check('"okay C3 Punkt" → cell C3 mark', cellIs(parseVoiceCommand('okay C3 Punkt', 8), 2, 2, 'mark'));
+
+// --- A2: a bare cell-clear verb must NOT reset the whole board. ---
+check('bare "leeren" → NOT reset (falls through to none)', parseVoiceCommand('leeren', 8).type === 'none');
+check('bare "löschen" → NOT reset', parseVoiceCommand('löschen', 8).type === 'none');
+check('"C6 leeren" → cell clear (coordinate kept)', cellIs(parseVoiceCommand('C6 leeren', 8), 5, 2, 'clear'));
+check('"alles leeren" → reset (explicit)', actionIs(parseVoiceCommand('alles leeren', 8), 'reset'));
+check('"ganzes Feld leeren" → reset (explicit)', actionIs(parseVoiceCommand('ganzes Feld leeren', 8), 'reset'));
+
 // --- Global actions (no coordinate present). ---
 check('"neues Spiel" → newGame', actionIs(parseVoiceCommand('neues Spiel', 8), 'newGame'));
 check('"Hinweis" → hint', actionIs(parseVoiceCommand('Hinweis bitte', 8), 'hint'));

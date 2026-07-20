@@ -14,6 +14,7 @@ export const DEFAULTS = {
   difficulty: 'medium',
   quickMode: true,
   debug: false,
+  debugExtended: false,
   introAnimation: true,
   nickname: '',
   liveCheck: false,
@@ -47,6 +48,7 @@ export function loadSettings() {
       difficulty: ['easy', 'medium', 'hard'].includes(s.difficulty) ? s.difficulty : DEFAULTS.difficulty,
       quickMode: typeof s.quickMode === 'boolean' ? s.quickMode : DEFAULTS.quickMode,
       debug: typeof s.debug === 'boolean' ? s.debug : DEFAULTS.debug,
+      debugExtended: typeof s.debugExtended === 'boolean' ? s.debugExtended : DEFAULTS.debugExtended,
       introAnimation:
         typeof s.introAnimation === 'boolean' ? s.introAnimation : DEFAULTS.introAnimation,
       nickname: sanitizeNickname(s.nickname),
