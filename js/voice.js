@@ -359,6 +359,45 @@ export function parseVoiceCommand(transcript, N = 8) {
   return { type: 'none' };
 }
 
+// Collapse a re-finalised recognition segment. In `continuous` mode Chrome can
+// emit a final ("i5") and then, a beat later, re-finalise the SAME segment
+// extended ("i5 i6") — replaying the first command and toggling its cell a second
+// time (the "I5 I6 → two queens" bug). Given the previous final's primary text
+// and the new alternatives, decide what to actually act on:
+//   - exact/shrunk duplicate  -> null (suppress)
+//   - prefix extension        -> only the newly-appended tail ("i6")
+//   - anything else           -> the alternatives unchanged (pass through)
+// PURE: the time window that decides whether `prevText` still counts lives in the
+// caller (createVoiceController) — pass null once it has expired. Returns
+// `{ emit, prevText }`; `prevText` is what the caller should remember for the
+// next call (always the full utterance, so a third extension strips this one).
+// Note: a *deliberately* repeated command within the window is swallowed too —
+// an accepted trade for killing the far more common re-finalise replay.
+export function dedupeFinalAlternatives(prevText, alts) {
+  if (!alts || !alts.length) return { emit: alts, prevText: prevText || '' };
+  const primary = voiceNormalize(alts[0]);
+  const prev = prevText ? voiceNormalize(prevText) : '';
+  if (!prev) return { emit: alts, prevText: primary };
+  if (primary === prev) return { emit: null, prevText: prev }; // exact replay
+  if (prev.startsWith(primary + ' ')) return { emit: null, prevText: prev }; // shrunk replay
+  if (primary.startsWith(prev + ' ')) {
+    // Extension: keep only the tail of each alternative that continues `prev`.
+    const seen = new Set();
+    const tail = [];
+    for (const a of alts) {
+      const n = voiceNormalize(a);
+      if (!n.startsWith(prev + ' ')) continue;
+      const rest = n.slice(prev.length).trim();
+      if (rest && !seen.has(rest)) {
+        seen.add(rest);
+        tail.push(rest);
+      }
+    }
+    return { emit: tail.length ? tail : null, prevText: primary };
+  }
+  return { emit: alts, prevText: primary }; // unrelated new utterance
+}
+
 // Is the Web Speech API available? Safe to call in Node (returns false).
 export function voiceSupported() {
   return (
@@ -432,6 +471,10 @@ export function createVoiceController(opts = {}) {
   let rec = null;
   let listening = false;
   let wantOn = false; // desired state; drives auto-restart when the engine stops
+  // Guard against Chrome re-finalising a segment (see dedupeFinalAlternatives).
+  let lastFinalText = '';
+  let lastFinalAt = 0;
+  const FINAL_DEDUPE_MS = 2000; // gap seen in the wild is ~1s; stay generous but bounded
 
   function build() {
     if (rec || !Ctor) return rec;
@@ -453,7 +496,12 @@ export function createVoiceController(opts = {}) {
         if (result.isFinal) {
           const alts = [];
           for (let a = 0; a < result.length; a++) alts.push(result[a].transcript);
-          if (onFinal) onFinal(alts);
+          const now = Date.now();
+          const within = lastFinalText && now - lastFinalAt <= FINAL_DEDUPE_MS;
+          const { emit, prevText } = dedupeFinalAlternatives(within ? lastFinalText : '', alts);
+          lastFinalText = prevText;
+          lastFinalAt = now;
+          if (emit && emit.length && onFinal) onFinal(emit);
         } else {
           interim += result[0].transcript;
         }

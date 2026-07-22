@@ -25,11 +25,15 @@ export class Game {
   // Cycle a cell: empty -> dot (mark) -> queen -> empty.
   // In quick mode an auto-dotted (but unmarked) cell jumps straight to a queen,
   // so you don't have to tap past the dot.
-  tap(r, c) {
+  // `autoMarked` lets a caller supply a *frozen* auto-mark verdict instead of the
+  // live one; a batch toggle passes the batch-start value so a queen placed by an
+  // earlier cell in the same batch can't flip a later cell's dot step into a queen.
+  tap(r, c, autoMarked) {
+    const auto = autoMarked === undefined ? this._autoMarked(r, c) : autoMarked;
     if (this.queen[r][c]) {
       this.queen[r][c] = false;
       this.queenCount--;
-    } else if (this.mark[r][c] || this._autoMarked(r, c)) {
+    } else if (this.mark[r][c] || auto) {
       this.mark[r][c] = false;
       this.queen[r][c] = true;
       this.queenCount++;
