@@ -328,7 +328,12 @@ export function parseVoiceCommand(transcript, N = 8) {
 
   // No coordinate → a global action. Order matters: "zurücksetzen" contains
   // "zurück", so match reset before undo.
-  if (/\b(neues? spiel|neustart|neu)\b/.test(norm)) return { type: 'action', action: 'newGame' };
+  // New game needs an explicit phrase ("neues Spiel", "Neustart", "neu
+  // starten") — a BARE "neu" is deliberately NOT accepted: the recogniser often
+  // clips the row number "neun" to "neu", and starting a whole new game (losing
+  // the board) on that misfire is far worse than ignoring a lone "neu".
+  if (/\bneu(es|e)?\s+spiel\b|\bneustart\b|\bneu\s+start\w*\b/.test(norm))
+    return { type: 'action', action: 'newGame' };
   if (/\b(hinweis|tipp|hilfe)\b/.test(norm)) return { type: 'action', action: 'hint' };
   if (/\b(pr[uü]f\w*|check|kontrolle)\b/.test(norm)) return { type: 'action', action: 'check' };
   // Board reset needs an explicit phrase. A bare "leeren"/"löschen" is the
