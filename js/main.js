@@ -2149,10 +2149,11 @@ function flashVoiceCell(r, c) {
 }
 
 // Mutate one cell's state for `action` (no undo/sound/render — the caller rolls
-// those up). 'toggle' cycles like a tap; the rest force a state.
-function applyCellStateChange(r, c, action) {
+// those up). 'toggle' cycles like a tap; the rest force a state. `autoMarked` is
+// an optional frozen auto-mark verdict for 'toggle' (see voiceApplyCells).
+function applyCellStateChange(r, c, action, autoMarked) {
   if (action === 'toggle') {
-    game.tap(r, c);
+    game.tap(r, c, autoMarked);
   } else if (action === 'queen') {
     if (!game.queen[r][c]) {
       game.queen[r][c] = true;
@@ -2218,16 +2219,27 @@ function voiceApplyCells(cells, action, meta) {
   clearHint();
   const perCell = action === 'queen';
   if (!perCell) pushUndo();
+  // Freeze the auto-mark basis for a multi-cell toggle: within one spoken batch
+  // ("Punkte auf I5, I6") each named cell should advance one step in the cycle it
+  // had when the command was uttered. Computing it live would let a queen placed
+  // by an earlier cell auto-mark a later same-column/adjacent cell and skip its
+  // dot step straight to a queen — the "I5 I6 → two queens" bug.
+  const frozenAuto =
+    action === 'toggle' && cells.length > 1
+      ? cells.map(({ row, col }) => game._autoMarked(row, col))
+      : null;
   let placed = 0;
   let dotted = 0;
   let cleared = 0;
   let changed = 0;
   let lastQueen = null;
+  let idx = -1;
   for (const { row: r, col: c } of cells) {
+    idx++;
     const wasQueen = game.queen[r][c];
     const wasMark = game.mark[r][c];
     if (perCell) pushUndo();
-    applyCellStateChange(r, c, action);
+    applyCellStateChange(r, c, action, frozenAuto ? frozenAuto[idx] : undefined);
     const nowQueen = game.queen[r][c];
     const nowMark = game.mark[r][c];
     const cellChanged = wasQueen !== nowQueen || wasMark !== nowMark;

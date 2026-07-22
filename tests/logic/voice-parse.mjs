@@ -2,7 +2,7 @@
 // parser behind Voice Mode. No browser, no deps (voice.js touches `window` only
 // inside the recogniser wrapper, never at import time):
 //   node tests/logic/voice-parse.mjs
-import { parseVoiceCommand, coordLabel, colLetter } from '../../js/voice.js';
+import { parseVoiceCommand, coordLabel, colLetter, dedupeFinalAlternatives } from '../../js/voice.js';
 
 let failed = 0;
 function check(name, cond) {
@@ -172,6 +172,39 @@ check('"pause" → stop', parseVoiceCommand('pause', 8).type === 'stop');
 // --- Garbage / empty → none. ---
 check('empty → none', parseVoiceCommand('', 8).type === 'none');
 check('"guten morgen" → none', parseVoiceCommand('guten morgen', 8).type === 'none');
+
+// --- Re-finalise dedup: Chrome can emit "i5" then re-finalise it as "i5 i6",
+// replaying the first command. dedupeFinalAlternatives collapses that. ---
+function emitEq(res, arr) {
+  if (arr === null) return res.emit === null;
+  return Array.isArray(res.emit) && res.emit.length === arr.length && res.emit.every((s, i) => s === arr[i]);
+}
+// No previous final → pass through unchanged, remember the primary.
+check('dedup: first final passes through', emitEq(dedupeFinalAlternatives('', ['i5']), ['i5']));
+check('dedup: first final remembers primary', dedupeFinalAlternatives('', ['I5']).prevText === 'i5');
+// Prefix extension → only the appended tail is acted on; prevText grows to full.
+{
+  const r = dedupeFinalAlternatives('i5', ['i5 i6']);
+  check('dedup: "i5" then "i5 i6" → emit only "i6"', emitEq(r, ['i6']));
+  check('dedup: extension remembers full utterance', r.prevText === 'i5 i6');
+}
+// A third extension strips the (now full) previous utterance.
+check('dedup: "i5 i6" then "i5 i6 i7" → emit "i7"', emitEq(dedupeFinalAlternatives('i5 i6', ['i5 i6 i7']), ['i7']));
+// Exact replay of the same final → suppress entirely.
+check('dedup: exact replay suppressed', emitEq(dedupeFinalAlternatives('i5 i6', ['i5 i6']), null));
+// A shrunk re-finalise (prev longer) is still a replay → suppress.
+check('dedup: shrunk replay suppressed', emitEq(dedupeFinalAlternatives('i5 i6', ['i5']), null));
+// Unrelated new utterance → pass through unchanged.
+check('dedup: unrelated final passes through', emitEq(dedupeFinalAlternatives('i5', ['b2']), ['b2']));
+// Extension across alternatives keeps only tails that actually continue prev.
+{
+  const r = dedupeFinalAlternatives('i5', ['i5 i6', 'i5 j6', 'foo bar']);
+  check('dedup: extension keeps continuing tails only', emitEq(r, ['i6', 'j6']));
+}
+// Normalisation: casing/punctuation differences still count as a prefix.
+check('dedup: "I5" then "I5, I6" → "i6"', emitEq(dedupeFinalAlternatives('I5', ['I5, I6']), ['i6']));
+// Empty/missing alternatives are handled without throwing.
+check('dedup: empty alts pass through', dedupeFinalAlternatives('i5', []).emit.length === 0);
 
 console.log(failed === 0 ? '\nvoice-parse: all passed' : `\nvoice-parse: ${failed} FAILED`);
 process.exit(failed === 0 ? 0 : 1);

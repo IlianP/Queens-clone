@@ -157,6 +157,41 @@ async function run() {
       (await cellState(page, 14)) === 'empty'
   );
 
+  // --- Regression: "I5 I6"-style double-placement bug. Two combined fixes. ---
+  // Quick mode is on by default (the auto-mark cascade needs it). G5,G6 share a
+  // column and touch (G5 = row4,col6 = idx 38; G6 = row5,col6 = idx 46).
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  // #1 Re-finalise dedup: Chrome emits "G5" then re-finalises it as "G5 G6".
+  // The replay must NOT toggle G5 a second time (dot→queen) and cascade into G6.
+  await emit(['G5']);
+  await page.waitForTimeout(60);
+  await emit(['G5 G6']);
+  await page.waitForTimeout(60);
+  check(
+    'dup final "G5" + "G5 G6" → two dots, no queens',
+    (await cellState(page, 38)) === 'dot' && (await cellState(page, 46)) === 'dot'
+  );
+
+  // #2 Frozen batch auto-mark: even a *genuine* single batch toggle where the
+  // first cell turns into a queen must not flip the touching second cell into a
+  // queen too. Pre-dot G5, break the dedup chain with an unrelated final, then
+  // toggle both in one utterance: G5 dot→queen, G6 should still land on a dot.
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['G5']);
+  await page.waitForTimeout(60);
+  await emit(['Schließen']); // no card open: a no-op that resets the dedup prefix
+  await page.waitForTimeout(40);
+  await emit(['G5 G6']);
+  await page.waitForTimeout(60);
+  check(
+    'batch toggle: G5→queen does not cascade G6 into a queen',
+    (await cellState(page, 38)) === 'queen' && (await cellState(page, 46)) === 'dot'
+  );
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+
   // --- B2 + extended-debug journal + destructive-reset guard. ---
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
   await page.click('#open-settings');
