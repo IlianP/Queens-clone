@@ -157,6 +157,13 @@ check('"ganzes Feld leeren" → reset (explicit)', actionIs(parseVoiceCommand('g
 
 // --- Global actions (no coordinate present). ---
 check('"neues Spiel" → newGame', actionIs(parseVoiceCommand('neues Spiel', 8), 'newGame'));
+check('"Neustart" → newGame', actionIs(parseVoiceCommand('Neustart', 8), 'newGame'));
+check('"neu starten" → newGame', actionIs(parseVoiceCommand('neu starten', 8), 'newGame'));
+// A BARE "neu" must NOT start a new game: the recogniser often clips the row
+// number "neun" to "neu", and losing the board on that misfire is far worse
+// than ignoring a lone "neu".
+check('bare "neu" → NOT newGame (neun/neu clip guard)', parseVoiceCommand('neu', 8).type === 'none');
+check('bare "neun" → NOT newGame', parseVoiceCommand('neun', 8).type !== 'action');
 check('"Hinweis" → hint', actionIs(parseVoiceCommand('Hinweis bitte', 8), 'hint'));
 check('"Tipp" → hint', actionIs(parseVoiceCommand('Tipp', 8), 'hint'));
 check('"prüfen" → check', actionIs(parseVoiceCommand('prüfen', 8), 'check'));
