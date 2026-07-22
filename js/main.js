@@ -26,6 +26,7 @@ import {
   voiceSupported,
   createVoiceController,
   parseVoiceCommand,
+  dedupeReplayCells,
   coordLabel,
   colLetter,
   voiceSpeak,
@@ -2003,6 +2004,11 @@ dom.soundToggle.addEventListener('change', () => setSound(dom.soundToggle.checke
 let voiceController = null;
 let voiceListening = false; // reflects the recogniser state (for TTS gating)
 let voiceSpeaking = false; // true while reading a hint aloud — suppress commands
+// Replay guard for re-finalised recognition segments (see dedupeReplayCells):
+// the "r,c,action" keys of the last voice coordinate command, and when it ran.
+let lastVoiceReplayKeys = null;
+let lastVoiceReplayAt = 0;
+const VOICE_REPLAY_MS = 1500; // a re-finalise lands ~1s later; keep the window tight
 
 const VOICE_ACTION_LABEL = {
   toggle: 'umgeschaltet',
@@ -2172,10 +2178,13 @@ function applyCellStateChange(r, c, action, autoMarked) {
 }
 
 // ---------- Extended debug journal ----------
-// A ring buffer of the last 10 board-changing events (moves + undos + resets),
-// kept only when Debug + Extended Debug are both on. Each entry records the
-// source and the resulting queen list, and — key for diagnosing voice bugs — the
-// raw transcript that produced it and exactly what an undo removed/re-added.
+// A ring buffer of the last 20 voice/board events, kept only when Debug +
+// Extended Debug are both on. It records EVERY voice final that was heard (op
+// "gehört", incl. ones that changed nothing or weren't understood) plus the
+// resulting effect entries (moves, undos, resets, replay-skips) — so the whole
+// voice stream is reconstructable, not just the finals that moved a piece. Each
+// entry keeps the source, the raw transcript, and (for undos) what was removed.
+const JOURNAL_MAX = 20;
 let moveJournal = [];
 let moveSeq = 0;
 
@@ -2194,7 +2203,7 @@ function journalPush(entry) {
   const e = { n: ++moveSeq, t: currentElapsed() };
   for (const k of Object.keys(entry)) if (entry[k] !== undefined) e[k] = entry[k];
   moveJournal.push(e);
-  if (moveJournal.length > 10) moveJournal.shift();
+  if (moveJournal.length > JOURNAL_MAX) moveJournal.shift();
 }
 // Compact one-line summary of a parsed voice command, for the journal.
 function voiceCmdSummary(cmd) {
@@ -2362,18 +2371,32 @@ function handleVoiceCommand(cmd, heard) {
   }
   if (cmd.type === 'cell' || cmd.type === 'batch') {
     const cells = cmd.type === 'cell' ? [{ row: cmd.row, col: cmd.col }] : cmd.cells;
-    const res = voiceApplyCells(cells, cmd.action, meta);
+    // Drop cells that merely replay the immediately-prior voice command (Chrome
+    // re-finalising the same utterance) — but keep any whose action differs, so a
+    // verb-completed re-finalise ("i5" → "i5 Dame") still upgrades the cell.
+    const within = lastVoiceReplayKeys && Date.now() - lastVoiceReplayAt <= VOICE_REPLAY_MS;
+    const { apply, keys } = dedupeReplayCells(cells, cmd.action, within ? lastVoiceReplayKeys : null);
+    lastVoiceReplayKeys = keys;
+    lastVoiceReplayAt = Date.now();
+    if (apply.length === 0) {
+      // Whole command was a replay of the last one — do nothing, but record it.
+      if (journalEnabled())
+        journalPush({ src: 'voice', op: 'Replay übersprungen', heard: meta.heard, cmd: meta.cmd });
+      setVoiceStatus('Wiederholung übersprungen.');
+      return;
+    }
+    const res = voiceApplyCells(apply, cmd.action, meta);
     if (!res.ok) {
       setVoiceStatus(res.reason === 'won' ? 'Gelöst – sag „Neues Spiel“.' : 'Kein aktives Spiel.', 'warn');
       return;
     }
-    for (const { row, col } of cells) flashVoiceCell(row, col);
+    for (const { row, col } of apply) flashVoiceCell(row, col);
     const label = VOICE_ACTION_LABEL[cmd.action] || '';
-    if (cells.length === 1) {
-      setVoiceStatus(`${coordLabel(cells[0].row, cells[0].col)} · ${label}`.trim(), 'ok');
+    if (apply.length === 1) {
+      setVoiceStatus(`${coordLabel(apply[0].row, apply[0].col)} · ${label}`.trim(), 'ok');
     } else {
-      const list = cells.map((c) => coordLabel(c.row, c.col)).join(', ');
-      setVoiceStatus(`${cells.length} Felder · ${label} (${list})`, 'ok');
+      const list = apply.map((c) => coordLabel(c.row, c.col)).join(', ');
+      setVoiceStatus(`${apply.length} Felder · ${label} (${list})`, 'ok');
     }
     return;
   }
@@ -2442,6 +2465,22 @@ function handleVoiceFinal(alts) {
     }
   }
   setVoiceTranscript(used);
+  // Log EVERY final — even ones that change nothing (not understood, no-op) — so
+  // the extended-debug journal reflects the whole voice stream, not just the
+  // finals that moved a piece. The other alternatives ride along to expose
+  // mis-hearings the parser had to recover from.
+  if (journalEnabled())
+    journalPush({
+      src: 'voice',
+      op: 'gehört',
+      heard: used,
+      cmd: voiceCmdSummary(cmd),
+      alts: alts && alts.length > 1 ? alts.join(' | ') : undefined,
+    });
+  // Only back-to-back coordinate finals can be replays of each other; anything
+  // else (an action, a fill, a miss) breaks the chain so the next coordinate
+  // command is judged fresh.
+  if (cmd.type !== 'cell' && cmd.type !== 'batch') lastVoiceReplayKeys = null;
   handleVoiceCommand(cmd, used);
 }
 
