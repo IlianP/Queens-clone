@@ -157,31 +157,60 @@ async function run() {
       (await cellState(page, 14)) === 'empty'
   );
 
-  // --- Regression: "I5 I6"-style double-placement bug. Two combined fixes. ---
+  // --- Regression: "I5 I6"-style double-placement bug + its follow-up fix. ---
   // Quick mode is on by default (the auto-mark cascade needs it). G5,G6 share a
   // column and touch (G5 = row4,col6 = idx 38; G6 = row5,col6 = idx 46).
+
+  // Re-finalise replay guard: Chrome finalises "G5", then re-finalises the same
+  // utterance as "G5 G6". The repeated G5 (same cell + same toggle) is dropped, so
+  // G5 keeps its single dot and only G6 is newly acted on — two dots, no queens.
   await emit(['Zurücksetzen']);
   await page.waitForTimeout(40);
-  // #1 Re-finalise dedup: Chrome emits "G5" then re-finalises it as "G5 G6".
-  // The replay must NOT toggle G5 a second time (dot→queen) and cascade into G6.
   await emit(['G5']);
   await page.waitForTimeout(60);
   await emit(['G5 G6']);
   await page.waitForTimeout(60);
   check(
-    'dup final "G5" + "G5 G6" → two dots, no queens',
+    'replay "G5" + "G5 G6" → two dots, no queens',
     (await cellState(page, 38)) === 'dot' && (await cellState(page, 46)) === 'dot'
   );
 
-  // #2 Frozen batch auto-mark: even a *genuine* single batch toggle where the
-  // first cell turns into a queen must not flip the touching second cell into a
-  // queen too. Pre-dot G5, break the dedup chain with an unrelated final, then
-  // toggle both in one utterance: G5 dot→queen, G6 should still land on a dot.
+  // A verb-completed re-finalise ("G5" → "G5 Dame") is NOT a replay: same cell but
+  // a different action, so it must upgrade the dot to a queen (the reported
+  // regression where it was mis-detected as a replay and dropped to a bare dot).
   await emit(['Zurücksetzen']);
   await page.waitForTimeout(40);
   await emit(['G5']);
   await page.waitForTimeout(60);
-  await emit(['Schließen']); // no card open: a no-op that resets the dedup prefix
+  await emit(['G5 Dame']);
+  await page.waitForTimeout(60);
+  check('verb re-finalise "G5" + "G5 Dame" → queen, not stuck on a dot', (await cellState(page, 38)) === 'queen');
+
+  // Progressive finals of a verb-first phrase ("Dame" → "Dame G5"): the bare verb
+  // is a no-op, and the full phrase must still place a queen (regression: the verb
+  // prefix used to be stripped, leaving only "G5" → a dot).
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Dame']);
+  await page.waitForTimeout(60);
+  await emit(['Dame G5']);
+  await page.waitForTimeout(60);
+  check('verb-first "Dame" + "Dame G5" → queen', (await cellState(page, 38)) === 'queen');
+
+  // "G5" → "G5 leeren" must end empty (clear beats the earlier dot, verb kept).
+  await emit(['G5 leeren']);
+  await page.waitForTimeout(60);
+  check('"G5" + "G5 leeren" → cell cleared', (await cellState(page, 38)) === 'empty');
+
+  // Frozen batch auto-mark: even a *genuine* single batch toggle where the first
+  // cell turns into a queen must not flip the touching second cell into a queen
+  // too. Pre-dot G5, break the replay chain with an unrelated final, then toggle
+  // both in one utterance: G5 dot→queen, G6 should still land on a dot.
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['G5']);
+  await page.waitForTimeout(60);
+  await emit(['Schließen']); // no card open: a no-op that breaks the replay chain
   await page.waitForTimeout(40);
   await emit(['G5 G6']);
   await page.waitForTimeout(60);
@@ -225,6 +254,22 @@ async function run() {
     (dbg.match(/"heard": "D2 Dame E4 Dame"/g) || []).length >= 2
   );
   check('journal undo entry is traceable (removed E4)', /"op": "undo"[\s\S]*?"removed": \["E4"\]/.test(dbg));
+  // Observability: EVERY heard final is journaled, not just board-changing ones.
+  check('journal records "gehört" entries for heard finals', /"op": "gehört"/.test(dbg));
+
+  // A not-understood final leaves the board alone but is still traceable in the
+  // journal (op "gehört", cmd "none") — the whole point of logging every final.
+  const beforeGarbage = JSON.stringify(await qcoords());
+  await emit(['schokoladenkuchen bitte']);
+  await page.waitForTimeout(50);
+  check('unrecognised final changes nothing', JSON.stringify(await qcoords()) === beforeGarbage);
+  await page.click('#debug-copy');
+  await page.waitForTimeout(150);
+  const dbg2 = await page.evaluate(() => navigator.clipboard.readText());
+  check(
+    'unrecognised final is journaled as heard/none',
+    /"heard": "schokoladenkuchen bitte"[\s\S]*?"cmd": "none"/.test(dbg2)
+  );
 
   // A2: a bare "leeren" (mis-heard cell-clear) must NOT wipe the whole board.
   const beforeBare = JSON.stringify(await qcoords());

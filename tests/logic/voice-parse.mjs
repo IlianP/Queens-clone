@@ -2,7 +2,7 @@
 // parser behind Voice Mode. No browser, no deps (voice.js touches `window` only
 // inside the recogniser wrapper, never at import time):
 //   node tests/logic/voice-parse.mjs
-import { parseVoiceCommand, coordLabel, colLetter, dedupeFinalAlternatives } from '../../js/voice.js';
+import { parseVoiceCommand, coordLabel, colLetter, dedupeReplayCells } from '../../js/voice.js';
 
 let failed = 0;
 function check(name, cond) {
@@ -180,38 +180,50 @@ check('"pause" → stop', parseVoiceCommand('pause', 8).type === 'stop');
 check('empty → none', parseVoiceCommand('', 8).type === 'none');
 check('"guten morgen" → none', parseVoiceCommand('guten morgen', 8).type === 'none');
 
-// --- Re-finalise dedup: Chrome can emit "i5" then re-finalise it as "i5 i6",
-// replaying the first command. dedupeFinalAlternatives collapses that. ---
-function emitEq(res, arr) {
-  if (arr === null) return res.emit === null;
-  return Array.isArray(res.emit) && res.emit.length === arr.length && res.emit.every((s, i) => s === arr[i]);
+// --- Re-finalise replay guard: Chrome can finalise "i5" then re-finalise the
+// SAME utterance ("i5 i6" / "i5 Dame"). dedupeReplayCells drops a cell only when
+// the *same cell + same action* recurs, comparing parsed effect, not raw text. ---
+function cellsEq(list, want) {
+  return list.length === want.length && list.every((c, i) => c.row === want[i][0] && c.col === want[i][1]);
 }
-// No previous final → pass through unchanged, remember the primary.
-check('dedup: first final passes through', emitEq(dedupeFinalAlternatives('', ['i5']), ['i5']));
-check('dedup: first final remembers primary', dedupeFinalAlternatives('', ['I5']).prevText === 'i5');
-// Prefix extension → only the appended tail is acted on; prevText grows to full.
+function keySet(...triples) {
+  return new Set(triples.map(([r, c, a]) => `${r},${c},${a}`));
+}
+// No previous keys → everything applies; keys reflect the whole command.
 {
-  const r = dedupeFinalAlternatives('i5', ['i5 i6']);
-  check('dedup: "i5" then "i5 i6" → emit only "i6"', emitEq(r, ['i6']));
-  check('dedup: extension remembers full utterance', r.prevText === 'i5 i6');
+  const r = dedupeReplayCells([{ row: 4, col: 8 }], 'toggle', null);
+  check('replay: first command applies fully', cellsEq(r.apply, [[4, 8]]));
+  check('replay: keys capture the command', r.keys.has('4,8,toggle'));
 }
-// A third extension strips the (now full) previous utterance.
-check('dedup: "i5 i6" then "i5 i6 i7" → emit "i7"', emitEq(dedupeFinalAlternatives('i5 i6', ['i5 i6 i7']), ['i7']));
-// Exact replay of the same final → suppress entirely.
-check('dedup: exact replay suppressed', emitEq(dedupeFinalAlternatives('i5 i6', ['i5 i6']), null));
-// A shrunk re-finalise (prev longer) is still a replay → suppress.
-check('dedup: shrunk replay suppressed', emitEq(dedupeFinalAlternatives('i5 i6', ['i5']), null));
-// Unrelated new utterance → pass through unchanged.
-check('dedup: unrelated final passes through', emitEq(dedupeFinalAlternatives('i5', ['b2']), ['b2']));
-// Extension across alternatives keeps only tails that actually continue prev.
-{
-  const r = dedupeFinalAlternatives('i5', ['i5 i6', 'i5 j6', 'foo bar']);
-  check('dedup: extension keeps continuing tails only', emitEq(r, ['i6', 'j6']));
-}
-// Normalisation: casing/punctuation differences still count as a prefix.
-check('dedup: "I5" then "I5, I6" → "i6"', emitEq(dedupeFinalAlternatives('I5', ['I5, I6']), ['i6']));
-// Empty/missing alternatives are handled without throwing.
-check('dedup: empty alts pass through', dedupeFinalAlternatives('i5', []).emit.length === 0);
+// "i5" then batch "i5 i6" (same action): I5 is a replay → only I6 survives.
+check(
+  'replay: "i5" then "i5 i6" toggle → apply only I6',
+  cellsEq(dedupeReplayCells([{ row: 4, col: 8 }, { row: 5, col: 8 }], 'toggle', keySet([4, 8, 'toggle'])).apply, [[5, 8]])
+);
+// "i5" (toggle) then "i5 Dame" (queen): SAME cell, DIFFERENT action → still applies
+// (a verb-completed re-finalise must upgrade the cell, not be dropped).
+check(
+  'replay: "i5" toggle then "i5" queen → still applies (action changed)',
+  cellsEq(dedupeReplayCells([{ row: 4, col: 8 }], 'queen', keySet([4, 8, 'toggle'])).apply, [[4, 8]])
+);
+// Exact re-finalise (same cell, same action) → nothing applies.
+check(
+  'replay: exact re-finalise applies nothing',
+  dedupeReplayCells([{ row: 4, col: 8 }], 'toggle', keySet([4, 8, 'toggle'])).apply.length === 0
+);
+// Verb-governed batch "Damen A2 B5" re-finalised: A2 replay drops, B5 stays a queen.
+check(
+  'replay: batch-queen re-finalise keeps the new queen cell',
+  cellsEq(dedupeReplayCells([{ row: 1, col: 0 }, { row: 4, col: 1 }], 'queen', keySet([1, 0, 'queen'])).apply, [[4, 1]])
+);
+// keys always reflect the FULL new command, so a third re-finalise still matches.
+check(
+  'replay: keys reflect the full command for the next round',
+  (() => {
+    const { keys } = dedupeReplayCells([{ row: 4, col: 8 }, { row: 5, col: 8 }], 'toggle', keySet([4, 8, 'toggle']));
+    return keys.has('4,8,toggle') && keys.has('5,8,toggle');
+  })()
+);
 
 console.log(failed === 0 ? '\nvoice-parse: all passed' : `\nvoice-parse: ${failed} FAILED`);
 process.exit(failed === 0 ? 0 : 1);
