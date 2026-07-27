@@ -47,9 +47,13 @@ export function leaderboardConfigured() {
 
 // One RPC attempt. Returns a discriminated result so a caller can tell a
 // transient failure (worth retrying) from a permanent one (don't bother):
-//   { ok: true, data }                 — success
-//   { ok: false, retriable: boolean }  — failure; retriable on network/timeout,
-//                                         a 5xx gateway hiccup or a 429 rate cap.
+//   { ok: true, data }                                    — success
+//   { ok: false, retriable, status, error }                — failure;
+//     retriable on network/timeout, a 5xx gateway hiccup or a 429 rate cap.
+//     `status` is the HTTP status (null for a network-level failure that never
+//     got a response); `error` is a short diagnostic string (exception message
+//     or response body snippet) for later troubleshooting, never shown to the
+//     player — only surfaced via the debug export (see main.js's copySubmitFailureDebug).
 // A 4xx (bad values, etc.) is permanent — retrying can't change the answer.
 async function rpcOnce(fn, body) {
   const ctrl = new AbortController();
@@ -65,10 +69,24 @@ async function rpcOnce(fn, body) {
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
-    if (!res.ok) return { ok: false, retriable: res.status >= 500 || res.status === 429 };
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = (await res.text()).slice(0, 300);
+      } catch (_) {
+        /* body already consumed or unreadable — status alone still helps */
+      }
+      return {
+        ok: false,
+        retriable: res.status >= 500 || res.status === 429,
+        status: res.status,
+        error: detail || res.statusText || null,
+      };
+    }
     return { ok: true, data: await res.json() };
   } catch (e) {
-    return { ok: false, retriable: true }; // offline, blocked, aborted (timeout)
+    // offline, blocked (e.g. CSP/CORS), or aborted (timeout) — no HTTP status.
+    return { ok: false, retriable: true, status: null, error: e ? `${e.name}: ${e.message}` : String(e) };
   } finally {
     clearTimeout(timer);
   }
@@ -84,23 +102,32 @@ async function rpc(fn, body) {
 
 // Retrying variant for writes: retry only transient failures, with backoff.
 // `onRetry(nextAttempt, totalAttempts)` (optional) fires before each wait so the
-// UI can show progress. Fails soft to null once retries are exhausted or the
-// failure is permanent.
+// UI can show progress. Resolves { ok: true, data, attempts } on success or
+// { ok: false, attempts } once retries are exhausted or the failure is
+// permanent — `attempts` is every rpcOnce() result in order (status/error/
+// retriable), kept so a caller can explain *why* a submit failed, not just that
+// it did.
 async function rpcWithRetry(fn, body, onRetry) {
-  if (!leaderboardConfigured()) return null;
+  if (!leaderboardConfigured()) return { ok: false, attempts: [] };
   const total = RETRY_DELAYS_MS.length + 1;
+  const attempts = [];
   for (let attempt = 0; ; attempt++) {
     const r = await rpcOnce(fn, body);
-    if (r.ok) return r.data;
-    if (!r.retriable || attempt >= RETRY_DELAYS_MS.length) return null;
+    attempts.push({ attempt: attempt + 1, status: r.status ?? null, retriable: !!r.retriable, error: r.ok ? null : r.error });
+    if (r.ok) return { ok: true, data: r.data, attempts };
+    if (!r.retriable || attempt >= RETRY_DELAYS_MS.length) return { ok: false, attempts };
     if (onRetry) onRetry(attempt + 2, total); // the (1-based) attempt about to run
     await lbWait(RETRY_DELAYS_MS[attempt]);
   }
 }
 
 // Submit a solved game. Resolves { rank, total } (1-based rank within its
-// bucket) or null on any failure. The server sanitises the name, validates the
-// values and computes the authoritative score.
+// bucket) on success. On failure resolves { failed: true, attempts } instead
+// of a bare null so a caller can explain why — `attempts` is rpcWithRetry's
+// per-try diagnostics (HTTP status / retriable / error text). Callers that
+// only care about success can keep testing `res && Number.isFinite(res.rank)`
+// unchanged, since a failure object has no `rank`. The server sanitises the
+// name, validates the values and computes the authoritative score.
 //
 // Transient failures are retried with backoff (see rpcWithRetry) instead of
 // giving up after a single blip. NOTE: because submit_score has no idempotency
@@ -110,7 +137,7 @@ async function rpcWithRetry(fn, body, onRetry) {
 // was lost — can't be distinguished client-side; the caller (main.js) still
 // guards the *manual* retry against ever submitting the same solve twice.
 export async function submitScore(entry, { onRetry } = {}) {
-  const data = await rpcWithRetry(
+  const result = await rpcWithRetry(
     'submit_score',
     {
       p_name: entry.name,
@@ -122,8 +149,9 @@ export async function submitScore(entry, { onRetry } = {}) {
     },
     onRetry
   );
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row || row.rank == null) return null;
+  if (!result.ok) return { failed: true, attempts: result.attempts };
+  const row = Array.isArray(result.data) ? result.data[0] : result.data;
+  if (!row || row.rank == null) return { failed: true, attempts: result.attempts, error: 'unexpected response shape' };
   return { rank: Number(row.rank), total: Number(row.total) };
 }
 

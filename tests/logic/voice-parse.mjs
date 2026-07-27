@@ -47,6 +47,13 @@ check('"C4 Punkt" → mark', cellIs(parseVoiceCommand('C4 Punkt', 8), 3, 2, 'mar
 check('"C4 markieren" → mark', cellIs(parseVoiceCommand('C4 markieren', 8), 3, 2, 'mark'));
 check('"C4 leeren" → clear', cellIs(parseVoiceCommand('C4 leeren', 8), 3, 2, 'clear'));
 check('"C4 löschen" → clear', cellIs(parseVoiceCommand('C4 löschen', 8), 3, 2, 'clear'));
+// "Dame(n)" is often mis-heard as the everyday word "damit" — must still act
+// as the queen verb, not fall through to the default toggle.
+check('"damit C4" → queen ("damit" mis-hearing of "Dame")', cellIs(parseVoiceCommand('damit C4', 8), 3, 2, 'queen'));
+check(
+  '"damit C4 B1 D6" → batch queen of 3 ("damit" mis-hearing of "Dame")',
+  batchIs(parseVoiceCommand('damit C4 B1 D6', 8), 'queen', [[3, 2], [0, 1], [5, 3]])
+);
 
 // --- Out-of-range coordinates are rejected, not clamped. ---
 check('col L on a 5-board → none', parseVoiceCommand('ludwig eins', 5).type === 'none');

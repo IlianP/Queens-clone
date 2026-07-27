@@ -189,9 +189,11 @@ function voiceFindAllCoords(tokens, N) {
 // Which cell action a coordinate utterance carries. Default 'toggle' cycles the
 // cell exactly like a tap (empty → dot → queen → empty). Specific mark/clear
 // verbs are checked before the generic "setzen" so "Punkte auf …" marks rather
-// than placing queens.
+// than placing queens. "damit" is accepted alongside "dame"/"damen": recognisers
+// frequently mishear the short, stressed "Dame" as the everyday word "damit"
+// (see e.g. "damit C4 B1 D6" instead of "Dame(n) C4 B1 D6" in the field).
 function voiceCellAction(norm) {
-  if (/\b(dame|damen|k[oö]nigin|krone|queen)\b/.test(norm)) return 'queen';
+  if (/\b(dame|damen|damit|k[oö]nigin|krone|queen)\b/.test(norm)) return 'queen';
   if (/\b(punkt\w*|markier\w*|kreuz|dot)\b/.test(norm)) return 'mark';
   if (/\b(l[oö]sch\w*|leer\w*|entfern\w*|frei|weg|raus)\b/.test(norm)) return 'clear';
   if (/\b(setzen?|setze|platzier\w*)\b/.test(norm)) return 'queen';
@@ -202,7 +204,7 @@ function voiceCellAction(norm) {
 // dotting, so 'mark' is the default (unlike a bare cell, which toggles).
 function voiceFillAction(norm) {
   if (/\b(l[oö]sch\w*|leer\w*|entfern\w*|frei|weg|raus)\b/.test(norm)) return 'clear';
-  if (/\b(dame|damen|k[oö]nigin|setzen?|setze|platzier\w*)\b/.test(norm)) return 'queen';
+  if (/\b(dame|damen|damit|k[oö]nigin|setzen?|setze|platzier\w*)\b/.test(norm)) return 'queen';
   if (/\b(durchschalt\w*|umschalt\w*|toggle)\b/.test(norm)) return 'toggle';
   return 'mark';
 }

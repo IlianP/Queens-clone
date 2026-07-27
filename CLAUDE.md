@@ -91,7 +91,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`; pure logic |
-| `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Fails soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback |
+| `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores`) fail soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
 | `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
 | `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. Mirrors the audio/leaderboard layering |
@@ -161,7 +161,13 @@ in the tap handler when a queen lands off `currentSolution`; both (and
 backoff (`submitScore` → `rpcWithRetry` in `leaderboard.js`: up to 4 tries; a
 4xx is treated as permanent and not retried) and, if those are exhausted, the
 win button becomes a manual *"Erneut versuchen"* instead of a dead end — one
-network blip must not lose a hard-won result. Submitting the **same** solve to
+network blip must not lose a hard-won result. If Debug mode is on when that
+failure message shows, `main.js`'s `copySubmitFailureDebug` copies the full
+debug state plus `submitScore`'s per-attempt diagnostics (HTTP status /
+retriable / error text) to the clipboard **immediately** — no confirmation, no
+extra button — so a report of *why* the global leaderboard was unreachable
+(client-side vs. the provider) doesn't depend on reproducing the failure later.
+Submitting the **same** solve to
 the global board twice is prevented by `pendingWin.submittedGlobal`, which
 latches true only on a confirmed insert (submit_score has no server-side
 idempotency key, so this client latch is the guard). The online layer is
