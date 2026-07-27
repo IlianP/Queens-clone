@@ -128,6 +128,17 @@ check(
   '"Punkte Spalte B außer Region C3" → col B, except region at C3',
   fillIs(parseVoiceCommand('Punkte Spalte B außer Region C3', 8), 'mark', [['col', 1]], [['regionAt', 2, 2]])
 );
+// "außer" is often mis-heard as the plain preposition "aus der"/"aus dem"/"aus
+// den", and "bis auf" is a natural spoken alternative — both must still parse
+// as an exclusion, not fall through to "stop" or an unfiltered include.
+check(
+  '"Spalte D aus der Region C3" → col D, except region at C3',
+  fillIs(parseVoiceCommand('Spalte D aus der Region C3', 8), 'mark', [['col', 3]], [['regionAt', 2, 2]])
+);
+check(
+  '"Punkte Spalte B bis auf rot" → col B, except red',
+  fillIs(parseVoiceCommand('Punkte Spalte B bis auf rot', 8), 'mark', [['col', 1]], [['color', 'red']])
+);
 // "alles" was dropped: dotting the whole board has no solving logic, so it's not
 // a fill command any more.
 check('"Punkte alles" is not a fill', parseVoiceCommand('Punkte alles', 8).type !== 'fill');
@@ -175,6 +186,13 @@ check('"zurücksetzen" → reset (not undo)', actionIs(parseVoiceCommand('zurüc
 // --- Stop always wins. ---
 check('"stopp" → stop', parseVoiceCommand('stopp', 8).type === 'stop');
 check('"pause" → stop', parseVoiceCommand('pause', 8).type === 'stop');
+check('"Mikrofon aus" → stop (bare "aus" at the end)', parseVoiceCommand('Mikrofon aus', 8).type === 'stop');
+// Mid-sentence "aus" is the ordinary preposition, most often a mis-hearing of
+// "außer" ("Spalte D aus der Region D4") — must NOT be swallowed as stop.
+check(
+  '"Spalte D aus der Region D4" → fill, not stop',
+  parseVoiceCommand('Spalte D aus der Region D4', 8).type === 'fill'
+);
 
 // --- Garbage / empty → none. ---
 check('empty → none', parseVoiceCommand('', 8).type === 'none');

@@ -67,8 +67,24 @@ const VOICE_NUM_WORDS = {
 const VOICE_COLUMN_WORDS = new Set(['spalte', 'spalten']);
 const VOICE_ROW_WORDS = new Set(['zeile', 'zeilen', 'reihe', 'reihen']);
 const VOICE_REGION_WORDS = new Set(['farbe', 'farben', 'region', 'regionen']);
-// Exclusion markers: everything after one is the "except" set.
+// Exclusion markers: everything after one is the "except" set. "außer" is
+// frequently mis-transcribed as the ordinary preposition "aus der"/"aus
+// dem"/"aus den", and "bis auf" is a natural spoken alternative — both are
+// accepted as two-word markers alongside the single-word ones.
 const VOICE_EXCLUDE_WORDS = new Set(['außer', 'ausser', 'ohne', 'ausgenommen', 'exkl', 'exklusive']);
+const VOICE_EXCLUDE_PHRASES = [['aus', 'der'], ['aus', 'dem'], ['aus', 'den'], ['bis', 'auf']];
+
+// Find the first exclusion marker in `tokens` — a single VOICE_EXCLUDE_WORDS
+// token or a VOICE_EXCLUDE_PHRASES sequence. Returns { at, len } or null.
+function voiceFindExclude(tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    if (VOICE_EXCLUDE_WORDS.has(tokens[i])) return { at: i, len: 1 };
+    for (const phrase of VOICE_EXCLUDE_PHRASES) {
+      if (phrase.every((w, j) => tokens[i + j] === w)) return { at: i, len: phrase.length };
+    }
+  }
+  return null;
+}
 
 // Spoken colour → canonical key (main.js maps the key to a palette colour).
 const VOICE_COLOR_WORDS = {
@@ -280,14 +296,18 @@ export function parseVoiceCommand(transcript, N = 8) {
   if (!norm) return { type: 'none' };
   const tokens = norm.split(' ');
 
-  // Stop listening — checked first so it always wins.
-  if (/\b(stop\w*|pause|h[oö]r\w* auf|ruhe|aus)\b/.test(norm)) return { type: 'stop' };
+  // Stop listening — checked first so it always wins. Bare "aus" only counts
+  // at the END of the utterance ("Mikrofon aus"): mid-sentence it's almost
+  // always the ordinary preposition ("aus der Region D4"), most often a
+  // mis-hearing of "außer" — anchoring here keeps that from being swallowed
+  // as a stop command before the exclusion-phrase check below ever runs it.
+  if (/\b(stop\w*|pause|h[oö]r\w* auf|ruhe)\b/.test(norm) || /\baus$/.test(norm)) return { type: 'stop' };
 
   // Whole-line/region fill: "Punkte Spalte B und C außer Rot". Split on the
   // exclusion marker, then scan each side into unit/colour selectors. Detected
   // before coordinates so a unit word wins over a stray letter/number.
-  const exclIdx = tokens.findIndex((t) => VOICE_EXCLUDE_WORDS.has(t));
-  const inclTokens = exclIdx === -1 ? tokens : tokens.slice(0, exclIdx);
+  const excl = voiceFindExclude(tokens);
+  const inclTokens = excl ? tokens.slice(0, excl.at) : tokens;
   const inclHasUnit = inclTokens.some(
     (t) =>
       VOICE_COLUMN_WORDS.has(t) ||
@@ -298,7 +318,7 @@ export function parseVoiceCommand(transcript, N = 8) {
   if (inclHasUnit) {
     const include = voiceScanSelectors(inclTokens, N);
     if (include.length) {
-      const exclude = exclIdx === -1 ? [] : voiceScanSelectors(tokens.slice(exclIdx + 1), N);
+      const exclude = excl ? voiceScanSelectors(tokens.slice(excl.at + excl.len), N) : [];
       return { type: 'fill', action: voiceFillAction(norm), include, exclude };
     }
   }
