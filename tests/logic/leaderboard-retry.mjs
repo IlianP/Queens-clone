@@ -6,8 +6,9 @@
 //   * retries a transient failure (network throw / 5xx / 429) with backoff and
 //     eventually succeeds,
 //   * does NOT retry a permanent failure (a 4xx rejection), and
-//   * gives up after a bounded number of attempts, resolving null and reporting
-//     progress through the onRetry callback.
+//   * gives up after a bounded number of attempts, resolving a { failed, attempts }
+//     diagnostic (not a bare null — see main.js's copySubmitFailureDebug) and
+//     reporting progress through the onRetry callback.
 //
 // Run: node tests/logic/leaderboard-retry.mjs   (takes a few seconds — the real
 // backoff waits are exercised on purpose so the schedule itself is covered.)
@@ -36,7 +37,9 @@ function installFetch(steps) {
     return {
       ok: step.status >= 200 && step.status < 300,
       status: step.status,
+      statusText: `status ${step.status}`,
       json: async () => step.body,
+      text: async () => JSON.stringify(step.body),
     };
   };
   return calls;
@@ -66,23 +69,35 @@ try {
     if (calls.length !== 2) fail(`5xx-then-ok: expected 2 attempts, got ${calls.length}`);
   }
 
-  // 3) A 4xx is PERMANENT: no retry, resolves null after a single attempt.
+  // 3) A 4xx is PERMANENT: no retry, resolves a failure diagnostic (not the
+  //    success shape) after a single attempt.
   {
     const calls = installFetch([{ status: 400, body: { message: 'implausible time' } }]);
     const retries = [];
     const res = await submitScore(ENTRY, { onRetry: () => retries.push(1) });
-    if (res !== null) fail(`4xx: expected null, got ${JSON.stringify(res)}`);
+    if (!res || res.failed !== true || res.rank !== undefined)
+      fail(`4xx: expected a failure diagnostic, got ${JSON.stringify(res)}`);
+    if (!Array.isArray(res.attempts) || res.attempts.length !== 1)
+      fail(`4xx: expected 1 attempt recorded, got ${JSON.stringify(res && res.attempts)}`);
+    if (res.attempts[0].status !== 400 || res.attempts[0].retriable !== false)
+      fail(`4xx: bad attempt diagnostic ${JSON.stringify(res.attempts[0])}`);
     if (calls.length !== 1) fail(`4xx: expected exactly 1 attempt (no retry), got ${calls.length}`);
     if (retries.length !== 0) fail(`4xx: onRetry should not fire, fired ${retries.length}x`);
   }
 
   // 4) Persistent transient failure: gives up after a bounded number of tries
-  //    (first attempt + 3 retries = 4) and resolves null.
+  //    (first attempt + 3 retries = 4) and resolves a failure diagnostic
+  //    carrying every attempt (all network throws here, so all retriable).
   {
     const calls = installFetch([{ throw: true }]);
     const retries = [];
     const res = await submitScore(ENTRY, { onRetry: (a, t) => retries.push([a, t]) });
-    if (res !== null) fail(`exhaust: expected null, got ${JSON.stringify(res)}`);
+    if (!res || res.failed !== true || res.rank !== undefined)
+      fail(`exhaust: expected a failure diagnostic, got ${JSON.stringify(res)}`);
+    if (!Array.isArray(res.attempts) || res.attempts.length !== 4)
+      fail(`exhaust: expected 4 attempts recorded, got ${JSON.stringify(res && res.attempts)}`);
+    if (!res.attempts.every((a) => a.retriable === true && a.status === null))
+      fail(`exhaust: expected every attempt retriable with no status, got ${JSON.stringify(res.attempts)}`);
     if (calls.length !== 4) fail(`exhaust: expected 4 attempts, got ${calls.length}`);
     if (retries.length !== 3) fail(`exhaust: expected 3 retry notices, got ${retries.length}`);
     if (retries.some(([, t]) => t !== 4)) fail(`exhaust: total attempts should be 4, got ${JSON.stringify(retries)}`);

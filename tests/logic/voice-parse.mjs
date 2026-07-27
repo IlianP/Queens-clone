@@ -47,6 +47,13 @@ check('"C4 Punkt" → mark', cellIs(parseVoiceCommand('C4 Punkt', 8), 3, 2, 'mar
 check('"C4 markieren" → mark', cellIs(parseVoiceCommand('C4 markieren', 8), 3, 2, 'mark'));
 check('"C4 leeren" → clear', cellIs(parseVoiceCommand('C4 leeren', 8), 3, 2, 'clear'));
 check('"C4 löschen" → clear', cellIs(parseVoiceCommand('C4 löschen', 8), 3, 2, 'clear'));
+// "Dame(n)" is often mis-heard as the everyday word "damit" — must still act
+// as the queen verb, not fall through to the default toggle.
+check('"damit C4" → queen ("damit" mis-hearing of "Dame")', cellIs(parseVoiceCommand('damit C4', 8), 3, 2, 'queen'));
+check(
+  '"damit C4 B1 D6" → batch queen of 3 ("damit" mis-hearing of "Dame")',
+  batchIs(parseVoiceCommand('damit C4 B1 D6', 8), 'queen', [[3, 2], [0, 1], [5, 3]])
+);
 
 // --- Out-of-range coordinates are rejected, not clamped. ---
 check('col L on a 5-board → none', parseVoiceCommand('ludwig eins', 5).type === 'none');
@@ -128,6 +135,17 @@ check(
   '"Punkte Spalte B außer Region C3" → col B, except region at C3',
   fillIs(parseVoiceCommand('Punkte Spalte B außer Region C3', 8), 'mark', [['col', 1]], [['regionAt', 2, 2]])
 );
+// "außer" is often mis-heard as the plain preposition "aus der"/"aus dem"/"aus
+// den", and "bis auf" is a natural spoken alternative — both must still parse
+// as an exclusion, not fall through to "stop" or an unfiltered include.
+check(
+  '"Spalte D aus der Region C3" → col D, except region at C3',
+  fillIs(parseVoiceCommand('Spalte D aus der Region C3', 8), 'mark', [['col', 3]], [['regionAt', 2, 2]])
+);
+check(
+  '"Punkte Spalte B bis auf rot" → col B, except red',
+  fillIs(parseVoiceCommand('Punkte Spalte B bis auf rot', 8), 'mark', [['col', 1]], [['color', 'red']])
+);
 // "alles" was dropped: dotting the whole board has no solving logic, so it's not
 // a fill command any more.
 check('"Punkte alles" is not a fill', parseVoiceCommand('Punkte alles', 8).type !== 'fill');
@@ -175,6 +193,13 @@ check('"zurücksetzen" → reset (not undo)', actionIs(parseVoiceCommand('zurüc
 // --- Stop always wins. ---
 check('"stopp" → stop', parseVoiceCommand('stopp', 8).type === 'stop');
 check('"pause" → stop', parseVoiceCommand('pause', 8).type === 'stop');
+check('"Mikrofon aus" → stop (bare "aus" at the end)', parseVoiceCommand('Mikrofon aus', 8).type === 'stop');
+// Mid-sentence "aus" is the ordinary preposition, most often a mis-hearing of
+// "außer" ("Spalte D aus der Region D4") — must NOT be swallowed as stop.
+check(
+  '"Spalte D aus der Region D4" → fill, not stop',
+  parseVoiceCommand('Spalte D aus der Region D4', 8).type === 'fill'
+);
 
 // --- Garbage / empty → none. ---
 check('empty → none', parseVoiceCommand('', 8).type === 'none');

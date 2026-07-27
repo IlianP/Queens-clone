@@ -955,6 +955,10 @@ async function onWinSubmit() {
       'Global nicht erreichbar – lokal gespeichert ✓. Erneut versuchen?',
       'err'
     );
+    // Debug mode on: capture *why* it failed right now, while the diagnostics
+    // are still available — no confirmation, no extra button, since asking
+    // would just be one more thing lost if the player closes the screen.
+    if (settings.debug) await copySubmitFailureDebug(res && res.attempts);
   }
 }
 
@@ -1682,32 +1686,51 @@ function formatDebug(value, indent = '') {
   return JSON.stringify(value);
 }
 
-async function copyDebug() {
-  if (!game) return;
-  const info = buildDebugInfo();
-  const text = formatDebug(info);
-  let ok = false;
+// Write text to the clipboard, falling back to a hidden textarea +
+// execCommand for browsers/contexts without the async Clipboard API. Returns
+// whether it worked. Shared by the manual "Kopieren" debug button and the
+// automatic copy-on-submit-failure below.
+async function writeToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
-    ok = true;
+    return true;
   } catch (e) {
-    // Fallback for browsers/contexts without the async clipboard API.
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.position = 'fixed';
     ta.style.opacity = '0';
     document.body.appendChild(ta);
     ta.select();
+    let ok = false;
     try {
       ok = document.execCommand('copy');
     } catch (_) {
       ok = false;
     }
     document.body.removeChild(ta);
+    return ok;
   }
+}
+
+async function copyDebug() {
+  if (!game) return;
+  const ok = await writeToClipboard(formatDebug(buildDebugInfo()));
   const label = dom.debugCopy.textContent;
   dom.debugCopy.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
   setTimeout(() => (dom.debugCopy.textContent = label), 1500);
+}
+
+// When a global score submit fails and Debug mode is on, copy the full debug
+// state plus the submit diagnostics (HTTP status / error per retry attempt,
+// from leaderboard.js) to the clipboard right away — no confirmation, no
+// extra button — so a report of "why wasn't it reachable" (client-side vs.
+// the provider) doesn't depend on reproducing the failure later.
+async function copySubmitFailureDebug(attempts) {
+  if (!game) return;
+  const info = buildDebugInfo();
+  info.submitFailure = { when: new Date().toISOString(), attempts: attempts || [] };
+  const ok = await writeToClipboard(formatDebug(info));
+  if (ok) dom.winSubmitStatus.textContent += ' (Debug kopiert 📋)';
 }
 
 dom.debugCopy.addEventListener('click', copyDebug);
