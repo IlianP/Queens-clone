@@ -414,6 +414,23 @@ export function dedupeReplayCells(cells, action, prevKeys) {
   return { apply, keys };
 }
 
+// Is a final the recogniser's re-finalise of the previous one, completing a
+// sentence it cut short? Chrome finalises mid-utterance ("Punkte Zeile 1") and
+// then re-finalises the finished sentence ("Punkte Zeile 1 außer Region E1").
+// True when `newText` strictly EXTENDS `prevText` word-for-word.
+//
+// This is deliberately only a *detector*: the caller re-parses the FULL new
+// transcript and replaces the earlier command's effect with it. Nothing is ever
+// cut from the text — that was the earlier bug, where stripping a shared prefix
+// dropped a leading verb that governed the whole phrase.
+// PURE; the caller owns the time window.
+export function isRefinaliseExtension(prevText, newText) {
+  const prev = voiceNormalize(prevText);
+  const next = voiceNormalize(newText);
+  if (!prev || !next) return false;
+  return next.length > prev.length && next.startsWith(prev + ' ');
+}
+
 // Is the Web Speech API available? Safe to call in Node (returns false).
 export function voiceSupported() {
   return (

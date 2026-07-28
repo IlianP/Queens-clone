@@ -2,7 +2,13 @@
 // parser behind Voice Mode. No browser, no deps (voice.js touches `window` only
 // inside the recogniser wrapper, never at import time):
 //   node tests/logic/voice-parse.mjs
-import { parseVoiceCommand, coordLabel, colLetter, dedupeReplayCells } from '../../js/voice.js';
+import {
+  parseVoiceCommand,
+  coordLabel,
+  colLetter,
+  dedupeReplayCells,
+  isRefinaliseExtension,
+} from '../../js/voice.js';
 
 let failed = 0;
 function check(name, cond) {
@@ -249,6 +255,39 @@ check(
     return keys.has('4,8,toggle') && keys.has('5,8,toggle');
   })()
 );
+
+// --- Cut-short sentence detection: Chrome finalises "Punkte Zeile 1" before the
+// player has said "außer Region E1". isRefinaliseExtension spots the completion
+// so the caller can roll the premature fill back and apply the finished one. ---
+check(
+  'refinalise: "Punkte Zeile 1" → "… außer Region E1" is an extension',
+  isRefinaliseExtension('Punkte Zeile 1', 'Punkte Zeile 1 außer Region E1')
+);
+check(
+  'refinalise: each progressive step extends the last',
+  isRefinaliseExtension('Punkte Zeile 1', 'Punkte Zeile 1 außer') &&
+    isRefinaliseExtension('Punkte Zeile 1 außer', 'Punkte Zeile 1 außer Region') &&
+    isRefinaliseExtension('Punkte Zeile 1 außer Region', 'Punkte Zeile 1 außer Region E1')
+);
+// Identical text is a plain repeat, not a completion — nothing to roll back.
+check('refinalise: identical text is not an extension', !isRefinaliseExtension('Punkte Zeile 1', 'Punkte Zeile 1'));
+// A different sentence must never be treated as a correction of the last one.
+check(
+  'refinalise: unrelated sentence is not an extension',
+  !isRefinaliseExtension('Punkte Zeile 1', 'Punkte Spalte C außer rot')
+);
+// A shared word-prefix that is not a word boundary must not count ("1" vs "10").
+check('refinalise: "Zeile 1" → "Zeile 10" is not an extension', !isRefinaliseExtension('Punkte Zeile 1', 'Punkte Zeile 10'));
+// Casing/punctuation are normalised away, like everywhere else in the parser.
+check(
+  'refinalise: normalises case and punctuation',
+  isRefinaliseExtension('Punkte Zeile 1', 'punkte zeile 1, außer region E1')
+);
+// Empty input on either side is never an extension.
+check('refinalise: empty prev → false', !isRefinaliseExtension('', 'Punkte Zeile 1'));
+check('refinalise: empty new → false', !isRefinaliseExtension('Punkte Zeile 1', ''));
+// A shrinking re-finalise is not an extension either.
+check('refinalise: shorter text → false', !isRefinaliseExtension('Punkte Zeile 1 außer Region E1', 'Punkte Zeile 1'));
 
 console.log(failed === 0 ? '\nvoice-parse: all passed' : `\nvoice-parse: ${failed} FAILED`);
 process.exit(failed === 0 ? 0 : 1);

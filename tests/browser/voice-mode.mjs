@@ -313,6 +313,90 @@ async function run() {
     })
   );
 
+  // --- Regression: a fill sentence Chrome cut short. It finalises the partial
+  // "Punkte Zeile 1" (dotting the WHOLE row) before the player has finished
+  // saying "… außer Spalte C", and re-running the narrower fill can't take dots
+  // back. The completed sentence must roll the premature fill back, leaving C1
+  // undotted — exactly the reported "whole row dotted despite an exclusion". ---
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte Zeile eins']); // premature final: dots all of row 1
+  await page.waitForTimeout(60);
+  check(
+    'premature fill dots the whole row (pre-condition)',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let c = 0; c < 8; c++) if (cells[c].dataset.state !== 'dot') return false;
+      return true;
+    })
+  );
+  await emit(['Punkte Zeile eins außer Spalte C']); // the finished sentence
+  await page.waitForTimeout(80);
+  check(
+    'completed sentence rolls the premature fill back (C1 stays empty)',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let c = 0; c < 8; c++) {
+        const st = cells[c].dataset.state;
+        if (c === 2 ? st !== 'empty' : st !== 'dot') return false;
+      }
+      return true;
+    })
+  );
+  // The whole corrected gesture stays ONE undo step, not two.
+  await emit(['Zurück']);
+  await page.waitForTimeout(60);
+  check(
+    'one "zurück" reverts the corrected fill entirely',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let c = 0; c < 8; c++) if (cells[c].dataset.state !== 'empty') return false;
+      return true;
+    })
+  );
+
+  // Progressive word-by-word finals of the same sentence converge on the final
+  // meaning, and empty/garbled finals in between must not break the correction.
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  for (const t of ['Punkte Zeile eins', 'Punkte Zeile eins außer', 'Punkte Zeile eins außer Spalte']) {
+    await emit([t]);
+    await page.waitForTimeout(50);
+  }
+  await emit(['']); // Chrome sprinkles empty finals mid-sentence
+  await page.waitForTimeout(40);
+  await emit(['Punkte Zeile eins außer Spalte C']);
+  await page.waitForTimeout(80);
+  check(
+    'progressive finals (with an empty one) still end with C1 excluded',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let c = 0; c < 8; c++) {
+        const st = cells[c].dataset.state;
+        if (c === 2 ? st !== 'empty' : st !== 'dot') return false;
+      }
+      return true;
+    })
+  );
+
+  // A genuinely NEW fill after the window/chain is not treated as a correction:
+  // it must add to the board, not roll the previous one back.
+  await emit(['Zurücksetzen']);
+  await page.waitForTimeout(40);
+  await emit(['Punkte Zeile eins']);
+  await page.waitForTimeout(60);
+  await emit(['Punkte Spalte A']); // different sentence, not an extension
+  await page.waitForTimeout(80);
+  check(
+    'an unrelated follow-up fill does NOT roll the first one back',
+    await page.evaluate(() => {
+      const cells = document.querySelectorAll('.cell');
+      for (let c = 0; c < 8; c++) if (cells[c].dataset.state !== 'dot') return false; // row 1 intact
+      for (let r = 0; r < 8; r++) if (cells[r * 8].dataset.state !== 'dot') return false; // col A too
+      return true;
+    })
+  );
+
   // --- Region by cell: "Region von A1" targets the region A1 lies in. ---
   await emit(['Zurücksetzen']);
   await page.waitForTimeout(40);
