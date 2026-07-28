@@ -6,6 +6,14 @@
 //
 //   node tools/generate-levels.mjs [--size N] [--difficulty easy|medium|hard]
 //                                  [--count 50] [--seed <int>]
+//                                  [--style organic|blocky] [--out-suffix <s>]
+//
+// --style picks the region-growth style (see js/generator.js): 'organic' is the
+// flood fill the shipped pools were built with, 'blocky' the segment growth with
+// straight borders and one big background region. Combine with --out-suffix to
+// build a trial pool next to the real one (e.g. `8-hard-blocky.json`) instead of
+// overwriting it — handy for comparing the two styles side by side before
+// committing to one.
 //
 // No flags = regenerate all 22 buckets (5..11 in all three difficulties plus
 // hard-only at 12; minutes to tens of minutes — the N>=11 buckets dominate,
@@ -43,6 +51,13 @@ const onlySize = argValue('--size') ? Number(argValue('--size')) : null;
 const onlyDifficulty = argValue('--difficulty');
 const count = argValue('--count') ? Number(argValue('--count')) : 50;
 const seed = argValue('--seed') ? Number(argValue('--seed')) : (Math.random() * 2 ** 32) >>> 0;
+const style = argValue('--style') || 'organic';
+const outSuffix = argValue('--out-suffix') || '';
+
+if (!['organic', 'blocky'].includes(style)) {
+  console.error("--style must be 'organic' or 'blocky'");
+  process.exit(1);
+}
 
 if (onlySize !== null && !SIZES.includes(onlySize)) {
   console.error(`--size must be one of ${SIZES.join(', ')}`);
@@ -74,7 +89,7 @@ function buildBucket(N, difficulty, rng) {
 
   while (puzzles.length < count) {
     attempts++;
-    const p = generatePuzzle(N, difficulty, { budgetMs: 4000, rng });
+    const p = generatePuzzle(N, difficulty, { budgetMs: 4000, rng, style });
     if (p.level !== target) continue; // exact level only — no near misses in the pool
     const key = canonicalKey(N, p.region);
     if (seen.has(key)) continue; // a rotation/mirror of a kept puzzle
@@ -107,7 +122,7 @@ function serialize(bucket) {
 }
 
 mkdirSync(OUT_DIR, { recursive: true });
-console.log(`seed ${seed}, ${count} puzzles per bucket`);
+console.log(`seed ${seed}, ${count} puzzles per bucket, style ${style}`);
 const t0 = Date.now();
 for (const N of onlySize !== null ? [onlySize] : SIZES) {
   const buildable = difficultiesFor(N);
@@ -120,7 +135,7 @@ for (const N of onlySize !== null ? [onlySize] : SIZES) {
     // shift the puzzles every other bucket would draw from the shared seed.
     const rng = mulberry32((seed ^ (N * 31 + LEVELS[difficulty])) >>> 0);
     const bucket = buildBucket(N, difficulty, rng);
-    const file = join(OUT_DIR, `${N}-${difficulty}.json`);
+    const file = join(OUT_DIR, `${N}-${difficulty}${outSuffix}.json`);
     writeFileSync(file, serialize(bucket));
     console.log(`wrote ${file}`);
   }

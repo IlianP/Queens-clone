@@ -124,6 +124,100 @@ function growRegions(N, cols, rng, balance = 0.85) {
   return region;
 }
 
+// Alternative region growth: the "blocky" style (see CLAUDE.md → "Level-Stile").
+// Instead of claiming ONE cell per step it annexes a straight SEGMENT — a run of
+// up to `maxRun` free cells in one direction — which is what produces the long
+// straight borders and rectangle-ish regions of a hand-designed-looking board.
+//
+// The other two knobs replace what `balance` does in growRegions:
+//   - `minSize` is a floor, not an equaliser. Regions under the floor grow first
+//     (smallest wins), so no region is starved into a free "only cell of this
+//     colour" queen — but once the floor is met, sizes are free to diverge, so
+//     small 2-3 cell regions and one big background region can coexist.
+//   - `dominance` is the chance that a free step goes to one designated region,
+//     which is how that big background region forms on purpose rather than by
+//     luck. growRegions can only get there via preferential attachment, and its
+//     smallest-first bias actively fights it. `maxShare` caps it: once the
+//     background covers that fraction of the board the bias switches off, so a
+//     lucky run can't swallow the board and squeeze every other colour flat.
+function growRegionsBlocky(
+  N,
+  cols,
+  rng,
+  { minSize = 2, maxRun = 6, dominance = 0.45, maxShare = 0.4 } = {}
+) {
+  const region = Array.from({ length: N }, () => new Array(N).fill(-1));
+  const size = new Array(N).fill(1); // every region starts as its single seed
+  const dirs = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ];
+  for (let i = 0; i < N; i++) region[i][cols[i]] = i;
+  let remaining = N * N - N;
+  const background = Math.floor(rng() * N);
+  const free = (r, c) => r >= 0 && r < N && c >= 0 && c < N && region[r][c] === -1;
+
+  // Every (free cell, adjacent region) pair. Recomputed per step: N is <= 12, so
+  // this stays trivial next to the uniqueness search that follows.
+  const frontier = () => {
+    const out = [];
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        if (region[r][c] !== -1) continue;
+        const seen = new Set();
+        for (const [dr, dc] of dirs) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
+          if (region[nr][nc] !== -1) seen.add(region[nr][nc]);
+        }
+        for (const g of seen) out.push([r, c, g]);
+      }
+    return out;
+  };
+
+  // Claim a straight run starting at (r,c). It stops at the first non-free cell,
+  // so contiguity holds: the first cell touches the region, each later one
+  // touches its predecessor.
+  const annex = (r, c, g) => {
+    const [dr, dc] = dirs[Math.floor(rng() * 4)];
+    const len = 1 + Math.floor(rng() * maxRun);
+    for (let k = 0; k < len; k++) {
+      const rr = r + dr * k;
+      const cc = c + dc * k;
+      if (!free(rr, cc)) break;
+      region[rr][cc] = g;
+      size[g]++;
+      remaining--;
+    }
+  };
+
+  let guard = N * N * 8; // every iteration claims >= 1 cell, so this never bites
+  while (remaining > 0 && guard-- > 0) {
+    const f = frontier();
+    if (!f.length) break;
+    const hungry = f.filter(([, , g]) => size[g] < minSize);
+    let pick;
+    if (hungry.length) {
+      let smallest = Infinity;
+      for (const [, , g] of hungry) smallest = Math.min(smallest, size[g]);
+      const pool = hungry.filter(([, , g]) => size[g] === smallest);
+      pick = pool[Math.floor(rng() * pool.length)];
+    } else if (size[background] < maxShare * N * N && rng() < dominance) {
+      const pool = f.filter(([, , g]) => g === background);
+      pick = pool.length ? pool[Math.floor(rng() * pool.length)] : f[Math.floor(rng() * f.length)];
+    } else {
+      pick = f[Math.floor(rng() * f.length)];
+    }
+    annex(pick[0], pick[1], pick[2]);
+  }
+
+  if (remaining > 0) return null; // board is connected, so this shouldn't happen
+  return region;
+}
+
 function sameSolution(a, b, N) {
   for (let r = 0; r < N; r++) if (a[r] !== b[r]) return false;
   return true;
@@ -170,8 +264,18 @@ function contiguousWithout(N, region, reg, ar, ac) {
 // (which already contains an S2 queen, so S2 becomes invalid), while the
 // intended solution S1 is preserved because we never touch an S1 queen cell.
 // Returns true on success, false if it could not converge / stayed unfair.
-function makeUnique(N, region, S1, rng, deadline) {
+//
+// `minSize` (default 1 = no floor, the historic behaviour) keeps the repair from
+// undoing a growth floor: every move takes a cell AWAY from its region, so
+// without this a region grown to exactly `minSize` can still be whittled down to
+// a single free cell here — the very thing the floor exists to prevent.
+function makeUnique(N, region, S1, rng, deadline, minSize = 1) {
   const maxIters = N * N * 6;
+  const sizeOf = (g) => {
+    let n = 0;
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (region[r][c] === g) n++;
+    return n;
+  };
   for (let iter = 0; iter < maxIters; iter++) {
     if (now() > deadline) return false;
 
@@ -200,6 +304,7 @@ function makeUnique(N, region, S1, rng, deadline) {
       const ar = (A / N) | 0;
       const ac = A % N;
       const curReg = region[ar][ac];
+      if (minSize > 1 && sizeOf(curReg) <= minSize) continue;
 
       const ngRegs = new Set();
       for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
@@ -226,17 +331,40 @@ function makeUnique(N, region, S1, rng, deadline) {
   return !res.aborted && res.count < 2;
 }
 
+// Per-difficulty knobs for the blocky style. `minSize` is the one that matters:
+// a floor of 2 removes every free single-cell region, which is exactly what an
+// EASY board needs to keep (its whole technique is the naked single, so it needs
+// a forced opening) — measured, a floor of 2 drops the easy yield to ~0%. So easy
+// keeps the floor at 1 and gets only the straight-border look, while medium/hard
+// get the full screenshot signature: no freebies, one big background region.
+// Easy also gets a milder dominance: with no floor its small regions stay small,
+// so the same bias that lands medium/hard at the screenshots' ~35% background
+// runs away to ~50% there and leaves a board of one blob plus freebies.
+const BLOCKY_OPTS = {
+  0: { minSize: 1, maxRun: 6, dominance: 0.2, maxShare: 0.32 },
+  1: { minSize: 2, maxRun: 6, dominance: 0.45, maxShare: 0.4 },
+  2: { minSize: 2, maxRun: 6, dominance: 0.45, maxShare: 0.4 },
+};
+
 /**
  * Generate a puzzle.
  * @param {number} N board size
  * @param {'easy'|'medium'|'hard'} difficulty target difficulty
- * @param {object} [opts] { budgetMs, rng }
+ * @param {object} [opts] { budgetMs, rng, style }
+ *   style: 'organic' (default — flood fill, the shape the shipped pools have)
+ *          | 'blocky' (segment growth: straight borders, one big background
+ *            region, no single-cell freebies above easy)
  * @returns {{ region:number[][], solution:number[], level:number, attempts:number }}
  */
 export function generatePuzzle(N, difficulty, opts = {}) {
   const rng = opts.rng || Math.random;
   const budgetMs = opts.budgetMs ?? 1500;
   const target = LEVELS[difficulty] ?? 1;
+  const blocky = opts.style === 'blocky';
+  const blockyOpts = BLOCKY_OPTS[target] ?? BLOCKY_OPTS[1];
+  const minSize = blocky ? blockyOpts.minSize : 1;
+  const grow = (cols, balanceIn) =>
+    blocky ? growRegionsBlocky(N, cols, rng, blockyOpts) : growRegions(N, cols, rng, balanceIn);
   // How many "free" naked-single queens we tolerate for this difficulty before a
   // board counts as too open (it plays easier than its technique rating claims).
   // Easy IS naked singles, so it has no cap; medium allows a handful; hard wants
@@ -264,9 +392,9 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     attempts++;
     const cols = generatePlacement(N, rng);
     if (!cols) continue;
-    const region = growRegions(N, cols, rng, balance);
+    const region = grow(cols, balance);
     if (!region) continue;
-    if (!makeUnique(N, region, cols, rng, start + budgetMs)) continue;
+    if (!makeUnique(N, region, cols, rng, start + budgetMs, minSize)) continue;
 
     const level = difficultyLevel(N, region);
     // A level-3 board isn't solvable by our explainable techniques, so every
@@ -319,9 +447,9 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     attempts++;
     const cols = generatePlacement(N, rng);
     if (!cols) continue;
-    const region = growRegions(N, cols, rng, 0);
+    const region = grow(cols, 0);
     if (!region) continue;
-    if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
+    if (!makeUnique(N, region, cols, rng, now() + 500, minSize)) continue;
     const level = difficultyLevel(N, region);
     if (level >= 3) continue; // never hand back a board the hints can't explain
     const dist = Math.abs(level - target);
@@ -346,7 +474,9 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   for (let tries = 0; tries < 2000; tries++) {
     attempts++;
     const cols = generatePlacement(N, rng) || defaultPlacement(N);
-    const region = growRegions(N, cols, rng, 0) || trivialRegions(N);
+    const region = grow(cols, 0) || trivialRegions(N);
+    // No size floor here on purpose: this path's only job is to hand back SOME
+    // fair unique board, and the floor can only make the repair fail.
     if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
     const level = difficultyLevel(N, region);
     const result = { region, solution: cols.slice(), level, attempts };

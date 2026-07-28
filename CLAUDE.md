@@ -85,7 +85,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `index.html` | Page skeleton |
 | `css/styles.css` | Layout, responsive/mobile design |
 | `js/solver.js` | Rules, unit lists, solution counting (uniqueness), human-style deduction solver + difficulty rating |
-| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds) |
+| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds); two region-growth styles, see below |
 | `js/levels.js` | Serves precomputed puzzles from `levels/` with a random D4 rotation/mirror per draw; session shuffle-bag; `drawLevel` resolves `null` on any failure |
 | `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`) |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
@@ -113,6 +113,42 @@ always exists. If you add or change a technique, update all three so ratings,
 generation, and hints don't drift apart — **and regenerate the pools**
 (`node tools/generate-levels.mjs`, then `node tools/verify-levels.mjs`),
 otherwise the puzzles shipped in `levels/` keep the old ratings.
+
+### Region-growth styles (how a board *looks*)
+
+Difficulty is about techniques; **style is about geometry**, and the two are
+independent. `generatePuzzle(N, difficulty, { style })` takes:
+
+- **`organic`** (default, and what every pool in `levels/` was built with) —
+  `growRegions`, a multi-source flood fill claiming one cell per step. Amoeba-ish
+  regions with jagged borders. Its `balance` knob *equalises* region sizes and is
+  used only by hard, to suppress single-cell "free queen" regions.
+- **`blocky`** — `growRegionsBlocky`, which annexes a straight **segment** of up
+  to `maxRun` cells per step, so borders come out long and straight and regions
+  read as rectangles. Instead of `balance` it has `minSize` (a size *floor*, not
+  an equaliser: no free single-cell region, but sizes may still diverge) and
+  `dominance`/`maxShare` (one designated background region grows to ~35–40% of
+  the board on purpose). `makeUnique` takes `minSize` too — without it the
+  uniqueness repair whittles a floor-sized region back down to one free cell.
+
+Measured against boards from another Queens app (transcribed in
+`tools/compare-styles.mjs`), `blocky` matches their look closely — outline
+corners, background share, strip-shaped regions, zero single-cell regions — while
+`organic` essentially never produces it. Run `node tools/compare-styles.mjs` for
+the numbers, `--show <N> <difficulty>` for example boards.
+
+**The style does not make a board easier.** Both reference boards rate *hard*
+(level 2, naked-single reach 0) under our own solver, and blocky boards land at
+~75% hard / ~25% medium. **Easy is the exception**: with a size floor of 2 the
+easy yield collapses to ~0%, because easy *is* the naked single and needs the
+forced opening the floor removes — so easy keeps `minSize: 1` (see `BLOCKY_OPTS`)
+and gets only the straighter borders, not the no-freebies signature. Don't
+"fix" that by raising easy's floor; it silently converts easy into medium.
+
+Nothing ships in this style yet — the default is `organic` and the pools are
+unchanged. `tools/generate-levels.mjs --style blocky --out-suffix -blocky` builds
+a trial pool next to the real one; `tests/logic/blocky-style.mjs` guards
+uniqueness, fairness (hint-solvable), contiguity and the size floor.
 
 ### Precomputed level pools
 
