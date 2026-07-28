@@ -27,6 +27,7 @@ import {
   createVoiceController,
   parseVoiceCommand,
   dedupeReplayCells,
+  isRefinaliseExtension,
   coordLabel,
   colLetter,
   voiceSpeak,
@@ -322,6 +323,9 @@ async function newGame() {
   game = new Game(N, puzzle.region, settings.quickMode);
   currentSolution = puzzle.solution;
   undoStack = [];
+  // The old board's voice chains can't correct anything on this one.
+  lastVoiceReplayKeys = null;
+  lastVoiceFill = null;
   updateActionButtons();
   updateBoard();
   startTimer(); // clock starts only once the board is playable, not during the intro
@@ -2032,6 +2036,13 @@ let voiceSpeaking = false; // true while reading a hint aloud — suppress comma
 let lastVoiceReplayKeys = null;
 let lastVoiceReplayAt = 0;
 const VOICE_REPLAY_MS = 1500; // a re-finalise lands ~1s later; keep the window tight
+// Correction guard for re-finalised FILLS (see the fill branch in
+// handleVoiceCommand). A fill can't be fixed by re-running a narrower one —
+// marking only adds — so a cut-short fill has to be rolled back and replaced.
+// `snap` is the exact undo snapshot that fill pushed (identity-checked against
+// the stack top, so any interleaved move disqualifies the rollback), or null
+// when there is nothing to roll back.
+let lastVoiceFill = null; // { text, at, snap }
 
 const VOICE_ACTION_LABEL = {
   toggle: 'umgeschaltet',
@@ -2433,6 +2444,32 @@ function handleVoiceCommand(cmd, heard) {
       setVoiceStatus('Gelöst – sag „Neues Spiel“.', 'warn');
       return;
     }
+    // Chrome finalises mid-sentence: "Punkte Zeile 1 außer Region E1" arrives
+    // first as the bare "Punkte Zeile 1", which dots the WHOLE row. Re-running
+    // the completed, narrower command can't take those dots back (marking only
+    // adds), so the row stayed fully dotted and the exclusion was silently lost.
+    // When a fill final merely extends the previous one, roll the earlier fill
+    // back and let the completed utterance apply instead. The full new
+    // transcript is re-parsed — no text is stripped, so a leading verb still
+    // governs the whole phrase.
+    const topSnap = undoStack.length ? undoStack[undoStack.length - 1] : null;
+    if (
+      lastVoiceFill &&
+      lastVoiceFill.snap &&
+      lastVoiceFill.snap === topSnap &&
+      Date.now() - lastVoiceFill.at <= VOICE_REPLAY_MS &&
+      isRefinaliseExtension(lastVoiceFill.text, heard)
+    ) {
+      const s = undoStack.pop();
+      game.mark = s.mark;
+      game.queen = s.queen;
+      game.queenCount = s.queenCount;
+      lastPlaced = null;
+      updateActionButtons();
+      lastVoiceFill = { ...lastVoiceFill, snap: null };
+      if (journalEnabled())
+        journalPush({ src: 'voice', op: 'Fill zurückgenommen (Satz ergänzt)', heard, cmd: meta.cmd });
+    }
     const inc = fillSelectorCells(cmd.include);
     const exc = fillSelectorCells(cmd.exclude);
     const cells = [];
@@ -2443,6 +2480,9 @@ function handleVoiceCommand(cmd, heard) {
     }
     const missing = [...inc.missingColors, ...exc.missingColors];
     if (cells.length === 0) {
+      // Keep the chain alive so a further extension of this same sentence is
+      // still recognised as a correction rather than a fresh command.
+      lastVoiceFill = { text: heard, at: Date.now(), snap: lastVoiceFill && lastVoiceFill.snap };
       setVoiceStatus(
         missing.length ? 'Diese Farbe ist nicht auf dem Feld.' : 'Keine passenden Felder gefunden.',
         'warn'
@@ -2454,6 +2494,12 @@ function handleVoiceCommand(cmd, heard) {
       setVoiceStatus(res.reason === 'won' ? 'Gelöst – sag „Neues Spiel“.' : 'Kein aktives Spiel.', 'warn');
       return;
     }
+    // Remember what to roll back if this sentence turns out to be unfinished. A
+    // fill that changed nothing pushed no snapshot, so the previous fill (if its
+    // snapshot is still on top) stays the rollback target.
+    const nowTop = undoStack.length ? undoStack[undoStack.length - 1] : null;
+    const keptSnap = lastVoiceFill && lastVoiceFill.snap === nowTop ? lastVoiceFill.snap : null;
+    lastVoiceFill = { text: heard, at: Date.now(), snap: res.changed ? nowTop : keptSnap };
     for (const { row, col } of cells) flashVoiceCell(row, col);
     let status = `${res.count} Felder · ${VOICE_ACTION_LABEL[cmd.action] || ''}`.trim();
     if (missing.length) status += ' · Farbe nicht gefunden';
@@ -2500,10 +2546,16 @@ function handleVoiceFinal(alts) {
       cmd: voiceCmdSummary(cmd),
       alts: alts && alts.length > 1 ? alts.join(' | ') : undefined,
     });
-  // Only back-to-back coordinate finals can be replays of each other; anything
-  // else (an action, a fill, a miss) breaks the chain so the next coordinate
-  // command is judged fresh.
-  if (cmd.type !== 'cell' && cmd.type !== 'batch') lastVoiceReplayKeys = null;
+  // Only back-to-back finals of the SAME kind can be re-finalises of each other,
+  // so a different command kind breaks the relevant chain and the next one is
+  // judged fresh. A `none` is exempt from both: Chrome sprinkles empty/garbled
+  // finals through a sentence it is still transcribing (the debug journal shows
+  // five in a row mid-utterance), and since a miss changes nothing it must not
+  // make the real continuation look like a fresh command.
+  if (cmd.type !== 'none') {
+    if (cmd.type !== 'cell' && cmd.type !== 'batch') lastVoiceReplayKeys = null;
+    if (cmd.type !== 'fill') lastVoiceFill = null;
+  }
   handleVoiceCommand(cmd, used);
 }
 
