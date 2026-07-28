@@ -121,102 +121,110 @@ export function ascii(N, region) {
 }
 
 // ---------- CLI ----------
-const args = process.argv.slice(2);
-const argValue = (name) => {
-  const i = args.indexOf(name);
-  return i >= 0 && i + 1 < args.length ? args[i + 1] : null;
-};
-const onlySize = argValue('--size') ? Number(argValue('--size')) : null;
-const sampleMs = argValue('--ms') ? Number(argValue('--ms')) : 8000;
-const showIdx = args.indexOf('--show');
+// Everything above is importable (REFERENCE and the metrics are useful on their
+// own); the CLI below only runs when this file is the entry point, so an
+// `import` of it doesn't kick off a multi-minute measurement run.
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) runCli();
 
-const fmtRow = (label, m, extra = '') =>
-  `${label.padEnd(26)} | ${m.corners.toFixed(1).padStart(5)} | ` +
-  `${(m.sizeMaxShare * 100).toFixed(0).padStart(7)}% | ${m.ones.toFixed(2).padStart(4)} | ` +
-  `${m.flatRegions.toFixed(1).padStart(4)} |${extra}`;
-const HEAD =
-  'Quelle                     | Ecken | maxShare |  1er | flat |  reach | shot-like';
+function runCli() {
+  const args = process.argv.slice(2);
+  const argValue = (name) => {
+    const i = args.indexOf(name);
+    return i >= 0 && i + 1 < args.length ? args[i + 1] : null;
+  };
+  const onlySize = argValue('--size') ? Number(argValue('--size')) : null;
+  const sampleMs = argValue('--ms') ? Number(argValue('--ms')) : 8000;
+  const showIdx = args.indexOf('--show');
 
-if (showIdx >= 0) {
-  const N = Number(args[showIdx + 1] || 8);
-  const difficulty = args[showIdx + 2] || 'hard';
-  for (const style of ['organic', 'blocky']) {
-    for (let i = 0; i < 2; i++) {
-      const p = generatePuzzle(N, difficulty, { style, budgetMs: 3000 });
-      const m = boardMetrics(N, p.region);
-      console.log(
-        `\n--- ${style} ${N}x${N} ${difficulty} (rating ${p.level}) | Ecken Ø${m.corners.toFixed(1)}` +
-          ` | maxShare ${(m.sizeMaxShare * 100).toFixed(0)}% | Größen [${m.sizes.join(',')}]`
-      );
-      console.log(ascii(N, p.region));
-    }
-  }
-  process.exit(0);
-}
+  const fmtRow = (label, m, extra = '') =>
+    `${label.padEnd(26)} | ${m.corners.toFixed(1).padStart(5)} | ` +
+    `${(m.sizeMaxShare * 100).toFixed(0).padStart(7)}% | ${m.ones.toFixed(2).padStart(4)} | ` +
+    `${m.flatRegions.toFixed(1).padStart(4)} |${extra}`;
+  const HEAD =
+    'Quelle                     | Ecken | maxShare |  1er | flat |  reach | shot-like';
 
-console.log('=== Referenz: die beiden Screenshots ===');
-console.log(HEAD);
-for (const ref of REFERENCE) {
-  const m = boardMetrics(ref.N, ref.region);
-  const lvl = difficultyLevel(ref.N, ref.region);
-  const reach = nakedSingleReach(ref.N, ref.region);
-  console.log(
-    fmtRow(`${ref.name} (${ref.N}x${ref.N})`, m, ` ${String(reach).padStart(6)} | ${shotLike(m) ? 'ja' : 'nein'}`) +
-      `   [Rating ${lvl} = ${['easy', 'medium', 'hard', '>hard'][lvl]}, Größen ${m.sizes.join(',')}]`
-  );
-}
-
-const SIZES = onlySize !== null ? [onlySize] : [6, 7, 8, 9, 10];
-console.log('\n=== ausgelieferte Pools (levels/) vs. live erzeugte Stile ===');
-console.log(HEAD);
-for (const N of SIZES) {
-  for (const difficulty of ['easy', 'medium', 'hard']) {
-    if (N >= 12 && difficulty !== 'hard') continue;
-    const rows = [];
-
-    let pool = null;
-    try {
-      pool = JSON.parse(readFileSync(join(ROOT, 'levels', `${N}-${difficulty}.json`), 'utf8'));
-    } catch {
-      /* bucket may not exist */
-    }
-    if (pool) rows.push(['Pool', pool.puzzles.map((e) => decodePuzzle(N, e).region)]);
-
+  if (showIdx >= 0) {
+    const N = Number(args[showIdx + 1] || 8);
+    const difficulty = args[showIdx + 2] || 'hard';
     for (const style of ['organic', 'blocky']) {
-      const boards = [];
-      const t0 = Date.now();
-      while (Date.now() - t0 < sampleMs) {
-        const p = generatePuzzle(N, difficulty, { style, budgetMs: 1500 });
-        if (p.level === (difficulty === 'easy' ? 0 : difficulty === 'medium' ? 1 : 2))
-          boards.push(p.region);
+      for (let i = 0; i < 2; i++) {
+        const p = generatePuzzle(N, difficulty, { style, budgetMs: 3000 });
+        const m = boardMetrics(N, p.region);
+        console.log(
+          `\n--- ${style} ${N}x${N} ${difficulty} (rating ${p.level}) | Ecken Ø${m.corners.toFixed(1)}` +
+            ` | maxShare ${(m.sizeMaxShare * 100).toFixed(0)}% | Größen [${m.sizes.join(',')}]`
+        );
+        console.log(ascii(N, p.region));
       }
-      rows.push([`live ${style}`, boards]);
     }
+    process.exit(0);
+  }
 
-    for (const [label, boards] of rows) {
-      if (!boards.length) {
-        console.log(`${`${N}-${difficulty} ${label}`.padEnd(26)} | (keine Bretter)`);
-        continue;
+  console.log('=== Referenz: die beiden Screenshots ===');
+  console.log(HEAD);
+  for (const ref of REFERENCE) {
+    const m = boardMetrics(ref.N, ref.region);
+    const lvl = difficultyLevel(ref.N, ref.region);
+    const reach = nakedSingleReach(ref.N, ref.region);
+    console.log(
+      fmtRow(`${ref.name} (${ref.N}x${ref.N})`, m, ` ${String(reach).padStart(6)} | ${shotLike(m) ? 'ja' : 'nein'}`) +
+        `   [Rating ${lvl} = ${['easy', 'medium', 'hard', '>hard'][lvl]}, Größen ${m.sizes.join(',')}]`
+    );
+  }
+
+  const SIZES = onlySize !== null ? [onlySize] : [6, 7, 8, 9, 10];
+  console.log('\n=== ausgelieferte Pools (levels/) vs. live erzeugte Stile ===');
+  console.log(HEAD);
+  for (const N of SIZES) {
+    for (const difficulty of ['easy', 'medium', 'hard']) {
+      if (N >= 12 && difficulty !== 'hard') continue;
+      const rows = [];
+
+      let pool = null;
+      try {
+        pool = JSON.parse(readFileSync(join(ROOT, 'levels', `${N}-${difficulty}.json`), 'utf8'));
+      } catch {
+        /* bucket may not exist */
       }
-      const acc = { corners: 0, sizeMaxShare: 0, ones: 0, flatRegions: 0 };
-      let reach = 0;
-      let shot = 0;
-      for (const region of boards) {
-        const m = boardMetrics(N, region);
-        for (const k of Object.keys(acc)) acc[k] += m[k];
-        reach += nakedSingleReach(N, region);
-        if (shotLike(m)) shot++;
+      if (pool) rows.push(['Pool', pool.puzzles.map((e) => decodePuzzle(N, e).region)]);
+
+      for (const style of ['organic', 'blocky']) {
+        const boards = [];
+        const t0 = Date.now();
+        while (Date.now() - t0 < sampleMs) {
+          const p = generatePuzzle(N, difficulty, { style, budgetMs: 1500 });
+          if (p.level === (difficulty === 'easy' ? 0 : difficulty === 'medium' ? 1 : 2))
+            boards.push(p.region);
+        }
+        rows.push([`live ${style}`, boards]);
       }
-      const k = boards.length;
-      for (const key of Object.keys(acc)) acc[key] /= k;
-      console.log(
-        fmtRow(
-          `${N}-${difficulty} ${label}`,
-          acc,
-          ` ${(reach / k).toFixed(1).padStart(6)} | ${`${Math.round((100 * shot) / k)}%`.padStart(4)} (n=${k})`
-        )
-      );
+
+      for (const [label, boards] of rows) {
+        if (!boards.length) {
+          console.log(`${`${N}-${difficulty} ${label}`.padEnd(26)} | (keine Bretter)`);
+          continue;
+        }
+        const acc = { corners: 0, sizeMaxShare: 0, ones: 0, flatRegions: 0 };
+        let reach = 0;
+        let shot = 0;
+        for (const region of boards) {
+          const m = boardMetrics(N, region);
+          for (const k of Object.keys(acc)) acc[k] += m[k];
+          reach += nakedSingleReach(N, region);
+          if (shotLike(m)) shot++;
+        }
+        const k = boards.length;
+        for (const key of Object.keys(acc)) acc[key] /= k;
+        console.log(
+          fmtRow(
+            `${N}-${difficulty} ${label}`,
+            acc,
+            ` ${(reach / k).toFixed(1).padStart(6)} | ${`${Math.round((100 * shot) / k)}%`.padStart(4)} (n=${k})`
+          )
+        );
+      }
+      console.log('');
     }
-    console.log('');
   }
 }
