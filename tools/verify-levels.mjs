@@ -131,7 +131,22 @@ for (const file of files) {
     const tp = transformPuzzle(N, pick.region, pick.solution, t);
     solveByHints(N, tp.region, tp.solution, `${label} (hint solve, t=${t})`);
   }
-  if (failures === failuresBefore) console.log(`ok   ${label}: ${puzzles.length} puzzles`);
+  // Optional per-entry style tag (see generate-levels.mjs --style mixed). The
+  // game ignores it, but a "half and half" pool is a claim worth checking: an
+  // unknown tag, or a lopsided split, means the mix is not what it says.
+  const tags = puzzles.map((p) => p.t).filter((t) => t !== undefined);
+  let mix = '';
+  if (tags.length) {
+    if (tags.length !== puzzles.length)
+      fail(`${label}: ${puzzles.length - tags.length} entr(ies) missing a style tag`);
+    const counts = {};
+    for (const t of tags) counts[t] = (counts[t] || 0) + 1;
+    for (const t of Object.keys(counts))
+      if (!['organic', 'blocky'].includes(t)) fail(`${label}: unknown style tag "${t}"`);
+    mix = ` (${Object.entries(counts).map(([t, n]) => `${n} ${t}`).join(', ')})`;
+  }
+
+  if (failures === failuresBefore) console.log(`ok   ${label}: ${puzzles.length} puzzles${mix}`);
 }
 
 if (failures) {

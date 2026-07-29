@@ -2,7 +2,14 @@
 // Artifact so a branch can be tested on a phone (see CLAUDE.md → "Testing a
 // branch on mobile"). Generated FROM the real sources so it mirrors the branch.
 //
-//   node tools/build-artifact.mjs [output.html]
+//   node tools/build-artifact.mjs [output.html] [--style blocky]
+//
+// --style blocky builds a *trial* bundle of the blocky region-growth style (see
+// CLAUDE.md → "Region-growth styles") without touching what the site serves: it
+// embeds the `levels/<N>-<difficulty>-blocky.json` pools under the plain keys
+// js/levels.js looks up, and makes both generation paths — the worker and
+// main.js's synchronous fallback — pass `style: 'blocky'`. Handing that bundle to
+// a phone is how the style gets judged before anything about the default changes.
 //
 // The Web Worker is rebuilt as a *classic* worker from a Blob URL: module
 // workers and external URLs are blocked by the Artifact CSP. If the sandbox
@@ -15,6 +22,18 @@ import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+
+const argv = process.argv.slice(2);
+const styleIdx = argv.indexOf('--style');
+const style = styleIdx >= 0 ? argv[styleIdx + 1] : 'mixed';
+if (!['organic', 'blocky', 'mixed'].includes(style)) {
+  console.error("--style must be 'organic', 'blocky' or 'mixed'");
+  process.exit(1);
+}
+// 'mixed' is what the app itself does — the shipped pools already hold both
+// looks, so it needs no override at all. The single-style builds are the trial
+// bundles: they read a `-<style>` pool and pin live generation to match.
+const POOL_SUFFIX = style === 'mixed' ? '' : `-${style}`;
 
 // Strip ESM glue so the files share one classic-script scope. (Relies on there
 // being no top-level name collisions across modules — true today; verify with
@@ -44,15 +63,33 @@ let main = strip(read('js/main.js'));
 if (!levels.includes('__QUEENS_LEVELS__')) {
   throw new Error('js/levels.js no longer reads __QUEENS_LEVELS__ — pool embed would break');
 }
+// Only the requested style's pools go in, and always under the plain
+// `<N>-<difficulty>` key — that's what drawLevel() asks for, so a trial pool is
+// picked up without js/levels.js knowing styles exist.
 const levelsDir = join(ROOT, 'levels');
 const pools = {};
 if (existsSync(levelsDir)) {
-  for (const f of readdirSync(levelsDir).filter((f) => f.endsWith('.json')).sort()) {
-    pools[f.replace('.json', '')] = JSON.parse(readFileSync(join(levelsDir, f), 'utf8'));
+  const wanted = new RegExp(`^(\\d+-(?:easy|medium|hard))${POOL_SUFFIX}\\.json$`);
+  for (const f of readdirSync(levelsDir).sort()) {
+    const m = wanted.exec(f);
+    if (m) pools[m[1]] = JSON.parse(readFileSync(join(levelsDir, f), 'utf8'));
   }
 }
+// A single-style build with no matching pools is a mistake, not a fallback: the
+// bundle would silently generate every board live (slow, and no pool means no
+// difficulty guarantee up front). Say which command produces them and stop.
+if (Object.keys(pools).length === 0 && style !== 'mixed') {
+  console.error(
+    `no levels/*${POOL_SUFFIX}.json pools found.\n` +
+      `Build them first:\n` +
+      `  node tools/generate-levels.mjs --style ${style} --out-suffix ${POOL_SUFFIX}`
+  );
+  process.exit(1);
+}
 if (Object.keys(pools).length === 0) {
-  console.warn('warning: no levels/*.json found — bundle will fall back to live generation');
+  console.warn(
+    `warning: no levels/*${POOL_SUFFIX}.json found — bundle will fall back to live generation`
+  );
 }
 
 // Point the worker at the blob URL instead of a sibling module file.
@@ -60,12 +97,26 @@ const workerExpr = "new Worker(new URL('./generator.worker.js', import.meta.url)
 if (!main.includes(workerExpr)) throw new Error('worker construction line not found — bundle would break');
 main = main.replace(workerExpr, 'new Worker(__WORKER_URL__)');
 
+// Live generation is the fallback whenever a pool draw fails, so a single-style
+// bundle has to pin that path too — otherwise the one board that slips past the
+// pool comes back in the other look. main.js routes every generation path
+// (worker and both inline fallbacks) through randomStyle(), so overriding that
+// one function covers all of them. Guarded: a rename must fail the build rather
+// than silently leave the bundle mixed.
+if (style !== 'mixed') {
+  const coinFlip = "return Math.random() < 0.5 ? 'organic' : 'blocky';";
+  if (!main.includes(coinFlip)) {
+    throw new Error('randomStyle() body not found — single-style bundle would stay mixed');
+  }
+  main = main.replace(coinFlip, `return '${style}';`);
+}
+
 // Classic worker source: solver + generator + a plain message handler.
 const workerSrc =
   solver + '\n' + generator + '\n' +
   'self.onmessage = function (e) {\n' +
   '  var d = e.data;\n' +
-  '  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs }));\n' +
+  '  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs, style: d.style }));\n' +
   '};\n';
 
 // Page bundle: settings -> audio -> voice -> solver -> generator -> levels ->

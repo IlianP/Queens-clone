@@ -74,6 +74,20 @@ blocks blob workers too), and **prepends `<meta charset="utf-8">`** so the
 German text + emoji don't mojibake. Verify the bundle in a mobile-sized
 Playwright viewport (Chromium at `/opt/pw-browsers`) before publishing.
 
+`--style` defaults to `mixed` — the bundle then behaves exactly like the site,
+because the shipped pools already hold both looks. `--style organic|blocky`
+builds a **single-style trial** bundle instead: it embeds the
+`levels/<N>-<difficulty>-<style>.json` pools under the plain keys `drawLevel`
+looks up, and pins live generation by overriding `randomStyle()` in `main.js`
+(every generation path routes through it). The override is guarded and throws if
+that function moves, so a rename can't silently ship a mixed bundle under a
+single-style name.
+
+When driving the bundle with Playwright, wait for the intro reveal to finish
+(`.board` loses `intro-revealing` *and* a cell has `data-state`) before reading
+or tapping — `openGame` in `tests/browser/board-helpers.mjs` already does; a
+fixed `waitForTimeout` after "Neues Spiel" does not, and reads back `undefined`.
+
 ## Architecture
 
 Pure logic modules have **no DOM access**; `main.js` is the only file that
@@ -85,9 +99,9 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `index.html` | Page skeleton |
 | `css/styles.css` | Layout, responsive/mobile design |
 | `js/solver.js` | Rules, unit lists, solution counting (uniqueness), human-style deduction solver + difficulty rating |
-| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds) |
+| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds); two region-growth styles (`organic` / `blocky`), see below — mixing is a *pool*-level concern, the generator only ever grows one style per call |
 | `js/levels.js` | Serves precomputed puzzles from `levels/` with a random D4 rotation/mirror per draw; session shuffle-bag; `drawLevel` resolves `null` on any failure |
-| `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`) |
+| `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`). Shipped pools are **mixed**: half organic, half blocky, each entry tagged `t` — see "Mixing the two styles" |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`; pure logic |
@@ -113,6 +127,84 @@ always exists. If you add or change a technique, update all three so ratings,
 generation, and hints don't drift apart — **and regenerate the pools**
 (`node tools/generate-levels.mjs`, then `node tools/verify-levels.mjs`),
 otherwise the puzzles shipped in `levels/` keep the old ratings.
+
+### Region-growth styles (how a board *looks*)
+
+Difficulty is about techniques; **style is about geometry**, and the two are
+independent. `generatePuzzle(N, difficulty, { style })` takes:
+
+- **`organic`** (default, and what every pool in `levels/` was built with) —
+  `growRegions`, a multi-source flood fill claiming one cell per step. Amoeba-ish
+  regions with jagged borders. Its `balance` knob *equalises* region sizes and is
+  used only by hard, to suppress single-cell "free queen" regions.
+- **`blocky`** — `growRegionsBlocky`, which annexes a straight **segment** of up
+  to `maxRun` cells per step, so borders come out long and straight and regions
+  read as rectangles. Instead of `balance` it has `minSize` (a size *floor*, not
+  an equaliser: no free single-cell region, but sizes may still diverge) and
+  `dominance`/`maxShare` (one designated background region grows to ~35–40% of
+  the board on purpose). `makeUnique` takes `minSize` too — without it the
+  uniqueness repair whittles a floor-sized region back down to one free cell.
+
+Measured against boards from another Queens app (transcribed in
+`tools/compare-styles.mjs`), `blocky` matches their look closely — outline
+corners, background share, strip-shaped regions, zero single-cell regions — while
+`organic` essentially never produces it. Run `node tools/compare-styles.mjs` for
+the numbers, `--show <N> <difficulty>` for example boards.
+
+**The style does not make a board easier.** Both reference boards rate *hard*
+(level 2, naked-single reach 0) under our own solver, and blocky boards land at
+~75% hard / ~25% medium. **Easy is the exception**: with a size floor of 2 the
+easy yield collapses to ~0%, because easy *is* the naked single and needs the
+forced opening the floor removes — so easy keeps `minSize: 1` (see `BLOCKY_OPTS`)
+and gets only the straighter borders, not the no-freebies signature. Don't
+"fix" that by raising easy's floor; it silently converts easy into medium.
+
+### Mixing the two styles (what the pools actually serve)
+
+The styles are **not** an either/or: `generate-levels.mjs --style mixed` fills
+each bucket half organic, half blocky, so ONE pool file serves both looks. That
+is deliberately *not* a coin flip per game — `drawLevel`'s shuffle bag hands the
+pool out evenly and without repeats, so a session alternates instead of dealing
+five of one look in a row. Nothing in `js/levels.js` changed for this: a mixed
+pool is just a pool.
+
+Each mixed entry carries a `"t": "organic" | "blocky"` tag. It is **provenance
+only** — `decodePuzzle` ignores unknown fields and the game never reads it;
+`verify-levels.mjs` uses it to print the real split per bucket, so "half and
+half" is checked rather than claimed. Untagged pools stay valid (format `v` is
+still 1), which is why the single-style trial pools need no rebuild.
+
+Live generation mixes too: `randomStyle()` in `main.js` picks per game and the
+style rides along to the worker (`generator.worker.js` forwards it). Without
+that, the rare board that misses the pool would always arrive in one fixed look —
+the one moment a player would notice the inconsistency. `build-artifact.mjs`
+overrides exactly that one function for its single-style trial bundles, so a
+rename fails the build instead of silently shipping a mixed bundle.
+
+**Easy is the asymmetric case.** Blocky easy is *not* visually distinctive (the
+size floor that creates the look is off there, see above) and carries ~50 % more
+single-cell freebie regions than organic easy. Mixing it in is therefore close to
+cosmetic on that difficulty — if easy ever feels too generous, dropping blocky
+from the easy buckets is the first knob, not the region-growth parameters.
+
+The single-style pools (`levels/*-blocky.json`, 22 buckets × 30) stay around as
+the A/B reference and are inert: `drawLevel` only ever asks for
+`<N>-<difficulty>.json`. `tests/logic/blocky-style.mjs` guards uniqueness,
+fairness (hint-solvable), contiguity and the size floor for blocky generation;
+`tools/verify-levels.mjs` covers every pool file, since it reads each bucket's
+size/difficulty from the file rather than its name.
+
+Blocky generation is *faster* than organic at every size (12×12 hard: ~2 s per
+accepted board), so the mixed rebuild costs roughly half of a full organic one —
+the full 22-bucket mixed build measured ~51 min, almost all of it the organic
+halves.
+
+A pool build is long enough to invite a background watchdog; if you write one,
+do **not** poll with `until ! pgrep -f "generate-levels"`. `pgrep -f` matches
+full command lines, so the watchdog's own shell — which contains that string —
+matches itself and the loop never exits. It leaves a task "running" for hours
+after the build finished. Match on the output file instead (e.g. `until grep -q
+"done in" out.log`), or just read the file when the build's own task notifies.
 
 ### Precomputed level pools
 
