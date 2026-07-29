@@ -963,6 +963,33 @@ body {
   color: var(--muted);
 }
 
+/* Personal placement line under the summary: how this solve compares to the
+   player's own previous ones. Empty on the very first solve of a bucket — the
+   :empty rule then collapses it so the card keeps its height. */
+.win-personal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  margin: -6px 0 12px;
+  text-align: center;
+}
+.win-personal:empty {
+  display: none;
+  margin: 0;
+}
+.win-personal-main {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.win-personal-main.best {
+  color: #17a06a;
+}
+.win-personal-detail {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
 .score-panel {
   margin-bottom: 12px;
 }

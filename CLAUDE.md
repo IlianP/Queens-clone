@@ -90,7 +90,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`) |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
-| `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`; pure logic |
+| `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores`) fail soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
 | `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
@@ -174,7 +174,29 @@ idempotency key, so this client latch is the guard). The online layer is
 best-effort abuse-protected server-side (plausibility + rate-limit); it can't be
 truly cheat-proof since the client reports its own time — say so, don't
 oversell it. Untrusted leaderboard names
-are always rendered with `textContent`, never `innerHTML`. Bundle constraint:
+are always rendered with `textContent`, never `innerHTML`.
+
+**Relative feedback (beyond the absolute placement).** The top-10 list discards
+everything below rank 10, so it cannot answer "how does this solve compare to
+all my others?" — a second, tiny store does: `queens-clone-solves`, one flat
+array of scores per bucket (numbers only, no names/dates), capped at
+`MAX_SOLVE_HISTORY` with the oldest falling off. `recordSolve` is called from
+`commitPendingWin` — the single funnel every finished game passes through, and
+already guarded by `pendingWin.saved`, so a solve is counted exactly once. The
+two feedback surfaces are **not alternatives**; they differ in what data they
+have and when:
+- **Win card** (`#win-personal`, `renderPersonalFeedback` in `main.js`) — the
+  *personal* comparison, computed by `getPersonalStats` in `onWin` **before**
+  `recordSolve` adds this solve, so "deiner N bisherigen Partien" means the ones
+  before it. Available instantly, offline, without a name or a submit.
+- **Submit status line** — the *global* comparison, which only exists once
+  `submit_score` has answered with `{ rank, total }` (`globalPercentile`).
+
+Both suppress the percentage when the sample is too small to mean anything
+(`MIN_SOLVES_FOR_PERCENTILE`, `MIN_GLOBAL_FOR_PERCENTILE`) and fall back to the
+plain placement; `percentileBetter` counts a tie as half and never rounds to a
+flat 0/100 unless the score really beat none/all. `tests/logic/percentile.mjs`
+covers all of it (with a localStorage shim). Bundle constraint:
 `highscores.js`/`leaderboard.js` are concatenated into one classic script, so
 **no top-level name collisions** (that's why the store key is `SCORES_KEY`, not
 another `KEY`) and **no `import.meta`**.

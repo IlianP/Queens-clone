@@ -14,6 +14,15 @@
 // migration — and the same formula is mirrored server-side in
 // docs/leaderboard-setup.sql, so keep the two in sync.
 //
+// A SECOND, much smaller store sits next to that top-10 list: the solve
+// history (`queens-clone-solves`), one flat array of scores per bucket. The
+// top-10 list deliberately throws away everything below rank 10, so it can't
+// answer "how did this solve compare to all the others?" — once you have more
+// than ten solves, an 11th-place result looks identical to a 100th-place one.
+// The history keeps just the numbers (no names, no dates) so that relative
+// feedback ("besser als 88 % deiner Partien") stays possible for a few bytes
+// per solve.
+//
 // Constraints (this file is concatenated into the classic-script Artifact
 // bundle, see tools/build-artifact.mjs): no `import.meta`, and no top-level
 // name collisions with the other js/ modules.
@@ -23,7 +32,19 @@ export const MISTAKE_PENALTY = 15; // seconds added per mistake made
 export const MAX_LOCAL_ENTRIES = 10; // kept per (size, difficulty) bucket
 export const MAX_NAME_LENGTH = 20;
 
+// Solve history: scores per bucket, oldest first, capped. 500 ints is a few kB
+// of localStorage at most; past the cap the oldest solves fall off, so the
+// percentile becomes "of your last 500" — getPersonalStats reports that via
+// `capped` so the UI can say so instead of overclaiming.
+export const MAX_SOLVE_HISTORY = 500;
+// Below this many previous solves a percentage is more noise than signal
+// (1 of 2 games = "besser als 50 %"), so the UI shows a plain placement.
+export const MIN_SOLVES_FOR_PERCENTILE = 5;
+// Same idea for the global board, where a young bucket has very few entries.
+export const MIN_GLOBAL_FOR_PERCENTILE = 20;
+
 const SCORES_KEY = 'queens-clone-highscores';
+const SOLVES_KEY = 'queens-clone-solves';
 
 export function bucketKey(size, difficulty) {
   return `${size}-${difficulty}`;
@@ -123,4 +144,120 @@ export function previewRank(size, difficulty, score) {
     else break;
   }
   return rank;
+}
+
+// ---------------------------------------------------------------------------
+// Solve history — every solve, not just the top ten
+// ---------------------------------------------------------------------------
+
+// Read the whole history store, dropping anything malformed. Never throws.
+export function loadSolveHistory() {
+  try {
+    const raw = localStorage.getItem(SOLVES_KEY);
+    if (!raw) return {};
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return {};
+    const out = {};
+    for (const key of Object.keys(data)) {
+      if (!Array.isArray(data[key])) continue;
+      const list = data[key]
+        .map((v) => Math.round(Number(v)))
+        .filter((v) => Number.isFinite(v) && v >= 0);
+      out[key] = list.slice(-MAX_SOLVE_HISTORY);
+    }
+    return out;
+  } catch (e) {
+    return {};
+  }
+}
+
+export function getSolveScores(size, difficulty) {
+  return loadSolveHistory()[bucketKey(size, difficulty)] || [];
+}
+
+// Append one finished solve. Oldest entries fall off at the cap. Returns the
+// bucket's new history. Call this exactly once per solve — main.js does it from
+// commitPendingWin, the single funnel every finished game passes through.
+export function recordSolve(size, difficulty, score) {
+  const s = Math.round(Number(score));
+  if (!Number.isFinite(s) || s < 0) return getSolveScores(size, difficulty);
+  const all = loadSolveHistory();
+  const key = bucketKey(size, difficulty);
+  const list = (all[key] || []).concat(s).slice(-MAX_SOLVE_HISTORY);
+  all[key] = list;
+  try {
+    localStorage.setItem(SOLVES_KEY, JSON.stringify(all));
+  } catch (e) {
+    /* storage unavailable (e.g. private mode) — history just won't persist */
+  }
+  return list;
+}
+
+// How much of `others` this score beats, as a percentage (0–100, rounded).
+// Pure: `others` are the *other* solves, this score is not among them. A tie
+// counts as half a win, the usual percentile-rank convention.
+//
+// Rounding is nudged away from the extremes: only a score that beats every
+// other may read 100 %, only one that beats none may read 0 %. Otherwise
+// "besser als 100 % deiner Partien" would show up next to a result that
+// actually has a better one above it.
+export function percentileBetter(score, others) {
+  if (!Array.isArray(others) || others.length === 0) return null;
+  let beaten = 0;
+  for (const o of others) {
+    if (score < o) beaten += 1;
+    else if (score === o) beaten += 0.5;
+  }
+  const pct = Math.round((beaten / others.length) * 100);
+  if (pct >= 100 && beaten < others.length) return 99;
+  if (pct <= 0 && beaten > 0) return 1;
+  return pct;
+}
+
+// Everything the win screen needs to describe a fresh solve relative to the
+// player's own past ones, computed BEFORE the solve is recorded:
+//   total      — previous solves in this bucket (0 on the very first one)
+//   rank       — 1-based placement among total + 1, ties resolved in favour of
+//                the new solve (same convention as previewRank)
+//   percentile — percentileBetter, or null when there are too few to be honest
+//   isBest     — a new personal best (strictly better than everything before)
+//   bestScore  — the previous best, or null when there wasn't one
+//   delta      — |score − bestScore| in seconds, null without a previous best
+//   capped     — the history is at its cap, so `total` is "your last N", not all
+export function getPersonalStats(size, difficulty, score) {
+  const others = getSolveScores(size, difficulty);
+  const total = others.length;
+  // The all-time best survives in the top-10 list even if the history has
+  // rolled past it, so take the better of the two as the record to beat.
+  const top = getLocalScores(size, difficulty);
+  const candidates = others.concat(top.map((e) => e.score));
+  const bestScore = candidates.length ? Math.min(...candidates) : null;
+  let rank = 1;
+  for (const o of others) if (o < score) rank++;
+  return {
+    total,
+    rank,
+    percentile: total >= MIN_SOLVES_FOR_PERCENTILE ? percentileBetter(score, others) : null,
+    isBest: bestScore != null && score < bestScore,
+    bestScore,
+    delta: bestScore == null ? null : Math.abs(score - bestScore),
+    capped: total >= MAX_SOLVE_HISTORY,
+  };
+}
+
+// The global counterpart: submit_score reports a 1-based `rank` out of `total`
+// entries in the bucket (the fresh entry included), which is all a percentage
+// needs. Returns null when the bucket is too small for the number to mean
+// anything — the caller then shows the plain placement instead.
+export function globalPercentile(rank, total) {
+  const r = Number(rank);
+  const n = Number(total);
+  if (!Number.isFinite(r) || !Number.isFinite(n)) return null;
+  if (n < MIN_GLOBAL_FOR_PERCENTILE || r < 1 || r > n) return null;
+  const others = n - 1; // everyone else in the bucket
+  if (others <= 0) return null;
+  const pct = Math.round(((others - (r - 1)) / others) * 100);
+  if (pct >= 100 && r > 1) return 99;
+  if (pct <= 0 && r < n) return 1;
+  return pct;
 }
