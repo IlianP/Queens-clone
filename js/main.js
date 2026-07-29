@@ -10,6 +10,9 @@ import {
   getLocalScores,
   saveLocalScore,
   previewRank,
+  recordSolve,
+  getPersonalStats,
+  globalPercentile,
 } from './highscores.js';
 import { leaderboardConfigured, submitScore, fetchTopScores } from './leaderboard.js';
 import {
@@ -81,6 +84,7 @@ const dom = {
   winOverlay: el('win-overlay'),
   winConfetti: el('win-confetti'),
   winTime: el('win-time'),
+  winPersonal: el('win-personal'),
   winTabs: el('win-tabs'),
   winTabLocal: el('win-tab-local'),
   winTabGlobal: el('win-tab-global'),
@@ -768,6 +772,19 @@ function fmtTime(sec) {
 function plural(n, one, many) {
   return `${n} ${n === 1 ? one : many}`;
 }
+// A gap between two results, phrased as a duration rather than a clock reading:
+// "14 s" beats "0:14" for a difference.
+function fmtDelta(sec) {
+  const s = Math.max(0, Math.round(sec));
+  return s < 60 ? `${s} s` : `${fmtTime(s)} min`;
+}
+const DIFFICULTY_LABELS = { easy: 'Leicht', medium: 'Mittel', hard: 'Schwer' };
+// Scores are ranked per (size, difficulty), so any comparison has to name the
+// bucket it's about — otherwise "besser als 88 %" reads as if it spanned every
+// board size.
+function bucketLabel(size, difficulty) {
+  return `${size}×${size} · ${DIFFICULTY_LABELS[difficulty] || difficulty}`;
+}
 function setStatus(node, text, kind = '') {
   node.textContent = text;
   node.className = 'win-submit-status' + (kind ? ' ' + kind : '');
@@ -807,6 +824,58 @@ function renderScoreList(container, entries, highlightIdx = -1) {
   });
 }
 
+// Describe a fresh solve against the player's own previous ones. This is the
+// feedback that works the moment the board is solved — no name, no network, no
+// submit — which is why it lives in the win card itself rather than next to the
+// global submit status. `stats` comes from getPersonalStats and is computed
+// BEFORE this solve is recorded, so "deiner N bisherigen Partien" means the
+// ones before this one.
+function renderPersonalFeedback(stats, size, difficulty) {
+  const box = dom.winPersonal;
+  box.textContent = '';
+  const label = bucketLabel(size, difficulty);
+  // Distance to the personal best, or the fact that it was matched.
+  const toBest =
+    stats.delta == null || stats.delta === 0
+      ? 'gleichauf mit deiner Bestzeit'
+      : `+${fmtDelta(stats.delta)} zur Bestzeit`;
+  let main = '';
+  let detail = '';
+  let isBest = false;
+
+  if (stats.total === 0) {
+    detail = `Deine erste Partie in ${label} – ab jetzt gibt es etwas zu schlagen.`;
+  } else if (stats.isBest) {
+    isBest = true;
+    main = '🏆 Neue Bestzeit!';
+    detail = `${fmtDelta(stats.delta)} besser als dein bisheriger Rekord · ${label}`;
+  } else if (stats.percentile == null || stats.percentile === 0) {
+    // Either too few previous solves for a percentage to mean anything, or a
+    // result that beat none of them — "besser als 0 %" carries no information
+    // the placement doesn't, and reads as a kick. The plain placement says the
+    // same thing without the sneer.
+    main = `Deine ${stats.rank}.-beste von ${stats.total + 1} Partien`;
+    detail = `${label} · ${toBest}`;
+  } else {
+    const of = stats.capped ? `deiner letzten ${stats.total}` : `deiner ${stats.total}`;
+    main = `Besser als ${stats.percentile} % ${of} Partien`;
+    detail = `Platz ${stats.rank} von ${stats.total + 1} · ${label} · ${toBest}`;
+  }
+
+  if (main) {
+    const m = document.createElement('span');
+    m.className = 'win-personal-main' + (isBest ? ' best' : '');
+    m.textContent = main;
+    box.appendChild(m);
+  }
+  if (detail) {
+    const d = document.createElement('span');
+    d.className = 'win-personal-detail';
+    d.textContent = detail;
+    box.appendChild(d);
+  }
+}
+
 function onWin() {
   if (winHandled) return; // fire once per solve (updateBoard can re-run while won)
   winHandled = true;
@@ -834,6 +903,10 @@ function onWin() {
       'Tipp',
       'Tipps'
     )} · ${plural(mistakes, 'Fehler', 'Fehler')}</span>`;
+
+  // Compare against the history *before* this solve joins it (commitPendingWin
+  // records it later), so the comparison set is "everything up to now".
+  renderPersonalFeedback(getPersonalStats(game.N, settings.difficulty, score), game.N, settings.difficulty);
 
   dom.winNickname.value = settings.nickname || '';
   globalSubmitInFlight = false;
@@ -902,6 +975,11 @@ function commitPendingWin(name) {
     mistakes: pendingWin.mistakes,
     score: pendingWin.score,
   });
+  // Every solve also joins the history behind the percentile feedback — the
+  // top-10 list above drops everything below rank 10, so it can't carry that.
+  // This is the single funnel each finished game passes through (submit or
+  // flushPendingWin), and `saved` guards it against counting a solve twice.
+  recordSolve(pendingWin.size, pendingWin.difficulty, pendingWin.score);
   pendingWin.saved = true;
   pendingWin.savedRank = rank;
 }
@@ -954,7 +1032,17 @@ async function onWinSubmit() {
   if (res && Number.isFinite(res.rank)) {
     pendingWin.submittedGlobal = true; // latch: this solve is now on the global board
     dom.winSubmit.disabled = true;
-    setStatus(dom.winSubmitStatus, `Global eingetragen: Platz ${res.rank} von ${res.total} 🌐`, 'ok');
+    // Placement plus, once the bucket is big enough to make it meaningful, the
+    // share of entries beaten — "Platz 37" alone says little without knowing
+    // how deep the field is.
+    const pct = globalPercentile(res.rank, res.total);
+    setStatus(
+      dom.winSubmitStatus,
+      pct == null
+        ? `Global eingetragen: Platz ${res.rank} von ${res.total} 🌐`
+        : `Global eingetragen: Platz ${res.rank} von ${res.total} – besser als ${pct} % der Einträge 🌐`,
+      'ok'
+    );
     selectWinTab('global');
   } else {
     // The auto-retries didn't get through. Don't give up on a single episode:

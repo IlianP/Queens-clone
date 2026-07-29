@@ -101,6 +101,17 @@ und Schwierigkeit hat eine eigene Rangliste; über 🏆 lässt sich jede davon d
   ein **Eintragen**-Button und ein *Global*-Tab. Ohne Einrichtung läuft alles rein
   lokal weiter – Online ist nie Voraussetzung.
 
+Weil die Top 10 alles darunter verwerfen, sagt ein 11. Platz für sich genommen nichts.
+Deshalb merkt sich das Spiel zusätzlich die **Ergebnisse aller** Partien je Rangliste
+(nur die Zahlen, ohne Namen und Datum) und zeigt direkt auf dem Gewinn-Bildschirm, wie
+die frische Partie im Vergleich dasteht – z. B. *„Besser als 88 % deiner 26 Partien"*,
+den Abstand zur eigenen Bestzeit oder *„🏆 Neue Bestzeit!"*. Diese Rückmeldung ist
+sofort da und braucht weder Namen noch Internet. Bei wenigen Partien (unter fünf) steht
+stattdessen die schlichte Platzierung – ein Prozentwert aus zwei Runden wäre nur Rauschen.
+Nach dem **Eintragen** in die globale Rangliste ergänzt die Statuszeile den gleichen
+Vergleich für das gesamte Feld (*„Platz 37 von 214 – besser als 83 % der Einträge"*),
+sobald dort genug Einträge zusammengekommen sind.
+
 ### Online-Rangliste einrichten (optional, Supabase)
 
 GitHub Pages liefert nur statische Dateien aus, das Spiel kann aber trotzdem per
@@ -182,7 +193,7 @@ js/generator.js           – Rätselerzeugung mit garantiert eindeutiger Lösun
 js/levels.js              – Lädt die vorberechneten Pools, dreht/spiegelt zufällig
 js/game.js                – Spielzustand, Schnellmodus, Konflikt- & Gewinnerkennung
 js/hint.js                – Nächster logischer Schluss als erklärbarer Hinweis
-js/highscores.js          – Score-Modell & lokale Bestzeiten (localStorage)
+js/highscores.js          – Score-Modell, lokale Bestzeiten & Partie-Historie für den Vergleich (localStorage)
 js/leaderboard.js         – Optionale globale Online-Rangliste (Supabase, fällt still auf lokal zurück)
 js/settings.js            – Einstellungen & letzter Name (localStorage)
 js/audio.js               – Minimalistische Soundeffekte (Web Audio API, ohne Asset-Dateien)

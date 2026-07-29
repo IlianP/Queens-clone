@@ -105,6 +105,10 @@
     <div class="hint-card win-card" id="win-overlay" hidden>
       <div class="hint-card-title">🎉 Gelöst!</div>
       <p class="hint-card-text win-summary" id="win-time"></p>
+      <!-- Relative feedback on the fresh result ("besser als 88 % deiner
+           Partien"): available instantly and offline, unlike the global
+           placement, which only exists once the score has been submitted. -->
+      <p class="win-personal" id="win-personal"></p>
 
       <div class="score-panel">
         <div class="score-tabs" id="win-tabs" hidden>
