@@ -92,3 +92,13 @@ await browser.close();
 
 Always assert `errors` (collected console/page errors) stays empty, and test at
 a phone-sized viewport — this is a touch-first game.
+
+`blocky-style.mjs` covers the `blocky` region-growth style in `js/generator.js`
+(see `../CLAUDE.md` → "Region-growth styles"). It generates blocky boards across
+sizes/difficulties and asserts the invariants that matter regardless of how a
+board *looks*: every region contiguous and non-empty, exactly one solution, a
+rating the hint engine can explain (never level 3), hint-solvable end to end,
+and — above easy — no single-cell region and no board that falls out of naked
+singles alone. That last pair is the regression to fear: the uniqueness repair
+moves cells *out* of regions, so without its `minSize` guard it quietly undoes
+the size floor the style depends on.
