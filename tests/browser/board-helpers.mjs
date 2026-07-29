@@ -125,3 +125,51 @@ export async function swipe(page, points) {
   await page.mouse.up();
   await page.waitForTimeout(40);
 }
+
+// Wait until the board is actually readable: the intro reveal has finished AND
+// the cells carry their state. A fixed waitForTimeout after "Neues Spiel" is not
+// enough — during `.board.intro-revealing` the cells exist but have no
+// `data-state`, so reads come back undefined and taps land on nothing.
+export function boardSettled(page, timeout = 25000) {
+  return page.waitForFunction(
+    () => {
+      const b = document.querySelector('.board');
+      return (
+        b &&
+        !b.classList.contains('intro-revealing') &&
+        document.querySelectorAll('.cell')[0]?.dataset.state !== undefined
+      );
+    },
+    null,
+    { timeout }
+  );
+}
+
+// Switch size/difficulty through the real settings modal, then wait for the new
+// board. There is NO <select> for either — size is `#size-range` (a range input)
+// and difficulty is `#difficulty`, a segmented group of buttons — so
+// page.selectOption() throws, and swallowing that error leaves you measuring the
+// PREVIOUS configuration while your labels claim otherwise.
+//
+// Settings are committed only by `#settings-apply`, which saves them and starts
+// the new game itself. Closing the modal any other way (Escape, backdrop) throws
+// the change away: the range shows the new value, the board keeps the old size.
+export async function configureGame(page, { size, difficulty }) {
+  await page.locator('#open-settings').click();
+  await page.waitForSelector('#size-range', { state: 'visible' });
+  if (size !== undefined) {
+    const range = page.locator('#size-range');
+    await range.fill(String(size));
+    await range.dispatchEvent('input');
+  }
+  if (difficulty !== undefined) {
+    await page.locator(`#difficulty button[data-value="${difficulty}"]`).click();
+  }
+  await page.locator('#settings-apply').click(); // saves AND calls newGame()
+  await boardSettled(page);
+  // Size 12 is hard-only, so the applied difficulty can differ from the request.
+  return page.evaluate(() => ({
+    size: Math.round(Math.sqrt(document.querySelectorAll('.cell').length)),
+    difficulty: document.querySelector('#difficulty button[aria-checked="true"]')?.dataset.value,
+  }));
+}
