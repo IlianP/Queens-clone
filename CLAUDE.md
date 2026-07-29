@@ -74,13 +74,14 @@ blocks blob workers too), and **prepends `<meta charset="utf-8">`** so the
 German text + emoji don't mojibake. Verify the bundle in a mobile-sized
 Playwright viewport (Chromium at `/opt/pw-browsers`) before publishing.
 
-`--style blocky` builds a **trial** bundle of the alternative region-growth
-style (see below) without touching what the site serves: it embeds the
-`levels/<N>-<difficulty>-blocky.json` pools under the plain keys `drawLevel`
-looks up, and rewrites *both* live-generation paths (the worker and `main.js`'s
-inline fallback) to pass `style: 'blocky'` — otherwise the one board that slips
-past the pools comes back in the old look. Both rewrites are guarded and throw
-if the source expression moves.
+`--style` defaults to `mixed` — the bundle then behaves exactly like the site,
+because the shipped pools already hold both looks. `--style organic|blocky`
+builds a **single-style trial** bundle instead: it embeds the
+`levels/<N>-<difficulty>-<style>.json` pools under the plain keys `drawLevel`
+looks up, and pins live generation by overriding `randomStyle()` in `main.js`
+(every generation path routes through it). The override is guarded and throws if
+that function moves, so a rename can't silently ship a mixed bundle under a
+single-style name.
 
 When driving the bundle with Playwright, wait for the intro reveal to finish
 (`.board` loses `intro-revealing` *and* a cell has `data-state`) before reading
@@ -98,9 +99,9 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `index.html` | Page skeleton |
 | `css/styles.css` | Layout, responsive/mobile design |
 | `js/solver.js` | Rules, unit lists, solution counting (uniqueness), human-style deduction solver + difficulty rating |
-| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds); two region-growth styles, see below |
+| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds); two region-growth styles (`organic` / `blocky`), see below — mixing is a *pool*-level concern, the generator only ever grows one style per call |
 | `js/levels.js` | Serves precomputed puzzles from `levels/` with a random D4 rotation/mirror per draw; session shuffle-bag; `drawLevel` resolves `null` on any failure |
-| `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`) |
+| `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`). Shipped pools are **mixed**: half organic, half blocky, each entry tagged `t` — see "Mixing the two styles" |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`; pure logic |
@@ -158,21 +159,43 @@ forced opening the floor removes — so easy keeps `minSize: 1` (see `BLOCKY_OPT
 and gets only the straighter borders, not the no-freebies signature. Don't
 "fix" that by raising easy's floor; it silently converts easy into medium.
 
-Nothing ships in this style yet — the default is `organic`, the pools `drawLevel`
-reads are unchanged, and the `levels/*-blocky.json` trial pools (22 buckets × 30,
-built with `tools/generate-levels.mjs --count 30 --style blocky --out-suffix
--blocky`) are inert until something points at them. `tests/logic/blocky-style.mjs`
-guards uniqueness, fairness (hint-solvable), contiguity and the size floor;
-`tools/verify-levels.mjs` covers the trial pools too, since it reads each
-bucket's size/difficulty from the file rather than its name.
+### Mixing the two styles (what the pools actually serve)
 
-**Adopting the style means regenerating, not renaming.** The trial pools hold 30
-puzzles per bucket; the shipped ones hold 50. Promoting it = rerun
-`generate-levels.mjs --style blocky` without `--out-suffix` (plus `--count 50`),
-re-verify, and flip the default in `generatePuzzle` so live fallback generation
-matches the pools. Blocky generation is *faster* than organic at every size
-(12×12 hard: ~2 s per accepted board), so a full rebuild is minutes, not tens of
-minutes.
+The styles are **not** an either/or: `generate-levels.mjs --style mixed` fills
+each bucket half organic, half blocky, so ONE pool file serves both looks. That
+is deliberately *not* a coin flip per game — `drawLevel`'s shuffle bag hands the
+pool out evenly and without repeats, so a session alternates instead of dealing
+five of one look in a row. Nothing in `js/levels.js` changed for this: a mixed
+pool is just a pool.
+
+Each mixed entry carries a `"t": "organic" | "blocky"` tag. It is **provenance
+only** — `decodePuzzle` ignores unknown fields and the game never reads it;
+`verify-levels.mjs` uses it to print the real split per bucket, so "half and
+half" is checked rather than claimed. Untagged pools stay valid (format `v` is
+still 1), which is why the single-style trial pools need no rebuild.
+
+Live generation mixes too: `randomStyle()` in `main.js` picks per game and the
+style rides along to the worker (`generator.worker.js` forwards it). Without
+that, the rare board that misses the pool would always arrive in one fixed look —
+the one moment a player would notice the inconsistency. `build-artifact.mjs`
+overrides exactly that one function for its single-style trial bundles, so a
+rename fails the build instead of silently shipping a mixed bundle.
+
+**Easy is the asymmetric case.** Blocky easy is *not* visually distinctive (the
+size floor that creates the look is off there, see above) and carries ~50 % more
+single-cell freebie regions than organic easy. Mixing it in is therefore close to
+cosmetic on that difficulty — if easy ever feels too generous, dropping blocky
+from the easy buckets is the first knob, not the region-growth parameters.
+
+The single-style pools (`levels/*-blocky.json`, 22 buckets × 30) stay around as
+the A/B reference and are inert: `drawLevel` only ever asks for
+`<N>-<difficulty>.json`. `tests/logic/blocky-style.mjs` guards uniqueness,
+fairness (hint-solvable), contiguity and the size floor for blocky generation;
+`tools/verify-levels.mjs` covers every pool file, since it reads each bucket's
+size/difficulty from the file rather than its name.
+
+Blocky generation is *faster* than organic at every size (12×12 hard: ~2 s per
+accepted board), so the mixed rebuild costs roughly half of a full organic one.
 
 ### Precomputed level pools
 

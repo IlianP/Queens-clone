@@ -263,11 +263,20 @@ function freshWorker() {
   return genWorker;
 }
 
+// The pools are mixed half organic / half blocky, so live generation — the
+// fallback when a pool is missing — flips a coin too. Otherwise the rare board
+// that misses the pool would always come back in the same look, which is exactly
+// when a player would notice the inconsistency.
+function randomStyle() {
+  return Math.random() < 0.5 ? 'organic' : 'blocky';
+}
+
 function generateAsync(N, difficulty, budgetMs) {
+  const style = randomStyle();
   return new Promise((resolve) => {
     const w = freshWorker();
     if (!w) {
-      resolve(generatePuzzle(N, difficulty, { budgetMs }));
+      resolve(generatePuzzle(N, difficulty, { budgetMs, style }));
       return;
     }
     w.onmessage = (ev) => resolve(ev.data);
@@ -277,9 +286,9 @@ function generateAsync(N, difficulty, budgetMs) {
         w.terminate();
       } catch (_) {}
       genWorker = null;
-      resolve(generatePuzzle(N, difficulty, { budgetMs }));
+      resolve(generatePuzzle(N, difficulty, { budgetMs, style }));
     };
-    w.postMessage({ N, difficulty, budgetMs });
+    w.postMessage({ N, difficulty, budgetMs, style });
   });
 }
 

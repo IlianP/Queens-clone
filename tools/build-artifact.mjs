@@ -25,12 +25,15 @@ const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
 const argv = process.argv.slice(2);
 const styleIdx = argv.indexOf('--style');
-const style = styleIdx >= 0 ? argv[styleIdx + 1] : 'organic';
-if (!['organic', 'blocky'].includes(style)) {
-  console.error("--style must be 'organic' or 'blocky'");
+const style = styleIdx >= 0 ? argv[styleIdx + 1] : 'mixed';
+if (!['organic', 'blocky', 'mixed'].includes(style)) {
+  console.error("--style must be 'organic', 'blocky' or 'mixed'");
   process.exit(1);
 }
-const POOL_SUFFIX = style === 'organic' ? '' : `-${style}`;
+// 'mixed' is what the app itself does — the shipped pools already hold both
+// looks, so it needs no override at all. The single-style builds are the trial
+// bundles: they read a `-<style>` pool and pin live generation to match.
+const POOL_SUFFIX = style === 'mixed' ? '' : `-${style}`;
 
 // Strip ESM glue so the files share one classic-script scope. (Relies on there
 // being no top-level name collisions across modules — true today; verify with
@@ -83,16 +86,18 @@ const workerExpr = "new Worker(new URL('./generator.worker.js', import.meta.url)
 if (!main.includes(workerExpr)) throw new Error('worker construction line not found — bundle would break');
 main = main.replace(workerExpr, 'new Worker(__WORKER_URL__)');
 
-// Live generation is the fallback whenever a pool draw fails, so a styled bundle
-// has to style that path too — otherwise the one board that slips through the
-// cracks is the one in the *old* look. Both of main.js's inline calls and the
-// worker below get the style; guard it so a rename can't make this a silent no-op.
-if (style !== 'organic') {
-  const inlineCall = 'generatePuzzle(N, difficulty, { budgetMs })';
-  if (!main.includes(inlineCall)) {
-    throw new Error('inline generatePuzzle call not found — styled bundle would fall back to organic');
+// Live generation is the fallback whenever a pool draw fails, so a single-style
+// bundle has to pin that path too — otherwise the one board that slips past the
+// pool comes back in the other look. main.js routes every generation path
+// (worker and both inline fallbacks) through randomStyle(), so overriding that
+// one function covers all of them. Guarded: a rename must fail the build rather
+// than silently leave the bundle mixed.
+if (style !== 'mixed') {
+  const coinFlip = "return Math.random() < 0.5 ? 'organic' : 'blocky';";
+  if (!main.includes(coinFlip)) {
+    throw new Error('randomStyle() body not found — single-style bundle would stay mixed');
   }
-  main = main.replaceAll(inlineCall, `generatePuzzle(N, difficulty, { budgetMs, style: '${style}' })`);
+  main = main.replace(coinFlip, `return '${style}';`);
 }
 
 // Classic worker source: solver + generator + a plain message handler.
@@ -100,7 +105,7 @@ const workerSrc =
   solver + '\n' + generator + '\n' +
   'self.onmessage = function (e) {\n' +
   '  var d = e.data;\n' +
-  `  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs, style: '${style}' }));\n` +
+  '  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs, style: d.style }));\n' +
   '};\n';
 
 // Page bundle: settings -> audio -> voice -> solver -> generator -> levels ->

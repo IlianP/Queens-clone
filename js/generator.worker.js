@@ -7,7 +7,7 @@
 import { generatePuzzle } from './generator.js';
 
 self.onmessage = (e) => {
-  const { N, difficulty, budgetMs } = e.data;
+  const { N, difficulty, budgetMs, style } = e.data;
   // region (number[][]) and solution (number[]) are structured-cloneable.
-  self.postMessage(generatePuzzle(N, difficulty, { budgetMs }));
+  self.postMessage(generatePuzzle(N, difficulty, { budgetMs, style }));
 };
