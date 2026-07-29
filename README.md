@@ -132,8 +132,25 @@ bisher zufällige Farben – aus 50 gespeicherten Formen entstehen so hunderte
 unterscheidbare Bretter. Innerhalb einer Sitzung wiederholt sich keine Form, bevor
 nicht alle an der Reihe waren (nur im Speicher, nichts wird persistiert).
 
+### Zwei Formensprachen
+
+Die Farbregionen werden in **zwei verschiedenen Stilen** gebaut, und jeder Pool
+enthält beide zur Hälfte:
+
+- **organisch** – amöbenartige Regionen mit ausgefransten Grenzen.
+- **blockig** – Regionen wachsen in geraden Streifen, dadurch lange gerade
+  Grenzen, rechteckige Formen und eine große Hintergrundfarbe.
+
+Weil jedes Rätsel eines Pools einmal an die Reihe kommt, bevor sich etwas
+wiederholt, wechseln sich beide Looks beim Spielen gleichmäßig ab. **An der
+Schwierigkeit ändert der Stil nichts** – sie hängt allein davon ab, welche
+Denktechniken ein Brett verlangt. Nur bei *Leicht* fällt der Unterschied kaum
+auf: diese Stufe braucht die kleinen „geschenkten" Regionen, die den blockigen
+Look erst ausmachen würden.
+
 Schlägt das Laden eines Pools fehl (z. B. offline geänderte Dateien), erzeugt das
-Spiel das Rätsel wie früher live im Hintergrund – es gibt also immer ein Brett.
+Spiel das Rätsel wie früher live im Hintergrund – es gibt also immer ein Brett,
+dann mit zufällig gewähltem Stil.
 
 Die Pools werden mit `node tools/generate-levels.mjs` erzeugt und mit
 `node tools/verify-levels.mjs` geprüft (Eindeutigkeit, Schwierigkeit, Symmetrien,

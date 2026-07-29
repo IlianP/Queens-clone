@@ -75,6 +75,17 @@ if (existsSync(levelsDir)) {
     if (m) pools[m[1]] = JSON.parse(readFileSync(join(levelsDir, f), 'utf8'));
   }
 }
+// A single-style build with no matching pools is a mistake, not a fallback: the
+// bundle would silently generate every board live (slow, and no pool means no
+// difficulty guarantee up front). Say which command produces them and stop.
+if (Object.keys(pools).length === 0 && style !== 'mixed') {
+  console.error(
+    `no levels/*${POOL_SUFFIX}.json pools found.\n` +
+      `Build them first:\n` +
+      `  node tools/generate-levels.mjs --style ${style} --out-suffix ${POOL_SUFFIX}`
+  );
+  process.exit(1);
+}
 if (Object.keys(pools).length === 0) {
   console.warn(
     `warning: no levels/*${POOL_SUFFIX}.json found — bundle will fall back to live generation`
