@@ -74,6 +74,19 @@ blocks blob workers too), and **prepends `<meta charset="utf-8">`** so the
 German text + emoji don't mojibake. Verify the bundle in a mobile-sized
 Playwright viewport (Chromium at `/opt/pw-browsers`) before publishing.
 
+`--style blocky` builds a **trial** bundle of the alternative region-growth
+style (see below) without touching what the site serves: it embeds the
+`levels/<N>-<difficulty>-blocky.json` pools under the plain keys `drawLevel`
+looks up, and rewrites *both* live-generation paths (the worker and `main.js`'s
+inline fallback) to pass `style: 'blocky'` — otherwise the one board that slips
+past the pools comes back in the old look. Both rewrites are guarded and throw
+if the source expression moves.
+
+When driving the bundle with Playwright, wait for the intro reveal to finish
+(`.board` loses `intro-revealing` *and* a cell has `data-state`) before reading
+or tapping — `openGame` in `tests/browser/board-helpers.mjs` already does; a
+fixed `waitForTimeout` after "Neues Spiel" does not, and reads back `undefined`.
+
 ## Architecture
 
 Pure logic modules have **no DOM access**; `main.js` is the only file that
@@ -145,10 +158,21 @@ forced opening the floor removes — so easy keeps `minSize: 1` (see `BLOCKY_OPT
 and gets only the straighter borders, not the no-freebies signature. Don't
 "fix" that by raising easy's floor; it silently converts easy into medium.
 
-Nothing ships in this style yet — the default is `organic` and the pools are
-unchanged. `tools/generate-levels.mjs --style blocky --out-suffix -blocky` builds
-a trial pool next to the real one; `tests/logic/blocky-style.mjs` guards
-uniqueness, fairness (hint-solvable), contiguity and the size floor.
+Nothing ships in this style yet — the default is `organic`, the pools `drawLevel`
+reads are unchanged, and the `levels/*-blocky.json` trial pools (22 buckets × 30,
+built with `tools/generate-levels.mjs --count 30 --style blocky --out-suffix
+-blocky`) are inert until something points at them. `tests/logic/blocky-style.mjs`
+guards uniqueness, fairness (hint-solvable), contiguity and the size floor;
+`tools/verify-levels.mjs` covers the trial pools too, since it reads each
+bucket's size/difficulty from the file rather than its name.
+
+**Adopting the style means regenerating, not renaming.** The trial pools hold 30
+puzzles per bucket; the shipped ones hold 50. Promoting it = rerun
+`generate-levels.mjs --style blocky` without `--out-suffix` (plus `--count 50`),
+re-verify, and flip the default in `generatePuzzle` so live fallback generation
+matches the pools. Blocky generation is *faster* than organic at every size
+(12×12 hard: ~2 s per accepted board), so a full rebuild is minutes, not tens of
+minutes.
 
 ### Precomputed level pools
 
