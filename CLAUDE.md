@@ -287,8 +287,39 @@ have and when:
 Both suppress the percentage when the sample is too small to mean anything
 (`MIN_SOLVES_FOR_PERCENTILE`, `MIN_GLOBAL_FOR_PERCENTILE`) and fall back to the
 plain placement; `percentileBetter` counts a tie as half and never rounds to a
-flat 0/100 unless the score really beat none/all. `tests/logic/percentile.mjs`
-covers all of it (with a localStorage shim). Bundle constraint:
+flat 0/100 unless the score really beat none/all.
+
+`seedSolveHistory()` runs once at boot and backfills an **empty** bucket history
+from that bucket's top-10 list. Devices that played before the history existed
+would otherwise compare a fresh solve against nothing — the card claiming "von 2
+Partien" directly above ten older entries. It is idempotent (a bucket is only
+seeded while its history is empty), so no migration flag exists; keep it that
+way. Known and accepted: seeded scores are the player's *best* ten, not a fair
+sample, so a percentile against a freshly seeded bucket understates the new
+solve. Real solves dilute it.
+
+The global tab marks the player's own row with the same `.me` highlight the local
+list uses, but only **after** a submit — before that the solve genuinely isn't on
+the board, so nothing is highlighted and `noteGlobalNotSubmitted` borrows the
+(collapsed-while-empty) submit status line to say so rather than growing the
+card. The row is found by `matchOwnEntry`, **not** by indexing with the server's
+rank: `submit_score` ranks a score/seconds tie in the new entry's favour while
+`top_scores` orders ties by `created_at` (newest last), so the rank is only used
+as a tie-breaker hint between value-identical rows.
+
+Debug mode adds the whole scoring picture to the debug export
+(`buildResultDebug` → `info.result`): score components and formula, the
+`getPersonalStats` snapshot the card was rendered from (kept on
+`pendingWin.personal`), the raw history + top-10 scores behind it, and the global
+rank/total. Board state alone can't explain a percentile, which is what made the
+empty-history bug undiagnosable from an export. The win card carries its own
+copy button (`#win-debug-row`, debug-only) because the interesting moment is the
+one right after a solve.
+
+`tests/logic/percentile.mjs` covers the pure logic (with a localStorage shim) and
+`tests/browser/win-feedback.mjs` the wiring — seeding, the highlight, the
+pre-submit note and the debug block, with every RPC mocked so the live
+leaderboard is never written to. Bundle constraint:
 `highscores.js`/`leaderboard.js` are concatenated into one classic script, so
 **no top-level name collisions** (that's why the store key is `SCORES_KEY`, not
 another `KEY`) and **no `import.meta`**.

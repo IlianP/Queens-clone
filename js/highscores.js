@@ -193,6 +193,45 @@ export function recordSolve(size, difficulty, score) {
   return list;
 }
 
+// Backfill empty histories from the top-10 list. Without this, the history is
+// empty on every device that played before it existed, so the win card would
+// claim "von 2 Partien" right above a full ten-entry list — the numbers visibly
+// contradicting each other (the exact symptom this fixes).
+//
+// The seeded scores are the only past solves still on record, so they are all
+// we can offer. Two consequences, both deliberate:
+//   * they are the player's BEST ten, not a fair sample, so a percentile against
+//     a freshly seeded bucket is pessimistic — it understates how good the new
+//     solve was. Real solves dilute that with every game played.
+//   * chronological order is unknown; the top-10 order is kept, which puts them
+//     at the front of the array where the cap evicts first. That is right: they
+//     are the oldest thing in there.
+//
+// Idempotent by construction — a bucket is only seeded while its history is
+// empty, and a seeded bucket never becomes empty again — so no migration flag is
+// needed, and clearing the history deliberately re-seeds what's left.
+// Returns the number of buckets seeded.
+export function seedSolveHistory() {
+  const history = loadSolveHistory();
+  const top = loadLocalScores();
+  let seeded = 0;
+  for (const key of Object.keys(top)) {
+    if (history[key] && history[key].length) continue;
+    const scores = top[key].map((e) => e.score).filter((s) => Number.isFinite(s));
+    if (!scores.length) continue;
+    history[key] = scores.slice(0, MAX_SOLVE_HISTORY);
+    seeded++;
+  }
+  if (seeded) {
+    try {
+      localStorage.setItem(SOLVES_KEY, JSON.stringify(history));
+    } catch (e) {
+      /* storage unavailable — the seed just won't persist */
+    }
+  }
+  return seeded;
+}
+
 // How much of `others` this score beats, as a percentage (0–100, rounded).
 // Pure: `others` are the *other* solves, this score is not among them. A tie
 // counts as half a win, the usual percentile-rank convention.
@@ -243,6 +282,39 @@ export function getPersonalStats(size, difficulty, score) {
     delta: bestScore == null ? null : Math.abs(score - bestScore),
     capped: total >= MAX_SOLVE_HISTORY,
   };
+}
+
+// Find the player's own row in a fetched global top list, so the UI can mark it
+// the same way the local list marks a fresh entry. Pure.
+//
+// The server's rank can't be used as an index directly: submit_score ranks a tie
+// on both score and seconds in the new entry's favour, while top_scores orders
+// ties by created_at, which puts the newest LAST among them. So match on the
+// values instead and, when several rows are identical, take the one closest to
+// where the rank said it would be. Returns -1 when the entry isn't in the list
+// (rank beyond the fetched limit), which means "don't highlight anything".
+export function matchOwnEntry(rows, entry, expectedIndex = -1) {
+  if (!Array.isArray(rows) || !entry) return -1;
+  let best = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    if (
+      sanitizeName(r.name) !== sanitizeName(entry.name) ||
+      Number(r.score) !== Number(entry.score) ||
+      Number(r.seconds) !== Number(entry.seconds) ||
+      Number(r.hints) !== Number(entry.hints) ||
+      Number(r.mistakes) !== Number(entry.mistakes)
+    )
+      continue;
+    if (best === -1) best = i;
+    else if (
+      expectedIndex >= 0 &&
+      Math.abs(i - expectedIndex) < Math.abs(best - expectedIndex)
+    )
+      best = i;
+  }
+  return best;
 }
 
 // The global counterpart: submit_score reports a 1-based `rank` out of `total`

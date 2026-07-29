@@ -110,7 +110,15 @@ sofort da und braucht weder Namen noch Internet. Bei wenigen Partien (unter fün
 stattdessen die schlichte Platzierung – ein Prozentwert aus zwei Runden wäre nur Rauschen.
 Nach dem **Eintragen** in die globale Rangliste ergänzt die Statuszeile den gleichen
 Vergleich für das gesamte Feld (*„Platz 37 von 214 – besser als 83 % der Einträge"*),
-sobald dort genug Einträge zusammengekommen sind.
+sobald dort genug Einträge zusammengekommen sind; im *Global*-Tab wird die eigene,
+gerade eingetragene Zeile dann grün umrandet – genau wie im lokalen Tab. Solange du
+nicht eingetragen hast, ist dort nichts markiert, weil dein Ergebnis dort noch nicht
+existiert (die Statuszeile weist darauf hin).
+
+Wer schon vor dieser Neuerung gespielt hat, verliert den Vergleich nicht: die
+bestehenden Top-10-Einträge werden beim ersten Start als Partie-Historie übernommen.
+Das sind allerdings nur die **besten** zehn – solange kaum neue Partien dazugekommen
+sind, fällt der Prozentwert deshalb eher zu streng aus.
 
 ### Online-Rangliste einrichten (optional, Supabase)
 

@@ -13,6 +13,14 @@ import {
   recordSolve,
   getPersonalStats,
   globalPercentile,
+  seedSolveHistory,
+  matchOwnEntry,
+  getSolveScores,
+  MAX_SOLVE_HISTORY,
+  MIN_SOLVES_FOR_PERCENTILE,
+  MIN_GLOBAL_FOR_PERCENTILE,
+  HINT_PENALTY,
+  MISTAKE_PENALTY,
 } from './highscores.js';
 import { leaderboardConfigured, submitScore, fetchTopScores } from './leaderboard.js';
 import {
@@ -93,6 +101,8 @@ const dom = {
   winSubmit: el('win-submit'),
   winSubmitStatus: el('win-submit-status'),
   winNewGame: el('win-new-game'),
+  winDebugRow: el('win-debug-row'),
+  winDebugCopy: el('win-debug-copy'),
   winSettings: el('win-settings'),
   openLeaderboard: el('open-leaderboard'),
   leaderboardOverlay: el('leaderboard-overlay'),
@@ -905,8 +915,10 @@ function onWin() {
     )} · ${plural(mistakes, 'Fehler', 'Fehler')}</span>`;
 
   // Compare against the history *before* this solve joins it (commitPendingWin
-  // records it later), so the comparison set is "everything up to now".
-  renderPersonalFeedback(getPersonalStats(game.N, settings.difficulty, score), game.N, settings.difficulty);
+  // records it later), so the comparison set is "everything up to now". Kept on
+  // pendingWin so the debug export can show exactly what the card was told.
+  pendingWin.personal = getPersonalStats(game.N, settings.difficulty, score);
+  renderPersonalFeedback(pendingWin.personal, game.N, settings.difficulty);
 
   dom.winNickname.value = settings.nickname || '';
   globalSubmitInFlight = false;
@@ -961,7 +973,35 @@ async function renderWinGlobal() {
     dom.winScores.firstChild.textContent = 'Globale Bestenliste nicht erreichbar.';
     return;
   }
-  renderScoreList(dom.winScores, rows, -1);
+  // Mark the freshly submitted entry, like the local list does — but only once
+  // it really is on the board. Before submitting, this list is other players'
+  // data and the solve simply isn't in it, so nothing is highlighted; the status
+  // line says why instead (see noteGlobalNotSubmitted).
+  const mine = pendingWin.submittedGlobal
+    ? matchOwnEntry(
+        rows,
+        {
+          name: pendingWin.globalName,
+          score: pendingWin.score,
+          seconds: pendingWin.seconds,
+          hints: pendingWin.hints,
+          mistakes: pendingWin.mistakes,
+        },
+        Number.isFinite(pendingWin.globalRank) ? pendingWin.globalRank - 1 : -1
+      )
+    : -1;
+  renderScoreList(dom.winScores, rows, mine);
+  if (!pendingWin.submittedGlobal) noteGlobalNotSubmitted();
+}
+
+// Explain the absence of your own result on the global tab before you've
+// submitted it. This borrows the submit status line rather than adding a row or
+// another paragraph: it's the line about exactly this, it's collapsed while
+// empty, and reusing it keeps the win card from growing on a phone. Never
+// overwrites a real message (a success, an error, a retry countdown).
+function noteGlobalNotSubmitted() {
+  if (dom.winSubmitStatus.textContent) return;
+  setStatus(dom.winSubmitStatus, 'Noch nicht eingetragen – „Eintragen" trägt dich hier ein.');
 }
 
 // Persist the pending win to the on-device list exactly once.
@@ -1031,6 +1071,11 @@ async function onWinSubmit() {
 
   if (res && Number.isFinite(res.rank)) {
     pendingWin.submittedGlobal = true; // latch: this solve is now on the global board
+    // Remember what was sent under which name and where it landed, so the global
+    // tab can find and mark this exact row (see matchOwnEntry).
+    pendingWin.globalName = sanitizeName(name) || 'Anonym';
+    pendingWin.globalRank = res.rank;
+    pendingWin.globalTotal = res.total;
     dom.winSubmit.disabled = true;
     // Placement plus, once the bucket is big enough to make it meaningful, the
     // share of entries beaten — "Platz 37" alone says little without knowing
@@ -1687,6 +1732,8 @@ dom.check.addEventListener('click', () => {
 // ---------- Debug ----------
 function updateDebugButton() {
   dom.debugCopy.hidden = !settings.debug;
+  // Same state, second home: on the win card, where the scoring data is fresh.
+  dom.winDebugRow.hidden = !settings.debug;
 }
 
 // The extended-debug sub-option only makes sense with Debug on, so it's shown in
@@ -1751,7 +1798,62 @@ function buildDebugInfo() {
     info.app = 'queens-debug/2+journal';
     info.journal = moveJournal;
   }
+  // A finished game carries its scoring with it: the raw components, the derived
+  // score, and every input the relative feedback was computed from. Without this
+  // a report of "the percentile line looks wrong" can't be checked — the board
+  // state says nothing about the score stores (the gap that made the empty-history
+  // bug hard to diagnose from an export).
+  const result = buildResultDebug();
+  if (result) info.result = result;
   return info;
+}
+
+// The scoring half of the debug state, or null while no game has been won. Kept
+// separate so it can be attached to the win-card copy as well.
+function buildResultDebug() {
+  if (!pendingWin) return null;
+  const { size, difficulty } = pendingWin;
+  const history = getSolveScores(size, difficulty);
+  const p = pendingWin.personal;
+  return {
+    bucket: `${size}-${difficulty}`,
+    seconds: pendingWin.seconds,
+    hints: pendingWin.hints,
+    mistakes: pendingWin.mistakes,
+    score: pendingWin.score,
+    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints} + ${MISTAKE_PENALTY}·${pendingWin.mistakes}`,
+    savedLocally: !!pendingWin.saved,
+    savedRank: pendingWin.saved ? pendingWin.savedRank : null,
+    // What the win card was told, computed before this solve joined the history.
+    personal: p
+      ? {
+          previousSolves: p.total,
+          rank: p.rank,
+          percentile: p.percentile,
+          percentileSuppressed: p.percentile == null,
+          minSolvesForPercentile: MIN_SOLVES_FOR_PERCENTILE,
+          isBest: p.isBest,
+          bestScore: p.bestScore,
+          delta: p.delta,
+          historyAtCap: p.capped,
+          maxHistory: MAX_SOLVE_HISTORY,
+        }
+      : null,
+    // The raw stores behind it, so the numbers above can be recomputed by hand.
+    // `historyNow` includes this solve once it has been committed.
+    historyNow: history,
+    historyCount: history.length,
+    localTop: getLocalScores(size, difficulty).map((e) => e.score),
+    global: pendingWin.submittedGlobal
+      ? {
+          rank: pendingWin.globalRank,
+          total: pendingWin.globalTotal,
+          percentile: globalPercentile(pendingWin.globalRank, pendingWin.globalTotal),
+          minTotalForPercentile: MIN_GLOBAL_FOR_PERCENTILE,
+          name: pendingWin.globalName,
+        }
+      : null,
+  };
 }
 
 // Pretty-print the debug JSON without exploding every number onto its own line.
@@ -1813,12 +1915,14 @@ async function writeToClipboard(text) {
   }
 }
 
-async function copyDebug() {
+// Copy the debug state and confirm on the button that triggered it — either the
+// one in the settings or the one on the win card.
+async function copyDebug(btn = dom.debugCopy) {
   if (!game) return;
   const ok = await writeToClipboard(formatDebug(buildDebugInfo()));
-  const label = dom.debugCopy.textContent;
-  dom.debugCopy.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
-  setTimeout(() => (dom.debugCopy.textContent = label), 1500);
+  const label = btn.textContent;
+  btn.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
+  setTimeout(() => (btn.textContent = label), 1500);
 }
 
 // When a global score submit fails and Debug mode is on, copy the full debug
@@ -1834,7 +1938,8 @@ async function copySubmitFailureDebug(attempts) {
   if (ok) dom.winSubmitStatus.textContent += ' (Debug kopiert 📋)';
 }
 
-dom.debugCopy.addEventListener('click', copyDebug);
+dom.debugCopy.addEventListener('click', () => copyDebug(dom.debugCopy));
+dom.winDebugCopy.addEventListener('click', () => copyDebug(dom.winDebugCopy));
 dom.debugMode.addEventListener('change', () => {
   settings.debug = dom.debugMode.checked;
   saveSettings(settings);
@@ -2759,6 +2864,10 @@ function hide(node) {
 }
 
 // ---------- boot ----------
+// Backfill the solve history from the top-10 list once per bucket. Devices that
+// played before the history existed would otherwise compare a fresh solve
+// against an empty past. Idempotent, so it's safe on every boot.
+seedSolveHistory();
 updateDebugButton();
 applySoundSetting();
 applyVoiceSetting();

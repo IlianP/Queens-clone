@@ -30,6 +30,13 @@ Supabase leaderboard. It asserts `submitScore` retries transient failures
 up after a bounded number of attempts. It exercises the real backoff schedule,
 so it takes a few seconds.
 
+`percentile.mjs` covers the relative-feedback half of `js/highscores.js` — the
+solve history, `percentileBetter` / `globalPercentile` (ties count half, and the
+rounding never claims a flat 0/100 unless the score really beat none/all),
+`getPersonalStats`, the `seedSolveHistory` backfill (idempotent, and the reason a
+pre-history device doesn't report "von 0 Partien") and `matchOwnEntry`. It
+installs a small in-memory `localStorage` stand-in, so it stays pure Node.
+
 `voice-parse.mjs` covers `parseVoiceCommand` in `js/voice.js` — the pure German
 transcript → command parser behind Voice Mode. It checks the chess-style
 coordinate mapping (letter=column, number=row, e.g. "C4"), the German spelling
@@ -68,6 +75,15 @@ checks the global-submit flow: it **intercepts every Supabase RPC with
 submit endpoint to drive the auto-retry + manual *"Erneut versuchen"* path, then
 lets it succeed and verifies the same solve can't be submitted twice
 (`pendingWin.submittedGlobal`). Slow by design (it waits out the real backoff).
+
+`win-feedback.mjs` covers the win screen's relative feedback, also with **every
+Supabase RPC mocked via `page.route`**. It seeds the "played before the solve
+history existed" state (full top-10, no history) and checks the boot backfill
+makes the personal line compare against those games; that the global tab
+highlights nothing before a submit but explains the absence in the status line;
+that after a submit the player's own row carries the `.me` highlight (found by
+value, not by rank index) and the status reports the share beaten; and that the
+debug-only copy button on the win card exports the scoring + percentile inputs.
 
 `voice-mode.mjs` drives Voice Mode end-to-end through the real DOM. There's no
 microphone here, so it **injects a fake `SpeechRecognition`** (via

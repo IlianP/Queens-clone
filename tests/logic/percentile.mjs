@@ -24,6 +24,8 @@ const {
   getSolveScores,
   getPersonalStats,
   saveLocalScore,
+  seedSolveHistory,
+  matchOwnEntry,
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
@@ -150,6 +152,71 @@ for (const s of [300, 310, 320]) recordSolve(6, 'easy', s);
   const st = getPersonalStats(6, 'easy', 100);
   eq(st.bestScore, 40, 'the all-time best comes from the top-10 list');
   eq(st.isBest, false, '100 does not beat the surviving 40');
+}
+
+// --- seedSolveHistory -------------------------------------------------------
+// A device that played before the history existed has a full top-10 list and no
+// history at all. Left alone, the win card would compare a fresh solve against
+// nothing while showing ten past entries right below it.
+localStorage.clear();
+for (const s of [14, 18, 23, 30]) {
+  saveLocalScore(9, 'medium', { name: 'Ich', seconds: s, hints: 0, mistakes: 0, score: s });
+}
+eq(getSolveScores(9, 'medium').length, 0, 'no history yet (pre-feature device)');
+{
+  // saveLocalScore records nothing into the history — that only happens via
+  // recordSolve — so this really is the "old device" state.
+  eq(seedSolveHistory(), 1, 'one bucket seeded');
+  eq(JSON.stringify(getSolveScores(9, 'medium')), '[14,18,23,30]', 'seeded from the top-10 scores');
+  eq(seedSolveHistory(), 0, 'seeding again does nothing (idempotent)');
+
+  // And the feedback now matches what the list shows instead of "von 0 Partien".
+  const st = getPersonalStats(9, 'medium', 19);
+  eq(st.total, 4, 'the seeded solves count as previous games');
+  eq(st.rank, 3, 'ranked behind 14 and 18');
+  eq(st.bestScore, 14, 'best comes from the seeded history');
+}
+
+// A bucket that already has history is left untouched (no double counting).
+localStorage.clear();
+saveLocalScore(7, 'hard', { name: 'Ich', seconds: 90, hints: 0, mistakes: 0, score: 90 });
+recordSolve(7, 'hard', 90);
+eq(seedSolveHistory(), 0, 'a bucket with history is not seeded');
+eq(JSON.stringify(getSolveScores(7, 'hard')), '[90]', 'existing history unchanged');
+
+// Nothing to seed from at all.
+localStorage.clear();
+eq(seedSolveHistory(), 0, 'no top-10 lists → nothing seeded');
+
+// --- matchOwnEntry ----------------------------------------------------------
+{
+  const rows = [
+    { name: 'IlianP', seconds: 14, hints: 0, mistakes: 0, score: 14 },
+    { name: 'Anonym', seconds: 17, hints: 0, mistakes: 0, score: 17 },
+    { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18 },
+    { name: 'Gast', seconds: 18, hints: 0, mistakes: 0, score: 18 },
+  ];
+  const mine = { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18 };
+  eq(matchOwnEntry(rows, mine, 2), 2, 'finds the own row');
+  eq(matchOwnEntry(rows, mine, 3), 2, 'a wrong hint still finds the only match');
+  eq(matchOwnEntry(rows, mine, -1), 2, 'works without a rank hint');
+  // Same name, different score/penalties → not us.
+  eq(matchOwnEntry(rows, { ...mine, score: 99 }, 2), -1, 'a different score is not our row');
+  eq(matchOwnEntry(rows, { ...mine, hints: 1 }, 2), -1, 'a different hint count is not our row');
+  eq(matchOwnEntry(rows, { ...mine, name: 'Wer' }, 2), -1, 'a different name is not our row');
+  eq(matchOwnEntry(rows, mine, 9), 2, 'a rank beyond the list still matches on values');
+  eq(matchOwnEntry([], mine, 0), -1, 'empty list → no highlight');
+  eq(matchOwnEntry(null, mine, 0), -1, 'no list → no highlight');
+
+  // Two identical entries (the same solve submitted twice): pick the one the
+  // server's rank pointed at.
+  const dupes = [
+    { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18 },
+    { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18 },
+    { name: 'IlianP', seconds: 20, hints: 0, mistakes: 0, score: 20 },
+  ];
+  eq(matchOwnEntry(dupes, mine, 1), 1, 'ties resolved towards the reported rank');
+  eq(matchOwnEntry(dupes, mine, 0), 0, 'ties resolved towards the reported rank (first)');
 }
 
 if (failed) {

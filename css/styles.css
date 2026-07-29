@@ -990,6 +990,21 @@ body {
   color: var(--muted);
 }
 
+/* Debug-only row under the win buttons — its own line so the two real actions
+   keep their full width, and deliberately smaller than them. */
+.win-debug-row {
+  display: flex;
+  margin-top: 8px;
+}
+.win-debug-row[hidden] {
+  display: none;
+}
+.win-debug-row .btn {
+  flex: 1;
+  font-size: 0.85rem;
+  padding: 8px 10px;
+}
+
 .score-panel {
   margin-bottom: 12px;
 }
