@@ -124,9 +124,10 @@ Tageshash fürs Rate-Limit gespeichert.
 ## Rätsel-Pools
 
 „Neues Spiel" startet sofort: Die Rätsel werden nicht live berechnet, sondern aus
-vorberechneten Pools in `levels/` gezogen (eine JSON-Datei pro Kombination aus
-Feldgröße und Schwierigkeit, je 50 Rätsel; Feldgröße 12 hat nur einen
-`schwer`-Pool). Damit sich nichts einprägt, wird jedes
+vorberechneten Pools in `levels/` gezogen – eine JSON-Datei pro Kombination aus
+Feldgröße und Schwierigkeit, je 50 Rätsel. Das sind **22 Pools mit zusammen 1100
+Rätseln** (Feldgröße 12 hat nur einen `schwer`-Pool, siehe unten). Damit sich
+nichts einprägt, wird jedes
 gezogene Rätsel zufällig **gedreht oder gespiegelt** (8 Symmetrien) und bekommt wie
 bisher zufällige Farben – aus 50 gespeicherten Formen entstehen so hunderte
 unterscheidbare Bretter. Innerhalb einer Sitzung wiederholt sich keine Form, bevor

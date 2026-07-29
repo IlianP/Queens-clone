@@ -195,7 +195,16 @@ fairness (hint-solvable), contiguity and the size floor for blocky generation;
 size/difficulty from the file rather than its name.
 
 Blocky generation is *faster* than organic at every size (12×12 hard: ~2 s per
-accepted board), so the mixed rebuild costs roughly half of a full organic one.
+accepted board), so the mixed rebuild costs roughly half of a full organic one —
+the full 22-bucket mixed build measured ~51 min, almost all of it the organic
+halves.
+
+A pool build is long enough to invite a background watchdog; if you write one,
+do **not** poll with `until ! pgrep -f "generate-levels"`. `pgrep -f` matches
+full command lines, so the watchdog's own shell — which contains that string —
+matches itself and the loop never exits. It leaves a task "running" for hours
+after the build finished. Match on the output file instead (e.g. `until grep -q
+"done in" out.log`), or just read the file when the build's own task notifies.
 
 ### Precomputed level pools
 
