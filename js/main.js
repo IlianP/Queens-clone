@@ -13,6 +13,15 @@ import {
   recordSolve,
   getPersonalStats,
   globalPercentile,
+  seedSolveHistory,
+  matchOwnEntry,
+  getSolveScores,
+  MAX_SOLVE_HISTORY,
+  MIN_SOLVES_FOR_PERCENTILE,
+  MIN_GLOBAL_FOR_PERCENTILE,
+  MAX_LOCAL_ENTRIES,
+  HINT_PENALTY,
+  MISTAKE_PENALTY,
 } from './highscores.js';
 import { leaderboardConfigured, submitScore, fetchTopScores } from './leaderboard.js';
 import {
@@ -93,6 +102,8 @@ const dom = {
   winSubmit: el('win-submit'),
   winSubmitStatus: el('win-submit-status'),
   winNewGame: el('win-new-game'),
+  winDebugRow: el('win-debug-row'),
+  winDebugCopy: el('win-debug-copy'),
   winSettings: el('win-settings'),
   openLeaderboard: el('open-leaderboard'),
   leaderboardOverlay: el('leaderboard-overlay'),
@@ -822,6 +833,31 @@ function renderScoreList(container, entries, highlightIdx = -1) {
     row.append(rank, name, val);
     container.appendChild(row);
   });
+  scrollRowIntoView(container, highlightIdx);
+}
+
+// Bring the highlighted row into the list's scroll box, centred where possible.
+// Necessary since the lists hold up to 50 entries: an own row at rank 34 would
+// otherwise be marked somewhere outside the visible ~6 rows, i.e. invisibly.
+// Deliberately NOT scrollIntoView() — that can scroll the page/board as well,
+// and the card is a fixed overlay above it.
+//
+// Deferred by a frame because both callers render the list *before* revealing
+// their card (onWin fills the tabs, then show()s the overlay). While it's still
+// display:none every rect is zero and scrollTop silently stays 0, so measuring
+// has to wait until it's laid out.
+function scrollRowIntoView(container, idx) {
+  if (idx < 0) return;
+  const row = container.children[idx];
+  if (!row) return;
+  requestAnimationFrame(() => {
+    // A re-render in the meantime replaces the rows — then this one is stale.
+    if (row.parentElement !== container) return;
+    const box = container.getBoundingClientRect();
+    if (!box.height) return; // still hidden; nothing to measure against
+    const r = row.getBoundingClientRect();
+    container.scrollTop += r.top - box.top - (box.height - r.height) / 2;
+  });
 }
 
 // Describe a fresh solve against the player's own previous ones. This is the
@@ -905,8 +941,10 @@ function onWin() {
     )} · ${plural(mistakes, 'Fehler', 'Fehler')}</span>`;
 
   // Compare against the history *before* this solve joins it (commitPendingWin
-  // records it later), so the comparison set is "everything up to now".
-  renderPersonalFeedback(getPersonalStats(game.N, settings.difficulty, score), game.N, settings.difficulty);
+  // records it later), so the comparison set is "everything up to now". Kept on
+  // pendingWin so the debug export can show exactly what the card was told.
+  pendingWin.personal = getPersonalStats(game.N, settings.difficulty, score);
+  renderPersonalFeedback(pendingWin.personal, game.N, settings.difficulty);
 
   dom.winNickname.value = settings.nickname || '';
   globalSubmitInFlight = false;
@@ -946,7 +984,7 @@ function renderWinLocal() {
     mistakes: pendingWin.mistakes,
     score: pendingWin.score,
   });
-  renderScoreList(dom.winScores, list.slice(0, 10), rank);
+  renderScoreList(dom.winScores, list.slice(0, MAX_LOCAL_ENTRIES), rank);
 }
 
 async function renderWinGlobal() {
@@ -954,14 +992,42 @@ async function renderWinGlobal() {
   renderScoreList(dom.winScores, [], -1);
   dom.winScores.firstChild.textContent = 'Lade globale Bestenliste …';
   const { size, difficulty } = pendingWin;
-  const rows = await fetchTopScores(size, difficulty, 10);
+  const rows = await fetchTopScores(size, difficulty);
   if (winTab !== 'global') return; // switched away while loading
   if (!rows) {
     renderScoreList(dom.winScores, [], -1);
     dom.winScores.firstChild.textContent = 'Globale Bestenliste nicht erreichbar.';
     return;
   }
-  renderScoreList(dom.winScores, rows, -1);
+  // Mark the freshly submitted entry, like the local list does — but only once
+  // it really is on the board. Before submitting, this list is other players'
+  // data and the solve simply isn't in it, so nothing is highlighted; the status
+  // line says why instead (see noteGlobalNotSubmitted).
+  const mine = pendingWin.submittedGlobal
+    ? matchOwnEntry(
+        rows,
+        {
+          name: pendingWin.globalName,
+          score: pendingWin.score,
+          seconds: pendingWin.seconds,
+          hints: pendingWin.hints,
+          mistakes: pendingWin.mistakes,
+        },
+        Number.isFinite(pendingWin.globalRank) ? pendingWin.globalRank - 1 : -1
+      )
+    : -1;
+  renderScoreList(dom.winScores, rows, mine);
+  if (!pendingWin.submittedGlobal) noteGlobalNotSubmitted();
+}
+
+// Explain the absence of your own result on the global tab before you've
+// submitted it. This borrows the submit status line rather than adding a row or
+// another paragraph: it's the line about exactly this, it's collapsed while
+// empty, and reusing it keeps the win card from growing on a phone. Never
+// overwrites a real message (a success, an error, a retry countdown).
+function noteGlobalNotSubmitted() {
+  if (dom.winSubmitStatus.textContent) return;
+  setStatus(dom.winSubmitStatus, 'Noch nicht eingetragen – „Eintragen" trägt dich hier ein.');
 }
 
 // Persist the pending win to the on-device list exactly once.
@@ -976,7 +1042,7 @@ function commitPendingWin(name) {
     score: pendingWin.score,
   });
   // Every solve also joins the history behind the percentile feedback — the
-  // top-10 list above drops everything below rank 10, so it can't carry that.
+  // top list above drops everything past its cap, so it can't carry that.
   // This is the single funnel each finished game passes through (submit or
   // flushPendingWin), and `saved` guards it against counting a solve twice.
   recordSolve(pendingWin.size, pendingWin.difficulty, pendingWin.score);
@@ -989,6 +1055,27 @@ function commitPendingWin(name) {
 function flushPendingWin() {
   if (pendingWin && !pendingWin.saved) commitPendingWin(settings.nickname);
   pendingWin = null;
+}
+
+// Player-facing German for a submit the server refused. `reason` is submit_score's
+// own English message (see serverReason in leaderboard.js); anything unmapped is
+// quoted verbatim rather than swallowed, so a new server-side check still tells
+// the player something true. `allowRetry` is only for reasons that can pass later
+// — the values themselves won't change on a second press.
+const SUBMIT_REJECTIONS = {
+  'implausible time': { text: 'Global abgelehnt: Zeit als unmöglich eingestuft', allowRetry: false },
+  'bad counters': { text: 'Global abgelehnt: Tipp-/Fehlerzahl außerhalb des erlaubten Bereichs', allowRetry: false },
+  'bad size': { text: 'Global abgelehnt: Feldgröße nicht erlaubt', allowRetry: false },
+  'bad difficulty': { text: 'Global abgelehnt: Schwierigkeit nicht erlaubt', allowRetry: false },
+  'rate limited': { text: 'Zu viele Einträge in kurzer Zeit – in einer Minute nochmal', allowRetry: true },
+};
+function rejectionCopy(reason) {
+  const known = reason && SUBMIT_REJECTIONS[String(reason).trim().toLowerCase()];
+  if (known) return known;
+  return {
+    text: reason ? `Global abgelehnt („${reason}")` : 'Global abgelehnt',
+    allowRetry: false,
+  };
 }
 
 async function onWinSubmit() {
@@ -1031,6 +1118,11 @@ async function onWinSubmit() {
 
   if (res && Number.isFinite(res.rank)) {
     pendingWin.submittedGlobal = true; // latch: this solve is now on the global board
+    // Remember what was sent under which name and where it landed, so the global
+    // tab can find and mark this exact row (see matchOwnEntry).
+    pendingWin.globalName = sanitizeName(name) || 'Anonym';
+    pendingWin.globalRank = res.rank;
+    pendingWin.globalTotal = res.total;
     dom.winSubmit.disabled = true;
     // Placement plus, once the bucket is big enough to make it meaningful, the
     // share of entries beaten — "Platz 37" alone says little without knowing
@@ -1044,6 +1136,16 @@ async function onWinSubmit() {
       'ok'
     );
     selectWinTab('global');
+  } else if (res && res.rejected) {
+    // The server answered and said no. Saying "nicht erreichbar" here sends the
+    // player looking for a network problem that isn't there, so name the reason —
+    // and only offer a retry where one can actually help (a rate limit passes,
+    // rejected values never will).
+    const { text, allowRetry } = rejectionCopy(res.reason);
+    dom.winSubmit.disabled = !allowRetry;
+    if (allowRetry) dom.winSubmit.textContent = 'Erneut versuchen';
+    setStatus(dom.winSubmitStatus, `${text} – lokal gespeichert ✓`, 'err');
+    if (settings.debug) await copySubmitFailureDebug(res.attempts);
   } else {
     // The auto-retries didn't get through. Don't give up on a single episode:
     // keep the button live as a manual retry (it's re-labelled the first time).
@@ -1687,6 +1789,8 @@ dom.check.addEventListener('click', () => {
 // ---------- Debug ----------
 function updateDebugButton() {
   dom.debugCopy.hidden = !settings.debug;
+  // Same state, second home: on the win card, where the scoring data is fresh.
+  dom.winDebugRow.hidden = !settings.debug;
 }
 
 // The extended-debug sub-option only makes sense with Debug on, so it's shown in
@@ -1751,7 +1855,62 @@ function buildDebugInfo() {
     info.app = 'queens-debug/2+journal';
     info.journal = moveJournal;
   }
+  // A finished game carries its scoring with it: the raw components, the derived
+  // score, and every input the relative feedback was computed from. Without this
+  // a report of "the percentile line looks wrong" can't be checked — the board
+  // state says nothing about the score stores (the gap that made the empty-history
+  // bug hard to diagnose from an export).
+  const result = buildResultDebug();
+  if (result) info.result = result;
   return info;
+}
+
+// The scoring half of the debug state, or null while no game has been won. Kept
+// separate so it can be attached to the win-card copy as well.
+function buildResultDebug() {
+  if (!pendingWin) return null;
+  const { size, difficulty } = pendingWin;
+  const history = getSolveScores(size, difficulty);
+  const p = pendingWin.personal;
+  return {
+    bucket: `${size}-${difficulty}`,
+    seconds: pendingWin.seconds,
+    hints: pendingWin.hints,
+    mistakes: pendingWin.mistakes,
+    score: pendingWin.score,
+    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints} + ${MISTAKE_PENALTY}·${pendingWin.mistakes}`,
+    savedLocally: !!pendingWin.saved,
+    savedRank: pendingWin.saved ? pendingWin.savedRank : null,
+    // What the win card was told, computed before this solve joined the history.
+    personal: p
+      ? {
+          previousSolves: p.total,
+          rank: p.rank,
+          percentile: p.percentile,
+          percentileSuppressed: p.percentile == null,
+          minSolvesForPercentile: MIN_SOLVES_FOR_PERCENTILE,
+          isBest: p.isBest,
+          bestScore: p.bestScore,
+          delta: p.delta,
+          historyAtCap: p.capped,
+          maxHistory: MAX_SOLVE_HISTORY,
+        }
+      : null,
+    // The raw stores behind it, so the numbers above can be recomputed by hand.
+    // `historyNow` includes this solve once it has been committed.
+    historyNow: history,
+    historyCount: history.length,
+    localTop: getLocalScores(size, difficulty).map((e) => e.score),
+    global: pendingWin.submittedGlobal
+      ? {
+          rank: pendingWin.globalRank,
+          total: pendingWin.globalTotal,
+          percentile: globalPercentile(pendingWin.globalRank, pendingWin.globalTotal),
+          minTotalForPercentile: MIN_GLOBAL_FOR_PERCENTILE,
+          name: pendingWin.globalName,
+        }
+      : null,
+  };
 }
 
 // Pretty-print the debug JSON without exploding every number onto its own line.
@@ -1813,12 +1972,14 @@ async function writeToClipboard(text) {
   }
 }
 
-async function copyDebug() {
+// Copy the debug state and confirm on the button that triggered it — either the
+// one in the settings or the one on the win card.
+async function copyDebug(btn = dom.debugCopy) {
   if (!game) return;
   const ok = await writeToClipboard(formatDebug(buildDebugInfo()));
-  const label = dom.debugCopy.textContent;
-  dom.debugCopy.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
-  setTimeout(() => (dom.debugCopy.textContent = label), 1500);
+  const label = btn.textContent;
+  btn.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
+  setTimeout(() => (btn.textContent = label), 1500);
 }
 
 // When a global score submit fails and Debug mode is on, copy the full debug
@@ -1834,7 +1995,8 @@ async function copySubmitFailureDebug(attempts) {
   if (ok) dom.winSubmitStatus.textContent += ' (Debug kopiert 📋)';
 }
 
-dom.debugCopy.addEventListener('click', copyDebug);
+dom.debugCopy.addEventListener('click', () => copyDebug(dom.debugCopy));
+dom.winDebugCopy.addEventListener('click', () => copyDebug(dom.winDebugCopy));
 dom.debugMode.addEventListener('change', () => {
   settings.debug = dom.debugMode.checked;
   saveSettings(settings);
@@ -2051,7 +2213,7 @@ async function renderLb() {
   }
   renderScoreList(dom.lbScores, [], -1);
   dom.lbScores.firstChild.textContent = 'Lade globale Bestenliste …';
-  const rows = await fetchTopScores(size, difficulty, 20);
+  const rows = await fetchTopScores(size, difficulty);
   // Ignore a stale response if the tab or bucket changed while loading.
   const now = currentLbBucket();
   if (lbTab !== 'global' || now.size !== size || now.difficulty !== difficulty) return;
@@ -2759,6 +2921,10 @@ function hide(node) {
 }
 
 // ---------- boot ----------
+// Backfill the solve history from the top list once per bucket. Devices that
+// played before the history existed would otherwise compare a fresh solve
+// against an empty past. Idempotent, so it's safe on every boot.
+seedSolveHistory();
 updateDebugButton();
 applySoundSetting();
 applyVoiceSetting();

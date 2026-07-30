@@ -94,14 +94,18 @@ ein Aufschlag pro genutztem **Tipp** (+30 s) und pro **Fehler** (+15 s, eine Dam
 abseits der eindeutigen Lösung). Kleiner ist besser. Jede Kombination aus Feldgröße
 und Schwierigkeit hat eine eigene Rangliste; über 🏆 lässt sich jede davon durchblättern.
 
-- **Lokal:** Bestzeiten werden immer auf dem Gerät gespeichert (Top 10 je Rangliste),
-  ganz ohne Server. Der zuletzt eingegebene Name wird gemerkt, damit er nach jeder
-  Runde schon vorausgefüllt ist.
+- **Lokal:** Bestzeiten werden immer auf dem Gerät gespeichert (bis zu **50** je
+  Rangliste), ganz ohne Server. Der zuletzt eingegebene Name wird gemerkt, damit er
+  nach jeder Runde schon vorausgefüllt ist.
 - **Global (optional):** Ist eine Online-Rangliste eingerichtet, erscheint zusätzlich
-  ein **Eintragen**-Button und ein *Global*-Tab. Ohne Einrichtung läuft alles rein
-  lokal weiter – Online ist nie Voraussetzung.
+  ein **Eintragen**-Button und ein *Global*-Tab, ebenfalls mit bis zu 50 Einträgen.
+  Ohne Einrichtung läuft alles rein lokal weiter – Online ist nie Voraussetzung.
 
-Weil die Top 10 alles darunter verwerfen, sagt ein 11. Platz für sich genommen nichts.
+Beide Listen zeigen etwa sechs bis acht Zeilen und **scrollen** darüber hinaus, damit
+der Gewinn-Bildschirm nicht wächst; die eigene, frische Zeile wird dabei automatisch in
+den sichtbaren Bereich gescrollt.
+
+Weil eine Liste irgendwo endet, sagt der erste Platz dahinter für sich genommen nichts.
 Deshalb merkt sich das Spiel zusätzlich die **Ergebnisse aller** Partien je Rangliste
 (nur die Zahlen, ohne Namen und Datum) und zeigt direkt auf dem Gewinn-Bildschirm, wie
 die frische Partie im Vergleich dasteht – z. B. *„Besser als 88 % deiner 26 Partien"*,
@@ -110,7 +114,15 @@ sofort da und braucht weder Namen noch Internet. Bei wenigen Partien (unter fün
 stattdessen die schlichte Platzierung – ein Prozentwert aus zwei Runden wäre nur Rauschen.
 Nach dem **Eintragen** in die globale Rangliste ergänzt die Statuszeile den gleichen
 Vergleich für das gesamte Feld (*„Platz 37 von 214 – besser als 83 % der Einträge"*),
-sobald dort genug Einträge zusammengekommen sind.
+sobald dort genug Einträge zusammengekommen sind; im *Global*-Tab wird die eigene,
+gerade eingetragene Zeile dann grün umrandet – genau wie im lokalen Tab. Solange du
+nicht eingetragen hast, ist dort nichts markiert, weil dein Ergebnis dort noch nicht
+existiert (die Statuszeile weist darauf hin).
+
+Wer schon vor dieser Neuerung gespielt hat, verliert den Vergleich nicht: die
+bestehenden Top-10-Einträge werden beim ersten Start als Partie-Historie übernommen.
+Das sind allerdings nur die **besten** zehn – solange kaum neue Partien dazugekommen
+sind, fällt der Prozentwert deshalb eher zu streng aus.
 
 ### Online-Rangliste einrichten (optional, Supabase)
 
@@ -131,6 +143,20 @@ Rangliste manipulationssicher. Die Serverprüfungen (unmögliche Zeiten ablehnen
 Werte begrenzen, Best-Effort Rate-Limit) halten nur groben Unfug ab – für ein
 Hobbyspiel genug, kein Turnier-Anspruch. Statt roher IP wird nur ein gesalzener
 Tageshash fürs Rate-Limit gespeichert.
+
+Genau deshalb ist die Zeit-Untergrenze **absichtlich sehr locker**: sie lag früher
+bei „Feldgröße in Sekunden" und hat damit echte schnelle Läufe abgewiesen (ein 6×6
+in 5 s ist mit Schnellmodus gut machbar). Da ohnehin jeder Manipulierende einfach
+eine plausibel aussehende Zeit senden könnte, kostete diese Prüfung nur
+Funktionalität. Abgewiesen wird jetzt nur noch Unmögliches (0 Sekunden). Wer die
+Rangliste schon eingerichtet hat, führt den **MIGRATION**-Block am Ende von
+`docs/leaderboard-setup.sql` nach (oder einfach die ganze Datei erneut – sie ist
+wiederholbar und lässt vorhandene Daten unberührt).
+
+Lehnt der Server einen Eintrag ab, sagt der Gewinn-Bildschirm jetzt **warum**
+(z. B. „Global abgelehnt: Zeit als unmöglich eingestuft") statt „nicht erreichbar" –
+und bietet keinen sinnlosen zweiten Versuch an. Lokal gespeichert wird in jedem
+Fall, bevor überhaupt gesendet wird.
 
 ## Rätsel-Pools
 

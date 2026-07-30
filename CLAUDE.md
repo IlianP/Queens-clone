@@ -104,7 +104,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`). Shipped pools are **mixed**: half organic, half blocky, each entry tagged `t` — see "Mixing the two styles" |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
-| `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top-10 per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic |
+| `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores`) fail soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
 | `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
@@ -268,8 +268,24 @@ truly cheat-proof since the client reports its own time — say so, don't
 oversell it. Untrusted leaderboard names
 are always rendered with `textContent`, never `innerHTML`.
 
-**Relative feedback (beyond the absolute placement).** The top-10 list discards
-everything below rank 10, so it cannot answer "how does this solve compare to
+**A server check that rejects real play is a bug, not security.** `queens_min_seconds`
+used to be `greatest(3, p_size)` and refused genuine fast solves (a 6×6 in 5 s) with
+`implausible time` / HTTP 400. Since the client reports its own time, that floor
+never stopped anyone who wanted to cheat — it only cost functionality, so it is now
+a flat `1`. Keep new server-side validation on the same side of that trade, and
+remember any change to `docs/leaderboard-setup.sql` needs the project owner to
+re-run it in Supabase (the file is repeatable; the `MIGRATION` block at its end
+lists what changed).
+
+`submitScore` distinguishes **refused** from **unreachable**: a permanent 4xx comes
+back as `{ rejected: true, reason }` with the server's own message extracted by
+`serverReason`, and `main.js`'s `rejectionCopy` maps it to German and decides
+whether a retry could ever help (only `rate limited` can). Before that split, a
+rejection was reported as "Global nicht erreichbar", which sent the player hunting
+for a network fault that didn't exist and offered a retry that could not work.
+
+**Relative feedback (beyond the absolute placement).** The local top list discards
+everything past `MAX_LOCAL_ENTRIES`, so it cannot answer "how does this solve compare to
 all my others?" — a second, tiny store does: `queens-clone-solves`, one flat
 array of scores per bucket (numbers only, no names/dates), capped at
 `MAX_SOLVE_HISTORY` with the oldest falling off. `recordSolve` is called from
@@ -287,8 +303,53 @@ have and when:
 Both suppress the percentage when the sample is too small to mean anything
 (`MIN_SOLVES_FOR_PERCENTILE`, `MIN_GLOBAL_FOR_PERCENTILE`) and fall back to the
 plain placement; `percentileBetter` counts a tie as half and never rounds to a
-flat 0/100 unless the score really beat none/all. `tests/logic/percentile.mjs`
-covers all of it (with a localStorage shim). Bundle constraint:
+flat 0/100 unless the score really beat none/all.
+
+`seedSolveHistory()` runs once at boot and backfills an **empty** bucket history
+from that bucket's top list. Devices that played before the history existed
+would otherwise compare a fresh solve against nothing — the card claiming "von 2
+Partien" directly above ten older entries. It is idempotent (a bucket is only
+seeded while its history is empty), so no migration flag exists; keep it that
+way. Known and accepted: seeded scores are the player's *best* ten, not a fair
+sample, so a percentile against a freshly seeded bucket understates the new
+solve. Real solves dilute it.
+
+The global tab marks the player's own row with the same `.me` highlight the local
+list uses, but only **after** a submit — before that the solve genuinely isn't on
+the board, so nothing is highlighted and `noteGlobalNotSubmitted` borrows the
+(collapsed-while-empty) submit status line to say so rather than growing the
+card. The row is found by `matchOwnEntry`, **not** by indexing with the server's
+rank: `submit_score` ranks a score/seconds tie in the new entry's favour while
+`top_scores` orders ties by `created_at` (newest last), so the rank is only used
+as a tie-breaker hint between value-identical rows.
+
+Debug mode adds the whole scoring picture to the debug export
+(`buildResultDebug` → `info.result`): score components and formula, the
+`getPersonalStats` snapshot the card was rendered from (kept on
+`pendingWin.personal`), the raw history + top-list scores behind it, and the global
+rank/total. Board state alone can't explain a percentile, which is what made the
+empty-history bug undiagnosable from an export. The win card carries its own
+copy button (`#win-debug-row`, debug-only) because the interesting moment is the
+one right after a solve.
+
+**List length is a layout question, not a data one.** Both lists hold up to 50
+(`MAX_LOCAL_ENTRIES`, `TOP_SCORES_LIMIT` — `top_scores` clamps `p_limit` to 100
+server-side, so 50 needs no SQL change, and the bucket index covers the ORDER BY,
+making 50 rows the same scan as 10). What makes that safe is `.score-list`'s
+`overflow-y: auto` plus a **height cap on `.win-card`**: the card is anchored at
+the bottom and its fixed parts alone are ~390 px, so before the cap it covered
+the top bar on a short phone even with ten rows. The card is a flex column, the
+list is the part allowed to shrink (`min-height: 0` on `.score-panel`), so
+growing the cap changes the card's height by nothing — measured 729 px at 25, 50
+and 100 rows on a 844 px viewport. A fresh row far down the list would be marked
+off-screen, so `scrollRowIntoView` centres it; it runs in a `requestAnimationFrame`
+because both callers build the list *before* revealing their card, and rects are
+all zero while it's still `display: none`.
+
+`tests/logic/percentile.mjs` covers the pure logic (with a localStorage shim) and
+`tests/browser/win-feedback.mjs` the wiring — seeding, the highlight, the
+pre-submit note and the debug block, with every RPC mocked so the live
+leaderboard is never written to. Bundle constraint:
 `highscores.js`/`leaderboard.js` are concatenated into one classic script, so
 **no top-level name collisions** (that's why the store key is `SCORES_KEY`, not
 another `KEY`) and **no `import.meta`**.

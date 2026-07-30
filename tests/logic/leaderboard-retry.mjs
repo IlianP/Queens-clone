@@ -83,6 +83,21 @@ try {
       fail(`4xx: bad attempt diagnostic ${JSON.stringify(res.attempts[0])}`);
     if (calls.length !== 1) fail(`4xx: expected exactly 1 attempt (no retry), got ${calls.length}`);
     if (retries.length !== 0) fail(`4xx: onRetry should not fire, fired ${retries.length}x`);
+    // A refusal must be distinguishable from an unreachable server, with the
+    // server's own reason carried out — the UI says "abgelehnt: …" instead of
+    // blaming the network, and offers no pointless retry.
+    if (res.rejected !== true) fail(`4xx: expected rejected=true, got ${JSON.stringify(res)}`);
+    if (res.reason !== 'implausible time')
+      fail(`4xx: expected the server reason to be extracted, got ${JSON.stringify(res.reason)}`);
+  }
+
+  // 3b) A non-JSON 4xx body still yields a usable reason (trimmed raw text).
+  {
+    installFetch([{ status: 403, body: 'forbidden by gateway' }]);
+    const res = await submitScore(ENTRY);
+    if (res.rejected !== true) fail(`4xx text body: expected rejected=true, got ${JSON.stringify(res)}`);
+    if (!/forbidden by gateway/.test(res.reason || ''))
+      fail(`4xx text body: expected raw text as reason, got ${JSON.stringify(res.reason)}`);
   }
 
   // 4) Persistent transient failure: gives up after a bounded number of tries
@@ -101,6 +116,10 @@ try {
     if (calls.length !== 4) fail(`exhaust: expected 4 attempts, got ${calls.length}`);
     if (retries.length !== 3) fail(`exhaust: expected 3 retry notices, got ${retries.length}`);
     if (retries.some(([, t]) => t !== 4)) fail(`exhaust: total attempts should be 4, got ${JSON.stringify(retries)}`);
+    // Unreachable is NOT a rejection — this is the case that legitimately keeps
+    // the manual-retry button alive.
+    if (res.rejected !== false) fail(`exhaust: expected rejected=false, got ${JSON.stringify(res.rejected)}`);
+    if (res.reason !== null) fail(`exhaust: expected no server reason, got ${JSON.stringify(res.reason)}`);
   }
 
   if (!failed) console.log('PASS: submit retry backs off on transient failures, not on permanent ones');

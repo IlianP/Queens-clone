@@ -60,9 +60,17 @@ await page.addInitScript(() => {
 // --- Fake the online leaderboard so the real DB is never touched. ---
 let submitCalls = 0;
 let succeed = false; // flipped to true to let a submit through
+let reject = false; // flipped to true to answer like submit_score's own refusal
 await page.route('**/rest/v1/rpc/submit_score', async (route) => {
   submitCalls++;
-  if (succeed) {
+  if (reject) {
+    // Exactly what PostgREST returns for `raise exception 'implausible time'`.
+    await route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 'P0001', details: null, hint: null, message: 'implausible time' }),
+    });
+  } else if (succeed) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -93,8 +101,13 @@ async function solveViaHints() {
   for (let i = 0; i < 400; i++) {
     if (await page.evaluate(() => !document.getElementById('win-overlay').hidden)) return true;
     await page.click('#hint');
-    const canApply = await page.evaluate(() => !document.getElementById('hint-apply').hidden);
-    if (!canApply) {
+    // Check the CARD, not just the apply button: #hint-apply keeps its own
+    // `hidden` state from the previous hint, so a card that failed to open reads
+    // as "can apply" and the click then waits out its full timeout. A JS error
+    // during onWin looks exactly like this, so surface those instead of hanging.
+    const open = await page.evaluate(() => !document.getElementById('hint-card').hidden);
+    if (!open) throw new Error(`hint card did not open${errors.length ? ' — page errors: ' + errors.join(' | ') : ''}`);
+    if (await page.evaluate(() => document.getElementById('hint-apply').hidden)) {
       await page.click('#hint-close');
       break;
     }
@@ -160,8 +173,40 @@ try {
   s = await submitStatus();
   if (!/Global eingetragen/i.test(s.text)) fail(`status should still show the success, got "${s.text}"`);
 
+  // --- A REFUSAL is not an outage. Second solve, this time the server answers
+  // with the P0001 error submit_score raises: the status must name the reason
+  // instead of blaming the network, and must not offer a retry that cannot work.
+  reject = true;
+  await page.click('#win-new-game');
+  await page.waitForFunction(() => document.getElementById('win-overlay').hidden, { timeout: 15000 });
+  await page.waitForFunction(
+    () => {
+      const c = document.querySelector('.cell');
+      return c && c.dataset.state !== undefined && !document.querySelector('.board').classList.contains('intro-revealing');
+    },
+    { timeout: 15000 }
+  );
+  if (!(await solveViaHints())) {
+    fail('could not reach a second win via hints');
+  } else {
+    const before = submitCalls;
+    await page.fill('#win-nickname', 'Tester');
+    await page.click('#win-submit');
+    await page.waitForFunction(
+      () => /abgelehnt/i.test(document.getElementById('win-submit-status').textContent),
+      { timeout: 15000 }
+    );
+    s = await submitStatus();
+    if (!/Zeit als unmöglich eingestuft/i.test(s.text))
+      fail(`a refusal should name the server's reason, got "${s.text}"`);
+    if (/nicht erreichbar/i.test(s.text)) fail(`a refusal must not blame the network, got "${s.text}"`);
+    if (!/lokal gespeichert/i.test(s.text)) fail(`a refusal must confirm the local save, got "${s.text}"`);
+    if (!s.disabled) fail('a permanent refusal must not offer a retry');
+    if (submitCalls !== before + 1) fail(`a refusal must not be retried, calls went ${before} -> ${submitCalls}`);
+  }
+
   if (errors.length) fail('console/page errors: ' + errors.join(' | '));
-  if (!failed) console.log('PASS: submit auto-retries, offers manual retry, and never double-submits a solve');
+  if (!failed) console.log('PASS: submit auto-retries, offers manual retry, never double-submits, and reports a refusal as such');
 } finally {
   await browser.close();
 }

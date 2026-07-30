@@ -136,6 +136,12 @@
         <button class="btn primary" id="win-new-game" type="button">Neues Spiel</button>
         <button class="btn subtle" id="win-settings" type="button">⚙ Einstellungen</button>
       </div>
+      <!-- Debug mode only: the debug state including the score and everything the
+           relative feedback was computed from. Here rather than only in the
+           settings, because the interesting moment is this one. -->
+      <div class="win-debug-row" id="win-debug-row" hidden>
+        <button class="btn subtle" id="win-debug-copy" type="button">📋 Debug-Status kopieren</button>
+      </div>
     </div>
 
     <!-- Settings modal -->
