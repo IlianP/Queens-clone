@@ -190,9 +190,16 @@ export async function submitScore(entry, { onRetry } = {}) {
   return { rank: Number(row.rank), total: Number(row.total) };
 }
 
+// How many global rows to fetch by default. `top_scores` clamps p_limit to 100
+// server-side, so this stays well inside what the RPC allows; the bucket index
+// covers the ORDER BY, so 50 rows is the same index scan as 10 with a different
+// LIMIT (~3 kB of JSON). Both leaderboard views scroll, so more rows cost no
+// layout either.
+export const TOP_SCORES_LIMIT = 50;
+
 // Fetch the best entries for one (size, difficulty) bucket, best-first.
 // Resolves an array (possibly empty) or null when the request fails.
-export async function fetchTopScores(size, difficulty, limit = 10) {
+export async function fetchTopScores(size, difficulty, limit = TOP_SCORES_LIMIT) {
   const data = await rpc('top_scores', { p_size: size, p_difficulty: difficulty, p_limit: limit });
   if (!Array.isArray(data)) return null;
   return data.map((r) => ({

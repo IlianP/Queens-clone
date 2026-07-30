@@ -78,12 +78,24 @@ lets it succeed and verifies the same solve can't be submitted twice
 
 `win-feedback.mjs` covers the win screen's relative feedback, also with **every
 Supabase RPC mocked via `page.route`**. It seeds the "played before the solve
-history existed" state (full top-10, no history) and checks the boot backfill
+history existed" state (full top list, no history) and checks the boot backfill
 makes the personal line compare against those games; that the global tab
 highlights nothing before a submit but explains the absence in the status line;
 that after a submit the player's own row carries the `.me` highlight (found by
 value, not by rank index) and the status reports the share beaten; and that the
 debug-only copy button on the win card exports the scoring + percentile inputs.
+It also pins the **layout** guarantees around a 50-entry list: the list scrolls
+instead of stretching the card, only a handful of rows show at once, the card stays
+clear of the top bar, and the own row is scrolled into the visible box. That part
+runs at **375×667** on purpose — the short-phone case, where the card used to cover
+the header.
+
+Both this and `leaderboard-retry.mjs` drive the solve with a hint loop that checks
+`#hint-card` (not just `#hint-apply`) before clicking: the apply button keeps its
+own `hidden` state from the previous hint, so a card that failed to open reads as
+clickable and Playwright then waits out a full 30 s timeout. A JS error inside
+`onWin` looks exactly like that, so the helper throws with the collected page
+errors instead of hanging — which is how an unimported constant was found.
 
 `voice-mode.mjs` drives Voice Mode end-to-end through the real DOM. There's no
 microphone here, so it **injects a fake `SpeechRecognition`** (via

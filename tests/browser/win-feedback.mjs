@@ -5,7 +5,7 @@
 // locally, so this test NEVER writes a score to the real leaderboard.
 //
 // What it verifies:
-//   1. A device that played BEFORE the solve history existed (top-10 list full,
+//   1. A device that played BEFORE the solve history existed (top list full,
 //      history absent) still gets a comparison against those past games — the
 //      seedSolveHistory backfill. Without it the card claimed "Deine 1.-beste
 //      von 2 Partien" while showing ten older entries right below.
@@ -16,6 +16,10 @@
 //      share of entries beaten.
 //   4. With Debug mode on, the win card offers a copy button and the copied
 //      state carries the scoring + everything the percentile came from.
+//   5. A long list (the cap is 50 per bucket) stays inside its scroll box, the
+//      own row is scrolled into view rather than marked off-screen, and the win
+//      card never grows over the top bar. Runs at 375x667 — the short-phone case,
+//      where the card used to cover the header even with a ten-row list.
 //
 // Prereqs: static server on BASE_URL (default http://localhost:8000) and the
 // environment's Playwright/Chromium (see board-helpers.mjs). Run with:
@@ -35,15 +39,26 @@ const check = (msg, ok) => {
 
 const pw = (await import(PLAYWRIGHT)).default;
 const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
-const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+// Short phone on purpose: the win card is anchored at the bottom and its fixed
+// parts alone are ~390px, so this is the viewport where the height cap matters.
+const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
 
 const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 
-// The "old device" state: ten past solves in the top-10 list, no solve history
-// (that key didn't exist yet), plus Debug mode on for step 4.
-const PAST = [14, 14, 18, 19, 23, 24, 30, 35, 40, 53];
+// The "old device" state: a full local list (50 = MAX_LOCAL_ENTRIES) and no solve
+// history at all (that key didn't exist yet), plus Debug mode on for step 4.
+//
+// Half the seeded times are much faster than a hint-driven solve and half much
+// slower, so the fresh result lands in the MIDDLE of the list — far below the ~6
+// rows the box shows at this viewport, which is exactly the case that needs
+// scrollRowIntoView. Holds for any solve between 59 s and 299 s (measured: ~130-150 s).
+const MAX_LOCAL = 50;
+const PAST = [
+  ...Array.from({ length: 25 }, (_, i) => 10 + i * 2), // 10 … 58
+  ...Array.from({ length: 25 }, (_, i) => 300 + i * 2), // 300 … 348
+];
 await page.addInitScript(
   ({ past }) => {
     localStorage.setItem(
@@ -111,8 +126,13 @@ async function solveViaHints() {
   for (let i = 0; i < 400; i++) {
     if (await page.evaluate(() => !document.getElementById('win-overlay').hidden)) return true;
     await page.click('#hint');
-    const canApply = await page.evaluate(() => !document.getElementById('hint-apply').hidden);
-    if (!canApply) {
+    // Check the CARD, not just the apply button: #hint-apply keeps its own
+    // `hidden` state from the previous hint, so a card that failed to open reads
+    // as "can apply" and the click then waits out its full timeout. A JS error
+    // during onWin looks exactly like this, so surface those instead of hanging.
+    const open = await page.evaluate(() => !document.getElementById('hint-card').hidden);
+    if (!open) throw new Error(`hint card did not open${errors.length ? ' — page errors: ' + errors.join(' | ') : ''}`);
+    if (await page.evaluate(() => document.getElementById('hint-apply').hidden)) {
       await page.click('#hint-close');
       break;
     }
@@ -150,7 +170,7 @@ try {
     JSON.parse(localStorage.getItem('queens-clone-solves') || '{}')
   );
   check(
-    'boot seeds the solve history from the existing top-10 list',
+    'boot seeds the solve history from the existing top list',
     JSON.stringify(seeded['5-easy']) === JSON.stringify(PAST)
   );
 
@@ -161,11 +181,56 @@ try {
   console.log('    personal line:', JSON.stringify(personal));
   check('personal feedback is shown', !!personal.trim());
   check(
-    'it counts the ten past games, not an empty history',
-    /von 11 Partien|deiner 10 Partien/.test(personal)
+    'it counts the seeded past games, not an empty history',
+    new RegExp(`deiner ${MAX_LOCAL} Partien`).test(personal) &&
+      new RegExp(`von ${MAX_LOCAL + 1}`).test(personal)
   );
   check('it does not claim this is the first game', !/erste Partie/.test(personal));
   check('it names the bucket', /5×5 · Leicht/.test(personal));
+
+  // --- 1b. a long local list scrolls, and the card stays clear of the top bar ---
+  {
+    // The scroll-into-view is deferred a frame (the list is built before the card
+    // is revealed), so wait for it rather than racing it.
+    await page.waitForFunction(
+      () => {
+        const me = document.querySelector('#win-scores .score-row.me');
+        return !me || document.getElementById('win-scores').scrollTop > 0;
+      },
+      { timeout: 5000 }
+    );
+    const layout = await page.evaluate(() => {
+      const list = document.getElementById('win-scores');
+      const card = document.getElementById('win-overlay').getBoundingClientRect();
+      const header = document.querySelector('header') || document.querySelector('h1');
+      const hb = header.getBoundingClientRect();
+      const rows = [...list.querySelectorAll('.score-row')];
+      const me = list.querySelector('.score-row.me');
+      const box = list.getBoundingClientRect();
+      const r = me && me.getBoundingClientRect();
+      const rowH = rows[0] ? rows[0].getBoundingClientRect().height : 1;
+      return {
+        rows: rows.length,
+        scrolls: list.scrollHeight > list.clientHeight + 1,
+        visibleRows: Math.round(box.height / (rowH || 1)),
+        cardTop: Math.round(card.top),
+        headerBottom: Math.round(hb.bottom),
+        meVisible: !!r && r.top >= box.top - 1 && r.bottom <= box.bottom + 1,
+        meIndex: me ? rows.indexOf(me) : -1,
+        hasMe: !!me,
+      };
+    });
+    console.log('    layout:', JSON.stringify(layout));
+    check(`local list is capped at ${MAX_LOCAL} rows`, layout.rows === MAX_LOCAL);
+    check('the long list scrolls instead of stretching the card', layout.scrolls);
+    check('only a handful of rows are visible at once', layout.visibleRows <= 10);
+    check('the win card does not cover the top bar', layout.cardTop >= layout.headerBottom);
+    check('the own row is marked', layout.hasMe);
+    // It sits mid-list, i.e. below what the box shows unscrolled — without
+    // scrollRowIntoView the green marker would be outside the visible area.
+    check('the own row would be off-screen unscrolled', layout.meIndex > layout.visibleRows);
+    check('the own row is scrolled into the visible box', layout.meVisible);
+  }
 
   // --- 2. global tab before submitting: nothing highlighted, and it says why ---
   await page.click('#win-tab-global');
@@ -216,8 +281,8 @@ try {
   const dbg = await page.evaluate(() => navigator.clipboard.readText());
   check('debug state has a result block', /"result": \{/.test(dbg));
   check('… with the score components', /"scoreFormula"/.test(dbg) && /"score"/.test(dbg));
-  check('… with the personal comparison inputs', /"previousSolves": 10/.test(dbg));
-  check('… with the raw history it was computed from', /"historyCount": 11/.test(dbg));
+  check('… with the personal comparison inputs', new RegExp(`"previousSolves": ${MAX_LOCAL}`).test(dbg));
+  check('… with the raw history it was computed from', new RegExp(`"historyCount": ${MAX_LOCAL + 1}`).test(dbg));
   check('… and the global result', /"rank": 3/.test(dbg) && /"total": 40/.test(dbg));
 
   if (errors.length) check(`no console errors (got ${JSON.stringify(errors)})`, false);

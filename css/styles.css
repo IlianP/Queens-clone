@@ -916,6 +916,27 @@ body {
 .win-card {
   border: 2px solid rgba(23, 160, 106, 0.5);
   padding: 20px 22px;
+  /* Never grow over the top bar. The card is anchored at the bottom and its
+     fixed parts (title, result, comparison, tabs, name field, status, buttons)
+     already add up to ~390px, so on a short phone it reached the header even
+     with a ten-row list. Capping the card and letting the LIST be the part that
+     gives way keeps every control reachable; `dvh` so a mobile browser's
+     collapsing toolbar doesn't change the answer mid-game. */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 96px);
+  max-height: calc(100dvh - 96px);
+}
+/* The list is the flexible part: it must be allowed to shrink below its
+   content height (min-height:auto would refuse), but never to a slit. */
+.win-card .score-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.win-card .score-list {
+  flex: 1 1 auto;
+  min-height: 96px;
 }
 .win-card .hint-card-title {
   color: #17a06a;

@@ -101,8 +101,13 @@ async function solveViaHints() {
   for (let i = 0; i < 400; i++) {
     if (await page.evaluate(() => !document.getElementById('win-overlay').hidden)) return true;
     await page.click('#hint');
-    const canApply = await page.evaluate(() => !document.getElementById('hint-apply').hidden);
-    if (!canApply) {
+    // Check the CARD, not just the apply button: #hint-apply keeps its own
+    // `hidden` state from the previous hint, so a card that failed to open reads
+    // as "can apply" and the click then waits out its full timeout. A JS error
+    // during onWin looks exactly like this, so surface those instead of hanging.
+    const open = await page.evaluate(() => !document.getElementById('hint-card').hidden);
+    if (!open) throw new Error(`hint card did not open${errors.length ? ' — page errors: ' + errors.join(' | ') : ''}`);
+    if (await page.evaluate(() => document.getElementById('hint-apply').hidden)) {
       await page.click('#hint-close');
       break;
     }

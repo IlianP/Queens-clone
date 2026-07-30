@@ -143,21 +143,21 @@ for (const s of [100, 200, 300, 400, 500, 600]) recordSolve(8, 'medium', s);
   eq(tie.delta, 0, 'a tie is zero away from the best');
 }
 
-// The all-time best lives on in the top-10 list even after the history has
+// The all-time best lives on in the top list even after the history has
 // rolled past it, so it must still count as the record to beat.
 localStorage.clear();
 saveLocalScore(6, 'easy', { name: 'Ich', seconds: 40, hints: 0, mistakes: 0, score: 40 });
 for (const s of [300, 310, 320]) recordSolve(6, 'easy', s);
 {
   const st = getPersonalStats(6, 'easy', 100);
-  eq(st.bestScore, 40, 'the all-time best comes from the top-10 list');
+  eq(st.bestScore, 40, 'the all-time best comes from the top list');
   eq(st.isBest, false, '100 does not beat the surviving 40');
 }
 
 // --- seedSolveHistory -------------------------------------------------------
-// A device that played before the history existed has a full top-10 list and no
+// A device that played before the history existed has a full top list and no
 // history at all. Left alone, the win card would compare a fresh solve against
-// nothing while showing ten past entries right below it.
+// nothing while showing all those past entries right below it.
 localStorage.clear();
 for (const s of [14, 18, 23, 30]) {
   saveLocalScore(9, 'medium', { name: 'Ich', seconds: s, hints: 0, mistakes: 0, score: s });
@@ -167,7 +167,7 @@ eq(getSolveScores(9, 'medium').length, 0, 'no history yet (pre-feature device)')
   // saveLocalScore records nothing into the history — that only happens via
   // recordSolve — so this really is the "old device" state.
   eq(seedSolveHistory(), 1, 'one bucket seeded');
-  eq(JSON.stringify(getSolveScores(9, 'medium')), '[14,18,23,30]', 'seeded from the top-10 scores');
+  eq(JSON.stringify(getSolveScores(9, 'medium')), '[14,18,23,30]', 'seeded from the top-list scores');
   eq(seedSolveHistory(), 0, 'seeding again does nothing (idempotent)');
 
   // And the feedback now matches what the list shows instead of "von 0 Partien".
@@ -186,7 +186,7 @@ eq(JSON.stringify(getSolveScores(7, 'hard')), '[90]', 'existing history unchange
 
 // Nothing to seed from at all.
 localStorage.clear();
-eq(seedSolveHistory(), 0, 'no top-10 lists → nothing seeded');
+eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
 
 // --- matchOwnEntry ----------------------------------------------------------
 {

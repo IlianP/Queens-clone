@@ -94,14 +94,18 @@ ein Aufschlag pro genutztem **Tipp** (+30 s) und pro **Fehler** (+15 s, eine Dam
 abseits der eindeutigen Lösung). Kleiner ist besser. Jede Kombination aus Feldgröße
 und Schwierigkeit hat eine eigene Rangliste; über 🏆 lässt sich jede davon durchblättern.
 
-- **Lokal:** Bestzeiten werden immer auf dem Gerät gespeichert (Top 10 je Rangliste),
-  ganz ohne Server. Der zuletzt eingegebene Name wird gemerkt, damit er nach jeder
-  Runde schon vorausgefüllt ist.
+- **Lokal:** Bestzeiten werden immer auf dem Gerät gespeichert (bis zu **50** je
+  Rangliste), ganz ohne Server. Der zuletzt eingegebene Name wird gemerkt, damit er
+  nach jeder Runde schon vorausgefüllt ist.
 - **Global (optional):** Ist eine Online-Rangliste eingerichtet, erscheint zusätzlich
-  ein **Eintragen**-Button und ein *Global*-Tab. Ohne Einrichtung läuft alles rein
-  lokal weiter – Online ist nie Voraussetzung.
+  ein **Eintragen**-Button und ein *Global*-Tab, ebenfalls mit bis zu 50 Einträgen.
+  Ohne Einrichtung läuft alles rein lokal weiter – Online ist nie Voraussetzung.
 
-Weil die Top 10 alles darunter verwerfen, sagt ein 11. Platz für sich genommen nichts.
+Beide Listen zeigen etwa sechs bis acht Zeilen und **scrollen** darüber hinaus, damit
+der Gewinn-Bildschirm nicht wächst; die eigene, frische Zeile wird dabei automatisch in
+den sichtbaren Bereich gescrollt.
+
+Weil eine Liste irgendwo endet, sagt der erste Platz dahinter für sich genommen nichts.
 Deshalb merkt sich das Spiel zusätzlich die **Ergebnisse aller** Partien je Rangliste
 (nur die Zahlen, ohne Namen und Datum) und zeigt direkt auf dem Gewinn-Bildschirm, wie
 die frische Partie im Vergleich dasteht – z. B. *„Besser als 88 % deiner 26 Partien"*,

@@ -19,6 +19,7 @@ import {
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
+  MAX_LOCAL_ENTRIES,
   HINT_PENALTY,
   MISTAKE_PENALTY,
 } from './highscores.js';
@@ -832,6 +833,31 @@ function renderScoreList(container, entries, highlightIdx = -1) {
     row.append(rank, name, val);
     container.appendChild(row);
   });
+  scrollRowIntoView(container, highlightIdx);
+}
+
+// Bring the highlighted row into the list's scroll box, centred where possible.
+// Necessary since the lists hold up to 50 entries: an own row at rank 34 would
+// otherwise be marked somewhere outside the visible ~6 rows, i.e. invisibly.
+// Deliberately NOT scrollIntoView() — that can scroll the page/board as well,
+// and the card is a fixed overlay above it.
+//
+// Deferred by a frame because both callers render the list *before* revealing
+// their card (onWin fills the tabs, then show()s the overlay). While it's still
+// display:none every rect is zero and scrollTop silently stays 0, so measuring
+// has to wait until it's laid out.
+function scrollRowIntoView(container, idx) {
+  if (idx < 0) return;
+  const row = container.children[idx];
+  if (!row) return;
+  requestAnimationFrame(() => {
+    // A re-render in the meantime replaces the rows — then this one is stale.
+    if (row.parentElement !== container) return;
+    const box = container.getBoundingClientRect();
+    if (!box.height) return; // still hidden; nothing to measure against
+    const r = row.getBoundingClientRect();
+    container.scrollTop += r.top - box.top - (box.height - r.height) / 2;
+  });
 }
 
 // Describe a fresh solve against the player's own previous ones. This is the
@@ -958,7 +984,7 @@ function renderWinLocal() {
     mistakes: pendingWin.mistakes,
     score: pendingWin.score,
   });
-  renderScoreList(dom.winScores, list.slice(0, 10), rank);
+  renderScoreList(dom.winScores, list.slice(0, MAX_LOCAL_ENTRIES), rank);
 }
 
 async function renderWinGlobal() {
@@ -966,7 +992,7 @@ async function renderWinGlobal() {
   renderScoreList(dom.winScores, [], -1);
   dom.winScores.firstChild.textContent = 'Lade globale Bestenliste …';
   const { size, difficulty } = pendingWin;
-  const rows = await fetchTopScores(size, difficulty, 10);
+  const rows = await fetchTopScores(size, difficulty);
   if (winTab !== 'global') return; // switched away while loading
   if (!rows) {
     renderScoreList(dom.winScores, [], -1);
@@ -1016,7 +1042,7 @@ function commitPendingWin(name) {
     score: pendingWin.score,
   });
   // Every solve also joins the history behind the percentile feedback — the
-  // top-10 list above drops everything below rank 10, so it can't carry that.
+  // top list above drops everything past its cap, so it can't carry that.
   // This is the single funnel each finished game passes through (submit or
   // flushPendingWin), and `saved` guards it against counting a solve twice.
   recordSolve(pendingWin.size, pendingWin.difficulty, pendingWin.score);
@@ -2187,7 +2213,7 @@ async function renderLb() {
   }
   renderScoreList(dom.lbScores, [], -1);
   dom.lbScores.firstChild.textContent = 'Lade globale Bestenliste …';
-  const rows = await fetchTopScores(size, difficulty, 20);
+  const rows = await fetchTopScores(size, difficulty);
   // Ignore a stale response if the tab or bucket changed while loading.
   const now = currentLbBucket();
   if (lbTab !== 'global' || now.size !== size || now.difficulty !== difficulty) return;
@@ -2895,7 +2921,7 @@ function hide(node) {
 }
 
 // ---------- boot ----------
-// Backfill the solve history from the top-10 list once per bucket. Devices that
+// Backfill the solve history from the top list once per bucket. Devices that
 // played before the history existed would otherwise compare a fresh solve
 // against an empty past. Idempotent, so it's safe on every boot.
 seedSolveHistory();

@@ -14,11 +14,11 @@
 // migration — and the same formula is mirrored server-side in
 // docs/leaderboard-setup.sql, so keep the two in sync.
 //
-// A SECOND, much smaller store sits next to that top-10 list: the solve
-// history (`queens-clone-solves`), one flat array of scores per bucket. The
-// top-10 list deliberately throws away everything below rank 10, so it can't
-// answer "how did this solve compare to all the others?" — once you have more
-// than ten solves, an 11th-place result looks identical to a 100th-place one.
+// A SECOND, much smaller store sits next to that top list: the solve
+// history (`queens-clone-solves`), one flat array of scores per bucket. The top
+// list deliberately throws away everything below its cap (MAX_LOCAL_ENTRIES), so
+// it can't answer "how did this solve compare to all the others?" — past the cap
+// every result looks alike, whether it just missed the list or came dead last.
 // The history keeps just the numbers (no names, no dates) so that relative
 // feedback ("besser als 88 % deiner Partien") stays possible for a few bytes
 // per solve.
@@ -29,7 +29,11 @@
 
 export const HINT_PENALTY = 30; // seconds added per hint used
 export const MISTAKE_PENALTY = 15; // seconds added per mistake made
-export const MAX_LOCAL_ENTRIES = 10; // kept per (size, difficulty) bucket
+// Kept per (size, difficulty) bucket. The list scrolls inside a fixed-height box
+// (see .score-list), so a larger cap costs card height nothing — it was 10 only
+// because that was the obvious round number, and ten is little once a bucket has
+// been played for a while.
+export const MAX_LOCAL_ENTRIES = 50;
 export const MAX_NAME_LENGTH = 20;
 
 // Solve history: scores per bucket, oldest first, capped. 500 ints is a few kB
@@ -147,7 +151,7 @@ export function previewRank(size, difficulty, score) {
 }
 
 // ---------------------------------------------------------------------------
-// Solve history — every solve, not just the top ten
+// Solve history — every solve, not just the best few
 // ---------------------------------------------------------------------------
 
 // Read the whole history store, dropping anything malformed. Never throws.
@@ -193,7 +197,7 @@ export function recordSolve(size, difficulty, score) {
   return list;
 }
 
-// Backfill empty histories from the top-10 list. Without this, the history is
+// Backfill empty histories from the top list. Without this, the history is
 // empty on every device that played before it existed, so the win card would
 // claim "von 2 Partien" right above a full ten-entry list — the numbers visibly
 // contradicting each other (the exact symptom this fixes).
@@ -203,7 +207,7 @@ export function recordSolve(size, difficulty, score) {
 //   * they are the player's BEST ten, not a fair sample, so a percentile against
 //     a freshly seeded bucket is pessimistic — it understates how good the new
 //     solve was. Real solves dilute that with every game played.
-//   * chronological order is unknown; the top-10 order is kept, which puts them
+//   * chronological order is unknown; the top-list order is kept, which puts them
 //     at the front of the array where the cap evicts first. That is right: they
 //     are the oldest thing in there.
 //
@@ -266,7 +270,7 @@ export function percentileBetter(score, others) {
 export function getPersonalStats(size, difficulty, score) {
   const others = getSolveScores(size, difficulty);
   const total = others.length;
-  // The all-time best survives in the top-10 list even if the history has
+  // The all-time best survives in the top list even if the history has
   // rolled past it, so take the better of the two as the record to beat.
   const top = getLocalScores(size, difficulty);
   const candidates = others.concat(top.map((e) => e.score));
