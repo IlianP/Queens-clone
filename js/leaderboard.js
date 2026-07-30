@@ -121,9 +121,31 @@ async function rpcWithRetry(fn, body, onRetry) {
   }
 }
 
+// Pull the bare reason out of a PostgREST error body. A `raise exception` in
+// submit_score arrives as {"code":"P0001",…,"message":"implausible time"}; a
+// non-JSON body (gateway page, plain text) is passed through trimmed. Returns
+// null when there's nothing usable. The English strings are the server's own —
+// mapping them to player-facing German is the UI's job, not this layer's.
+function serverReason(body) {
+  if (!body) return null;
+  try {
+    const parsed = JSON.parse(body);
+    const msg = parsed && (parsed.message || parsed.error || parsed.hint);
+    if (msg) return String(msg).slice(0, 120);
+  } catch (e) {
+    /* not JSON — fall through to the raw text */
+  }
+  return String(body).trim().slice(0, 120) || null;
+}
+
 // Submit a solved game. Resolves { rank, total } (1-based rank within its
-// bucket) on success. On failure resolves { failed: true, attempts } instead
-// of a bare null so a caller can explain why — `attempts` is rpcWithRetry's
+// bucket) on success. On failure resolves
+// { failed: true, rejected, reason, attempts } instead of a bare null so a
+// caller can explain why: `rejected` is true when the server answered with a
+// permanent 4xx — it refused the values, so retrying is pointless — and `reason`
+// is its own short message ("implausible time", "rate limited", …). A
+// network/timeout/5xx failure leaves `rejected` false; that one really is
+// "unreachable" and worth another try. `attempts` is rpcWithRetry's
 // per-try diagnostics (HTTP status / retriable / error text). Callers that
 // only care about success can keep testing `res && Number.isFinite(res.rank)`
 // unchanged, since a failure object has no `rank`. The server sanitises the
@@ -149,7 +171,20 @@ export async function submitScore(entry, { onRetry } = {}) {
     },
     onRetry
   );
-  if (!result.ok) return { failed: true, attempts: result.attempts };
+  if (!result.ok) {
+    // Separate "the server said no" from "the server never answered". Both used
+    // to surface as "nicht erreichbar", which sent a player hunting for a network
+    // problem when submit_score had in fact rejected the values (a fast solve
+    // tripping the old plausibility floor is the case that exposed this).
+    const last = result.attempts[result.attempts.length - 1];
+    const rejected = !!last && !last.retriable && last.status >= 400 && last.status < 500;
+    return {
+      failed: true,
+      rejected,
+      reason: rejected ? serverReason(last.error) : null,
+      attempts: result.attempts,
+    };
+  }
   const row = Array.isArray(result.data) ? result.data[0] : result.data;
   if (!row || row.rank == null) return { failed: true, attempts: result.attempts, error: 'unexpected response shape' };
   return { rank: Number(row.rank), total: Number(row.total) };

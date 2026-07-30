@@ -268,6 +268,22 @@ truly cheat-proof since the client reports its own time — say so, don't
 oversell it. Untrusted leaderboard names
 are always rendered with `textContent`, never `innerHTML`.
 
+**A server check that rejects real play is a bug, not security.** `queens_min_seconds`
+used to be `greatest(3, p_size)` and refused genuine fast solves (a 6×6 in 5 s) with
+`implausible time` / HTTP 400. Since the client reports its own time, that floor
+never stopped anyone who wanted to cheat — it only cost functionality, so it is now
+a flat `1`. Keep new server-side validation on the same side of that trade, and
+remember any change to `docs/leaderboard-setup.sql` needs the project owner to
+re-run it in Supabase (the file is repeatable; the `MIGRATION` block at its end
+lists what changed).
+
+`submitScore` distinguishes **refused** from **unreachable**: a permanent 4xx comes
+back as `{ rejected: true, reason }` with the server's own message extracted by
+`serverReason`, and `main.js`'s `rejectionCopy` maps it to German and decides
+whether a retry could ever help (only `rate limited` can). Before that split, a
+rejection was reported as "Global nicht erreichbar", which sent the player hunting
+for a network fault that didn't exist and offered a retry that could not work.
+
 **Relative feedback (beyond the absolute placement).** The top-10 list discards
 everything below rank 10, so it cannot answer "how does this solve compare to
 all my others?" — a second, tiny store does: `queens-clone-solves`, one flat

@@ -12,7 +12,15 @@
 --     unmögliche Zeiten ablehnen, Best-Effort Rate-Limit pro Client. Der Score
 --     wird serverseitig berechnet (Client-Angaben zählen nur als Rohwerte).
 --   * Ehrlich: Da der Browser die Zeit selbst meldet, ist keine solche Rangliste
---     manipulationssicher – die Prüfungen halten nur groben Unfug ab.
+--     manipulationssicher – die Prüfungen halten nur groben Unfug ab. Genau
+--     deshalb sind sie bewusst LOCKER: eine Prüfung, die echte schnelle Läufe
+--     abweist, kostet Funktionalität und bringt keine Sicherheit (siehe
+--     queens_min_seconds).
+--
+-- Bereits eingerichtet? Dann genügt es, die geänderten Funktionen erneut
+-- auszuführen – `create or replace` ersetzt sie an Ort und Stelle, Tabelle und
+-- Daten bleiben unberührt. Der Abschnitt "MIGRATION" am Ende dieser Datei listet,
+-- was sich seit der Ersteinrichtung geändert hat.
 --
 -- Datenschutz: Statt der rohen IP wird nur ein täglich gesalzener Hash
 -- gespeichert (client_key), rein fürs Rate-Limit – die IP selbst wird nicht
@@ -47,10 +55,16 @@ create or replace function public.queens_score(p_seconds int, p_hints int, p_mis
   select p_seconds + 30 * p_hints + 15 * p_mistakes;
 $$;
 
--- Plausibler Mindestwert je Feldgröße: schneller ist praktisch unmöglich.
+-- Untergrenze für die gemeldete Zeit. ABSICHTLICH sehr niedrig: sie war früher
+-- `greatest(3, p_size)` – also z. B. 6 Sekunden bei 6×6 – und hat damit echte,
+-- schnelle Läufe abgewiesen (ein 6×6 in 5 s ist mit Schnellmodus problemlos
+-- machbar). Das war kein Schutz, sondern nur ein Ärgernis: da der Browser seine
+-- Zeit selbst meldet, hätte jeder Manipulierende einfach eine „plausible" Zeit
+-- geschickt. Abgelehnt wird deshalb nur noch das physikalisch Unmögliche (0 s
+-- oder negativ); Funktionalität geht hier vor Schein-Sicherheit.
 create or replace function public.queens_min_seconds(p_size int)
   returns int language sql immutable as $$
-  select greatest(3, p_size);
+  select 1;
 $$;
 
 -- 4) Eintragen: prüft serverseitig, rechnet den Score, gibt Rang + Gesamt -----
@@ -117,3 +131,21 @@ $$;
 -- 6) Ausführrechte nur für die beiden Funktionen ------------------------------
 grant execute on function public.submit_score(text, int, text, int, int, int) to anon;
 grant execute on function public.top_scores(int, text, int) to anon;
+
+-- MIGRATION für bereits eingerichtete Projekte ---------------------------------
+-- Die ganze Datei erneut auszuführen ist immer sicher (alles ist `if not exists`
+-- bzw. `create or replace`, keine Daten werden angefasst). Wer nur die Änderung
+-- will, führt genau diesen Block aus:
+--
+--   2026-07: Zeit-Untergrenze gelockert. Vorher `greatest(3, p_size)`, was echte
+--   schnelle Läufe mit "implausible time" (Fehlercode P0001, HTTP 400) abwies –
+--   z. B. ein 6×6 in 5 s. Neu: nur noch 0/negativ wird abgelehnt.
+--
+--     create or replace function public.queens_min_seconds(p_size int)
+--       returns int language sql immutable as $$
+--       select 1;
+--     $$;
+--
+-- Bereits abgewiesene Einträge sind nicht nachträglich rekonstruierbar (sie
+-- wurden nie geschrieben) – sie liegen aber lokal auf dem Gerät des Spielenden,
+-- weil die lokale Bestenliste vor dem Senden gespeichert wird.

@@ -140,6 +140,20 @@ Werte begrenzen, Best-Effort Rate-Limit) halten nur groben Unfug ab – für ein
 Hobbyspiel genug, kein Turnier-Anspruch. Statt roher IP wird nur ein gesalzener
 Tageshash fürs Rate-Limit gespeichert.
 
+Genau deshalb ist die Zeit-Untergrenze **absichtlich sehr locker**: sie lag früher
+bei „Feldgröße in Sekunden" und hat damit echte schnelle Läufe abgewiesen (ein 6×6
+in 5 s ist mit Schnellmodus gut machbar). Da ohnehin jeder Manipulierende einfach
+eine plausibel aussehende Zeit senden könnte, kostete diese Prüfung nur
+Funktionalität. Abgewiesen wird jetzt nur noch Unmögliches (0 Sekunden). Wer die
+Rangliste schon eingerichtet hat, führt den **MIGRATION**-Block am Ende von
+`docs/leaderboard-setup.sql` nach (oder einfach die ganze Datei erneut – sie ist
+wiederholbar und lässt vorhandene Daten unberührt).
+
+Lehnt der Server einen Eintrag ab, sagt der Gewinn-Bildschirm jetzt **warum**
+(z. B. „Global abgelehnt: Zeit als unmöglich eingestuft") statt „nicht erreichbar" –
+und bietet keinen sinnlosen zweiten Versuch an. Lokal gespeichert wird in jedem
+Fall, bevor überhaupt gesendet wird.
+
 ## Rätsel-Pools
 
 „Neues Spiel" startet sofort: Die Rätsel werden nicht live berechnet, sondern aus

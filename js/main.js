@@ -1031,6 +1031,27 @@ function flushPendingWin() {
   pendingWin = null;
 }
 
+// Player-facing German for a submit the server refused. `reason` is submit_score's
+// own English message (see serverReason in leaderboard.js); anything unmapped is
+// quoted verbatim rather than swallowed, so a new server-side check still tells
+// the player something true. `allowRetry` is only for reasons that can pass later
+// — the values themselves won't change on a second press.
+const SUBMIT_REJECTIONS = {
+  'implausible time': { text: 'Global abgelehnt: Zeit als unmöglich eingestuft', allowRetry: false },
+  'bad counters': { text: 'Global abgelehnt: Tipp-/Fehlerzahl außerhalb des erlaubten Bereichs', allowRetry: false },
+  'bad size': { text: 'Global abgelehnt: Feldgröße nicht erlaubt', allowRetry: false },
+  'bad difficulty': { text: 'Global abgelehnt: Schwierigkeit nicht erlaubt', allowRetry: false },
+  'rate limited': { text: 'Zu viele Einträge in kurzer Zeit – in einer Minute nochmal', allowRetry: true },
+};
+function rejectionCopy(reason) {
+  const known = reason && SUBMIT_REJECTIONS[String(reason).trim().toLowerCase()];
+  if (known) return known;
+  return {
+    text: reason ? `Global abgelehnt („${reason}")` : 'Global abgelehnt',
+    allowRetry: false,
+  };
+}
+
 async function onWinSubmit() {
   if (!pendingWin) return;
   // Guard the two ways the same solve could be entered globally twice: a submit
@@ -1089,6 +1110,16 @@ async function onWinSubmit() {
       'ok'
     );
     selectWinTab('global');
+  } else if (res && res.rejected) {
+    // The server answered and said no. Saying "nicht erreichbar" here sends the
+    // player looking for a network problem that isn't there, so name the reason —
+    // and only offer a retry where one can actually help (a rate limit passes,
+    // rejected values never will).
+    const { text, allowRetry } = rejectionCopy(res.reason);
+    dom.winSubmit.disabled = !allowRetry;
+    if (allowRetry) dom.winSubmit.textContent = 'Erneut versuchen';
+    setStatus(dom.winSubmitStatus, `${text} – lokal gespeichert ✓`, 'err');
+    if (settings.debug) await copySubmitFailureDebug(res.attempts);
   } else {
     // The auto-retries didn't get through. Don't give up on a single episode:
     // keep the button live as a manual retry (it's re-labelled the first time).
