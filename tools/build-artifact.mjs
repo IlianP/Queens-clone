@@ -22,6 +22,7 @@ import { tmpdir } from 'node:os';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+const css = read('css/styles.css');
 
 const argv = process.argv.slice(2);
 const styleIdx = argv.indexOf('--style');
@@ -45,6 +46,9 @@ function strip(code) {
     .replace(/^\s*export\s+((?:async\s+)?(?:const|let|var|function|class))\b/gm, '$1');
 }
 
+const i18nEn = strip(read('js/i18n/en.js'));
+const i18nDe = strip(read('js/i18n/de.js'));
+const i18n = strip(read('js/i18n.js'));
 const settings = strip(read('js/settings.js'));
 const audio = strip(read('js/audio.js'));
 const voice = strip(read('js/voice.js'));
@@ -119,25 +123,35 @@ const workerSrc =
   '  self.postMessage(generatePuzzle(d.N, d.difficulty, { budgetMs: d.budgetMs, style: d.style }));\n' +
   '};\n';
 
-// Page bundle: settings -> audio -> voice -> solver -> generator -> levels ->
-// highscores -> game -> hint -> leaderboard -> main (boots). The online
+// Page bundle: i18n packs -> i18n -> settings -> audio -> voice -> solver ->
+// generator -> levels -> highscores -> game -> hint -> leaderboard -> main
+// (boots). The language packs come FIRST because js/i18n.js builds I18N_PACKS
+// from them in a top-level `const`: in one shared scope a later declaration
+// would be in the temporal dead zone and the bundle would throw at load. The online
 // leaderboard's fetch calls are CSP-blocked inside the Artifact, so it stays
 // disabled there and the bundle runs local-only — the same graceful fallback the
 // game uses elsewhere. (The synthesised sounds need no assets, so they work
 // under the Artifact CSP unchanged. Voice Mode degrades the same way: the
 // sandboxed Artifact frame can't grant mic access, so voiceSupported() gates it
 // off there and the panel simply doesn't run.)
-const pageBundle = [settings, audio, voice, solver, generator, levels, highscores, game, hint, leaderboard, main].join(
-  '\n\n'
-);
+const pageBundle = [
+  i18nEn, i18nDe, i18n,
+  settings, audio, voice, solver, generator, levels, highscores, game, hint, leaderboard, main,
+].join('\n\n');
+
+// The bundle has no <html> element to carry a lang attribute and no <head> the
+// body slice would pick up, so the shell's reveal hook has to be there. Guard
+// it: without `data-i18n-ready` the CSS gate never lifts and the Artifact opens
+// on a blank page (see applyTranslations in js/main.js).
+if (!main.includes('data-i18n-ready') || !css.includes('data-i18n-ready')) {
+  throw new Error('the i18n reveal hook (data-i18n-ready) is missing — bundle would render blank');
+}
 
 // Safety net: a surviving `import`/`export` means strip() missed a form (e.g. a
 // new multi-line import) and the classic-script bundle would throw at load.
 if (/^\s*(import|export)\s/m.test(pageBundle)) {
   throw new Error('bundle still contains an import/export statement — strip() needs updating');
 }
-
-const css = read('css/styles.css');
 
 // Body markup from index.html, minus the module <script> (inlined below).
 const html = read('index.html');

@@ -1,6 +1,6 @@
 // settings.js
-// Persist only the user's preferences (size / difficulty / quick mode / last
-// nickname) in localStorage. No game state is stored — a page reload starts
+// Persist only the user's preferences (language / size / difficulty / quick
+// mode / last nickname) in localStorage. No game state is stored — a page reload starts
 // fresh. Highscores live in their own key (see js/highscores.js); the nickname
 // is kept here so the win screen can pre-fill it after every game.
 
@@ -10,6 +10,10 @@ export const MIN_SIZE = 5;
 export const MAX_SIZE = 12;
 export const MAX_NICKNAME_LENGTH = 20;
 export const DEFAULTS = {
+  // '' = decide from the browser (see resolveLanguage in js/i18n.js). Only an
+  // explicit pick is stored as a code, so a player who never chose keeps
+  // following their browser instead of being frozen into one language.
+  language: '',
   size: 8,
   difficulty: 'medium',
   quickMode: true,
@@ -44,6 +48,10 @@ export function loadSettings() {
     if (!raw) return { ...DEFAULTS };
     const s = JSON.parse(raw);
     return {
+      // Not validated against the pack list here: settings.js knows nothing
+      // about i18n, and resolveLanguage() already falls back for an unknown or
+      // dropped code.
+      language: typeof s.language === 'string' ? s.language : DEFAULTS.language,
       size: clampSize(s.size),
       difficulty: ['easy', 'medium', 'hard'].includes(s.difficulty) ? s.difficulty : DEFAULTS.difficulty,
       quickMode: typeof s.quickMode === 'boolean' ? s.quickMode : DEFAULTS.quickMode,

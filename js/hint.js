@@ -10,6 +10,11 @@
 //   - confinement:  a colour confined to one line, or a line to one colour (X),
 //   - dead-end:     a queen here would wipe out a whole other unit, so it's out.
 // A reveal fallback exists but is essentially never needed.
+//
+// All player-facing wording comes from js/i18n.js. Units are passed around as
+// KINDS ('region' | 'row' | 'col') and only turned into words at the point a
+// sentence is built — a hint must never branch on a translated string.
+import { t } from './i18n.js';
 
 function emptyGrid(N, v) {
   return Array.from({ length: N }, () => new Array(N).fill(v));
@@ -61,18 +66,20 @@ function unitCandidates(cells, st) {
   return out;
 }
 
-const UNIT_WORD = { region: 'Farbregion', row: 'Zeile', col: 'Spalte' };
+// 'region' | 'row' | 'col' -> the word for it in the active language.
+const unitWord = (unitKind) => t(`hint.unit.${unitKind}`);
 
 function placeHint(unitKind, target, unitCells) {
+  const unit = unitWord(unitKind);
   return {
     kind: 'place',
-    title: `Nur ein Feld in der ${UNIT_WORD[unitKind]}`,
-    text: `In dieser ${UNIT_WORD[unitKind]} ist nur noch dieses eine Feld frei – alle anderen sind ausgeschlossen. Hier muss die Dame stehen.`,
+    title: t('hint.place.title', { unit }),
+    text: t('hint.place.text', { unit }),
     reasonCells: unitCells,
     lineCells: [],
     excludedCells: [],
     targetCells: [target],
-    applyLabel: 'Dame setzen',
+    applyLabel: t('hint.apply.placeQueen'),
   };
 }
 
@@ -85,7 +92,7 @@ function elimHint(title, text, reasonCells, elim) {
     lineCells: [],
     excludedCells: [],
     targetCells: elim,
-    applyLabel: elim.length > 1 ? 'Felder markieren' : 'Feld markieren',
+    applyLabel: elim.length > 1 ? t('hint.apply.markCells') : t('hint.apply.markCell'),
   };
 }
 
@@ -122,18 +129,14 @@ function findConfinement(st, N, region, regionCells) {
       const elim = [];
       for (let c = 0; c < N; c++) if (st.cand[r][c] && region[r][c] !== reg) elim.push([r, c]);
       if (elim.length)
-        return elimHint('Farbe legt die Zeile fest',
-          'Alle möglichen Felder dieser Farbe liegen in einer Zeile. Die Dame dieser Zeile gehört also zu dieser Farbe – die übrigen Felder der Zeile scheiden aus.',
-          cs, elim);
+        return elimHint(t('hint.confine.colorRow.title'), t('hint.confine.colorRow.text'), cs, elim);
     }
     if (cols.size === 1) {
       const c = cs[0][1];
       const elim = [];
       for (let r = 0; r < N; r++) if (st.cand[r][c] && region[r][c] !== reg) elim.push([r, c]);
       if (elim.length)
-        return elimHint('Farbe legt die Spalte fest',
-          'Alle möglichen Felder dieser Farbe liegen in einer Spalte. Die Dame dieser Spalte gehört also zu dieser Farbe – die übrigen Felder der Spalte scheiden aus.',
-          cs, elim);
+        return elimHint(t('hint.confine.colorCol.title'), t('hint.confine.colorCol.text'), cs, elim);
     }
   }
   const lineToRegion = (isRow) => {
@@ -147,9 +150,11 @@ function findConfinement(st, N, region, regionCells) {
         const reg = region[cs[0][0]][cs[0][1]];
         const elim = unitCandidates(regionCells[reg], st).filter(([r, c]) => (isRow ? r !== u : c !== u));
         if (elim.length)
+          // Two separate key pairs rather than one sentence with a unit slot:
+          // "row" and "column" don't decline identically in every language.
           return elimHint(
-            isRow ? 'Zeile legt die Farbe fest' : 'Spalte legt die Farbe fest',
-            `In dieser ${isRow ? 'Zeile' : 'Spalte'} sind nur noch Felder einer einzigen Farbe möglich. Die Dame dieser Farbe liegt also in dieser ${isRow ? 'Zeile' : 'Spalte'} – ihre Felder in anderen ${isRow ? 'Zeilen' : 'Spalten'} scheiden aus.`,
+            isRow ? t('hint.confine.rowColor.title') : t('hint.confine.colColor.title'),
+            isRow ? t('hint.confine.rowColor.text') : t('hint.confine.colColor.text'),
             cs, elim);
       }
     }
@@ -183,13 +188,14 @@ function findDeadEnd(st, N, region, regionCells) {
     return out;
   };
 
-  const make = (cs, unitWord) => {
+  const make = (cs, unitKind) => {
     const elim = blockersOf(cs);
     if (!elim.length) return null;
     const many = elim.length > 1;
+    const unit = unitWord(unitKind);
     return elimHint(
-      `Würde eine ${unitWord} blockieren`,
-      `Eine Dame auf ${many ? 'einem dieser Felder' : 'diesem Feld'} würde jedes noch freie Feld dieser ${unitWord} ausschließen (gleiche Zeile, Spalte, Farbe oder direkt daneben). Da die ${unitWord} aber eine Dame braucht, ${many ? 'scheiden diese Felder aus' : 'scheidet dieses Feld aus'}.`,
+      t('hint.deadEnd.title', { unit }),
+      t('hint.deadEnd.text', { unit, many }),
       cs,
       elim
     );
@@ -202,26 +208,26 @@ function findDeadEnd(st, N, region, regionCells) {
       const attacks = (r, c) =>
         r === xr || c === xc || region[r][c] === xg || (Math.abs(r - xr) <= 1 && Math.abs(c - xc) <= 1);
 
-      const check = (cells, unitWord) => {
+      const check = (cells, unitKind) => {
         const cs = unitCandidates(cells, st);
         if (!cs.length) return null;
-        if (cs.every(([r, c]) => attacks(r, c))) return make(cs, unitWord);
+        if (cs.every(([r, c]) => attacks(r, c))) return make(cs, unitKind);
         return null;
       };
 
       for (let r = 0; r < N; r++) {
         if (st.rowQ[r] || r === xr) continue;
-        const h = check(rowCells(N, r), 'Zeile');
+        const h = check(rowCells(N, r), 'row');
         if (h) return h;
       }
       for (let c = 0; c < N; c++) {
         if (st.colQ[c] || c === xc) continue;
-        const h = check(colCells(N, c), 'Spalte');
+        const h = check(colCells(N, c), 'col');
         if (h) return h;
       }
       for (let g = 0; g < N; g++) {
         if (st.regQ[g] || g === xg) continue;
-        const h = check(regionCells[g], 'Farbregion');
+        const h = check(regionCells[g], 'region');
         if (h) return h;
       }
     }
@@ -310,11 +316,12 @@ function findCrowding(st, N, region, regionCells) {
     return found;
   };
 
+  const describe = (key) => (k) => [t(`hint.crowd.${key}.title`, { k }), t(`hint.crowd.${key}.text`, { k })];
   const orientations = [
-    () => run(rowsCellsAll, st.rowQ, rowOf, regionOf, true, (k) => [`${k} Farben passen nur in ${k} Zeilen`, `In den ${k} hervorgehobenen Zeilen kommen nur ${k} Farben vor. Diese ${k} Farben müssen also in genau diese Zeilen – dieselben Farben scheiden in allen anderen Zeilen aus (schraffiert).`]),
-    () => run(colsCellsAll, st.colQ, colOf, regionOf, true, (k) => [`${k} Farben passen nur in ${k} Spalten`, `In den ${k} hervorgehobenen Spalten kommen nur ${k} Farben vor. Diese ${k} Farben müssen also in genau diese Spalten – dieselben Farben scheiden in allen anderen Spalten aus (schraffiert).`]),
-    () => run(regCellsIdx, st.regQ, regionOf, rowOf, false, (k) => [`${k} Farben belegen ${k} Zeilen`, `Die ${k} hervorgehobenen Farben passen nur in ${k} Zeilen. Diese Zeilen gehören also diesen Farben – andere Farben scheiden in diesen Zeilen aus (schraffiert).`]),
-    () => run(regCellsIdx, st.regQ, regionOf, colOf, false, (k) => [`${k} Farben belegen ${k} Spalten`, `Die ${k} hervorgehobenen Farben passen nur in ${k} Spalten. Diese Spalten gehören also diesen Farben – andere Farben scheiden in diesen Spalten aus (schraffiert).`]),
+    () => run(rowsCellsAll, st.rowQ, rowOf, regionOf, true, describe('rowsRegions')),
+    () => run(colsCellsAll, st.colQ, colOf, regionOf, true, describe('colsRegions')),
+    () => run(regCellsIdx, st.regQ, regionOf, rowOf, false, describe('regionsRows')),
+    () => run(regCellsIdx, st.regQ, regionOf, colOf, false, describe('regionsCols')),
   ];
 
   // Keep the smallest-k Hall set across all orientations (a k=2 can't be beaten).
@@ -341,13 +348,13 @@ export function computeHint(N, region, solution, queens, marks) {
     if (solution[r] !== c) {
       return {
         kind: 'mistake',
-        title: 'Diese Dame passt nicht',
-        text: 'Diese Dame kann nicht Teil der Lösung sein. Nimm sie zurück und probiere es an einer anderen Stelle.',
+        title: t('hint.mistake.queen.title'),
+        text: t('hint.mistake.queen.text'),
         reasonCells: [],
         lineCells: [],
         excludedCells: [],
         targetCells: [[r, c]],
-        applyLabel: 'Dame entfernen',
+        applyLabel: t('hint.apply.removeQueen'),
       };
     }
   }
@@ -371,38 +378,38 @@ export function computeHint(N, region, solution, queens, marks) {
       if (!marks[r][c]) continue;
       const reg = region[r][c];
       const soleUnit =
-        (unitCandidates(regionCells[reg], st).length === 1 && 'Farbregion') ||
-        (unitCandidates(rowCells(N, r), st).length === 1 && 'Zeile') ||
-        (unitCandidates(colCells(N, c), st).length === 1 && 'Spalte');
+        (unitCandidates(regionCells[reg], st).length === 1 && 'region') ||
+        (unitCandidates(rowCells(N, r), st).length === 1 && 'row') ||
+        (unitCandidates(colCells(N, c), st).length === 1 && 'col');
       if (soleUnit) {
         const unitCells =
-          soleUnit === 'Farbregion' ? regionCells[reg] : soleUnit === 'Zeile' ? rowCells(N, r) : colCells(N, c);
+          soleUnit === 'region' ? regionCells[reg] : soleUnit === 'row' ? rowCells(N, r) : colCells(N, c);
         return {
           kind: 'place',
-          title: 'Hier muss die Dame stehen',
-          text: `Dieses Feld ist als Ausschluss markiert – dabei ist es das einzige noch freie Feld seiner ${soleUnit}. Entferne die Markierung und setze hier die Dame.`,
+          title: t('hint.markedSolution.place.title'),
+          text: t('hint.markedSolution.place.text', { unit: unitWord(soleUnit) }),
           reasonCells: unitCells,
           lineCells: [],
           excludedCells: [],
           targetCells: [[r, c]],
-          applyLabel: 'Dame setzen',
+          applyLabel: t('hint.apply.placeQueen'),
         };
       }
       return {
         kind: 'mistake',
-        title: 'Hier muss eine Dame stehen',
-        text: 'Dieses Feld ist als Ausschluss markiert, obwohl hier eine Dame stehen muss. Entferne die Markierung.',
+        title: t('hint.markedSolution.mistake.title'),
+        text: t('hint.markedSolution.mistake.text'),
         reasonCells: [],
         lineCells: [],
         excludedCells: [],
         targetCells: [[r, c]],
-        applyLabel: 'Markierung entfernen',
+        applyLabel: t('hint.apply.removeMark'),
       };
     }
   }
 
   if (correct.length === N)
-    return { kind: 'none', title: 'Alles gelöst', text: 'Alle Damen stehen richtig – gut gemacht!' };
+    return { kind: 'none', title: t('hint.solved.title'), text: t('hint.solved.text') };
 
   const simple =
     findNakedSingle(st, N, regionCells) || findConfinement(st, N, region, regionCells);
@@ -437,10 +444,10 @@ function revealFallback(st, N, region, regionCells, solution) {
     for (let r = 0; r < N; r++) if (region[r][solution[r]] === best.reg) target = [r, solution[r]];
     if (target) {
       const h = placeHint('region', target, regionCells[best.reg]);
-      h.title = 'Nächste Dame';
-      h.text = 'Hier gehört die nächste Dame hin.';
+      h.title = t('hint.reveal.title');
+      h.text = t('hint.reveal.text');
       return h;
     }
   }
-  return { kind: 'none', title: 'Kein Hinweis', text: 'Gerade ist kein einfacher Hinweis verfügbar.' };
+  return { kind: 'none', title: t('hint.none.title'), text: t('hint.none.text') };
 }

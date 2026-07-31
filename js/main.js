@@ -25,6 +25,14 @@ import {
 } from './highscores.js';
 import { leaderboardConfigured, submitScore, fetchTopScores } from './leaderboard.js';
 import {
+  t,
+  setLanguage,
+  getLanguage,
+  resolveLanguage,
+  browserLanguages,
+  I18N_LANGUAGES,
+} from './i18n.js';
+import {
   setMuted,
   playPlace,
   playDot,
@@ -138,9 +146,41 @@ const dom = {
   voiceHelp: el('voice-help'),
   voiceHelpOverlay: el('voice-help-overlay'),
   voiceHelpClose: el('voice-help-close'),
+  languageSelect: el('language-select'),
 };
 
 let settings = loadSettings();
+// Pick the UI language before anything is rendered or any t() call runs: a
+// stored choice wins, otherwise the browser decides, otherwise English (see
+// resolveLanguage). Changing it later reloads the page, so this runs once.
+setLanguage(resolveLanguage(settings.language, browserLanguages()));
+
+// ---------- i18n ----------
+// index.html ships the ENGLISH baseline inline (English is the default), and
+// this swaps it for the resolved language before the first paint — the .app
+// shell stays `visibility: hidden` until `data-i18n-ready` lands. It runs once
+// per page: switching language reloads, so nothing is ever re-translated in
+// place (see onLanguageChange).
+//
+//   data-i18n="key"                           -> textContent
+//   data-i18n-html="key"                      -> innerHTML, for the few pack
+//                                                values with inline markup.
+//                                                NEVER for player/leaderboard text.
+//   data-i18n-attr="aria-label:key|title:key" -> attributes
+function applyTranslations(root = document) {
+  for (const node of root.querySelectorAll('[data-i18n]')) node.textContent = t(node.dataset.i18n);
+  for (const node of root.querySelectorAll('[data-i18n-html]')) node.innerHTML = t(node.dataset.i18nHtml);
+  for (const node of root.querySelectorAll('[data-i18n-attr]')) {
+    for (const pair of node.dataset.i18nAttr.split('|')) {
+      const sep = pair.indexOf(':');
+      if (sep < 0) continue;
+      node.setAttribute(pair.slice(0, sep).trim(), t(pair.slice(sep + 1).trim()));
+    }
+  }
+  document.documentElement.lang = t('lang.htmlLang');
+  document.documentElement.setAttribute('data-i18n-ready', '');
+}
+
 // Size 12 is hard-only (see applyDifficultyConstraint) — normalise a persisted
 // or stale easy/medium choice so the first board matches what the modal allows.
 if (settings.size >= 12) settings.difficulty = 'hard';
@@ -765,7 +805,7 @@ function updateMessage() {
     dom.message.className = 'message';
     onWin();
   } else if (game.queenCount === game.N) {
-    dom.message.textContent = 'Fast! Es gibt noch Konflikte.';
+    dom.message.textContent = t('msg.almost');
     dom.message.className = 'message';
   } else {
     dom.message.textContent = '';
@@ -780,21 +820,20 @@ function fmtTime(sec) {
   sec = Math.max(0, Math.floor(sec));
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
-function plural(n, one, many) {
-  return `${n} ${n === 1 ? one : many}`;
-}
 // A gap between two results, phrased as a duration rather than a clock reading:
 // "14 s" beats "0:14" for a difference.
 function fmtDelta(sec) {
   const s = Math.max(0, Math.round(sec));
-  return s < 60 ? `${s} s` : `${fmtTime(s)} min`;
+  return s < 60 ? t('time.seconds', { seconds: s }) : t('time.minutes', { time: fmtTime(s) });
 }
-const DIFFICULTY_LABELS = { easy: 'Leicht', medium: 'Mittel', hard: 'Schwer' };
+function difficultyLabel(difficulty) {
+  return t(`difficulty.${difficulty}`);
+}
 // Scores are ranked per (size, difficulty), so any comparison has to name the
-// bucket it's about — otherwise "besser als 88 %" reads as if it spanned every
+// bucket it's about — otherwise "better than 88 %" reads as if it spanned every
 // board size.
 function bucketLabel(size, difficulty) {
-  return `${size}×${size} · ${DIFFICULTY_LABELS[difficulty] || difficulty}`;
+  return t('bucket.label', { size, difficulty: difficultyLabel(difficulty) });
 }
 function setStatus(node, text, kind = '') {
   node.textContent = text;
@@ -809,24 +848,24 @@ function renderScoreList(container, entries, highlightIdx = -1) {
   if (!entries || entries.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'score-empty';
-    empty.textContent = 'Noch keine Einträge – sei die/der Erste!';
+    empty.textContent = t('score.empty');
     container.appendChild(empty);
     return;
   }
   entries.forEach((e, i) => {
     const row = document.createElement('div');
     row.className = 'score-row' + (i === highlightIdx ? ' me' : '');
-    row.title = `Zeit ${fmtTime(e.seconds)} · ${plural(e.hints, 'Tipp', 'Tipps')} · ${plural(
-      e.mistakes,
-      'Fehler',
-      'Fehler'
-    )}`;
+    row.title = t('score.rowTitle', {
+      time: fmtTime(e.seconds),
+      hints: e.hints,
+      mistakes: e.mistakes,
+    });
     const rank = document.createElement('span');
     rank.className = 'score-rank';
     rank.textContent = `${i + 1}.`;
     const name = document.createElement('span');
     name.className = 'score-name';
-    name.textContent = e.name || 'Anonym';
+    name.textContent = e.name || t('score.anonymous');
     const val = document.createElement('span');
     val.className = 'score-val';
     val.textContent = fmtTime(e.score);
@@ -873,29 +912,37 @@ function renderPersonalFeedback(stats, size, difficulty) {
   // Distance to the personal best, or the fact that it was matched.
   const toBest =
     stats.delta == null || stats.delta === 0
-      ? 'gleichauf mit deiner Bestzeit'
-      : `+${fmtDelta(stats.delta)} zur Bestzeit`;
+      ? t('win.personal.toBest.equal')
+      : t('win.personal.toBest.delta', { delta: fmtDelta(stats.delta) });
   let main = '';
   let detail = '';
   let isBest = false;
 
   if (stats.total === 0) {
-    detail = `Deine erste Partie in ${label} – ab jetzt gibt es etwas zu schlagen.`;
+    detail = t('win.personal.first', { bucket: label });
   } else if (stats.isBest) {
     isBest = true;
-    main = '🏆 Neue Bestzeit!';
-    detail = `${fmtDelta(stats.delta)} besser als dein bisheriger Rekord · ${label}`;
+    main = t('win.personal.best');
+    detail = t('win.personal.bestDetail', { delta: fmtDelta(stats.delta), bucket: label });
   } else if (stats.percentile == null || stats.percentile === 0) {
     // Either too few previous solves for a percentage to mean anything, or a
-    // result that beat none of them — "besser als 0 %" carries no information
+    // result that beat none of them — "better than 0 %" carries no information
     // the placement doesn't, and reads as a kick. The plain placement says the
     // same thing without the sneer.
-    main = `Deine ${stats.rank}.-beste von ${stats.total + 1} Partien`;
-    detail = `${label} · ${toBest}`;
+    main = t('win.personal.rank', { rank: stats.rank, total: stats.total + 1 });
+    detail = t('win.personal.detail', { bucket: label, toBest });
   } else {
-    const of = stats.capped ? `deiner letzten ${stats.total}` : `deiner ${stats.total}`;
-    main = `Besser als ${stats.percentile} % ${of} Partien`;
-    detail = `Platz ${stats.rank} von ${stats.total + 1} · ${label} · ${toBest}`;
+    main = t('win.personal.percentile', {
+      percent: stats.percentile,
+      total: stats.total,
+      capped: stats.capped,
+    });
+    detail = t('win.personal.detailRank', {
+      rank: stats.rank,
+      total: stats.total + 1,
+      bucket: label,
+      toBest,
+    });
   }
 
   if (main) {
@@ -931,14 +978,19 @@ function onWin() {
     submittedGlobal: false,
   };
 
-  // Summary: the ranked "Ergebnis" (effective time) with the raw breakdown.
-  dom.winTime.innerHTML =
-    `<span class="win-score">${fmtTime(score)}</span>` +
-    `<span class="win-breakdown">Zeit ${fmtTime(seconds)} · ${plural(
-      hintsUsed,
-      'Tipp',
-      'Tipps'
-    )} · ${plural(mistakes, 'Fehler', 'Fehler')}</span>`;
+  // Summary: the ranked result (effective time) with the raw breakdown.
+  dom.winTime.textContent = '';
+  const scoreEl = document.createElement('span');
+  scoreEl.className = 'win-score';
+  scoreEl.textContent = fmtTime(score);
+  const breakdownEl = document.createElement('span');
+  breakdownEl.className = 'win-breakdown';
+  breakdownEl.textContent = t('win.breakdown', {
+    time: fmtTime(seconds),
+    hints: hintsUsed,
+    mistakes,
+  });
+  dom.winTime.append(scoreEl, breakdownEl);
 
   // Compare against the history *before* this solve joins it (commitPendingWin
   // records it later), so the comparison set is "everything up to now". Kept on
@@ -949,7 +1001,7 @@ function onWin() {
   dom.winNickname.value = settings.nickname || '';
   globalSubmitInFlight = false;
   dom.winSubmit.disabled = false;
-  dom.winSubmit.textContent = leaderboardConfigured() ? 'Eintragen' : 'Speichern';
+  dom.winSubmit.textContent = leaderboardConfigured() ? t('win.submit') : t('win.save');
   setStatus(dom.winSubmitStatus, '');
   dom.winTabs.hidden = !leaderboardConfigured();
   selectWinTab('local');
@@ -978,7 +1030,7 @@ function renderWinLocal() {
   const list = getLocalScores(size, difficulty).slice();
   const rank = previewRank(size, difficulty, pendingWin.score);
   list.splice(rank, 0, {
-    name: sanitizeNickname(dom.winNickname.value) || 'Du',
+    name: sanitizeNickname(dom.winNickname.value) || t('score.you'),
     seconds: pendingWin.seconds,
     hints: pendingWin.hints,
     mistakes: pendingWin.mistakes,
@@ -990,13 +1042,13 @@ function renderWinLocal() {
 async function renderWinGlobal() {
   if (!pendingWin) return;
   renderScoreList(dom.winScores, [], -1);
-  dom.winScores.firstChild.textContent = 'Lade globale Bestenliste …';
+  dom.winScores.firstChild.textContent = t('global.loading');
   const { size, difficulty } = pendingWin;
   const rows = await fetchTopScores(size, difficulty);
   if (winTab !== 'global') return; // switched away while loading
   if (!rows) {
     renderScoreList(dom.winScores, [], -1);
-    dom.winScores.firstChild.textContent = 'Globale Bestenliste nicht erreichbar.';
+    dom.winScores.firstChild.textContent = t('global.unreachable');
     return;
   }
   // Mark the freshly submitted entry, like the local list does — but only once
@@ -1027,13 +1079,16 @@ async function renderWinGlobal() {
 // overwrites a real message (a success, an error, a retry countdown).
 function noteGlobalNotSubmitted() {
   if (dom.winSubmitStatus.textContent) return;
-  setStatus(dom.winSubmitStatus, 'Noch nicht eingetragen – „Eintragen" trägt dich hier ein.');
+  setStatus(dom.winSubmitStatus, t('global.notSubmitted'));
 }
 
-// Persist the pending win to the on-device list exactly once.
+// Persist the pending win to the on-device list exactly once. An unnamed entry
+// is stored EMPTY on purpose: "Anonymous" is a UI word, and a stored one would
+// stay frozen in whatever language it was written in — the lists render the
+// placeholder at display time instead (see renderScoreList).
 function commitPendingWin(name) {
   if (!pendingWin || pendingWin.saved) return;
-  const entryName = sanitizeName(name) || 'Anonym';
+  const entryName = sanitizeName(name);
   const { rank } = saveLocalScore(pendingWin.size, pendingWin.difficulty, {
     name: entryName,
     seconds: pendingWin.seconds,
@@ -1057,23 +1112,23 @@ function flushPendingWin() {
   pendingWin = null;
 }
 
-// Player-facing German for a submit the server refused. `reason` is submit_score's
+// Player-facing copy for a submit the server refused. `reason` is submit_score's
 // own English message (see serverReason in leaderboard.js); anything unmapped is
 // quoted verbatim rather than swallowed, so a new server-side check still tells
 // the player something true. `allowRetry` is only for reasons that can pass later
 // — the values themselves won't change on a second press.
 const SUBMIT_REJECTIONS = {
-  'implausible time': { text: 'Global abgelehnt: Zeit als unmöglich eingestuft', allowRetry: false },
-  'bad counters': { text: 'Global abgelehnt: Tipp-/Fehlerzahl außerhalb des erlaubten Bereichs', allowRetry: false },
-  'bad size': { text: 'Global abgelehnt: Feldgröße nicht erlaubt', allowRetry: false },
-  'bad difficulty': { text: 'Global abgelehnt: Schwierigkeit nicht erlaubt', allowRetry: false },
-  'rate limited': { text: 'Zu viele Einträge in kurzer Zeit – in einer Minute nochmal', allowRetry: true },
+  'implausible time': { key: 'submit.reject.implausibleTime', allowRetry: false },
+  'bad counters': { key: 'submit.reject.badCounters', allowRetry: false },
+  'bad size': { key: 'submit.reject.badSize', allowRetry: false },
+  'bad difficulty': { key: 'submit.reject.badDifficulty', allowRetry: false },
+  'rate limited': { key: 'submit.reject.rateLimited', allowRetry: true },
 };
 function rejectionCopy(reason) {
   const known = reason && SUBMIT_REJECTIONS[String(reason).trim().toLowerCase()];
-  if (known) return known;
+  if (known) return { text: t(known.key), allowRetry: known.allowRetry };
   return {
-    text: reason ? `Global abgelehnt („${reason}")` : 'Global abgelehnt',
+    text: reason ? t('submit.reject.unknown', { reason }) : t('submit.reject.generic'),
     allowRetry: false,
   };
 }
@@ -1089,20 +1144,20 @@ async function onWinSubmit() {
     settings.nickname = typed; // remember a real name for next time
     saveSettings(settings);
   }
-  const name = typed || settings.nickname || 'Anonym';
+  const name = typed || settings.nickname;
 
   commitPendingWin(name); // always record locally first (no-op if already saved)
   if (winTab === 'local') renderWinLocal();
 
   if (!leaderboardConfigured()) {
     dom.winSubmit.disabled = true;
-    setStatus(dom.winSubmitStatus, 'Lokal gespeichert ✓', 'ok');
+    setStatus(dom.winSubmitStatus, t('submit.savedLocal'), 'ok');
     return;
   }
 
   globalSubmitInFlight = true;
   dom.winSubmit.disabled = true;
-  setStatus(dom.winSubmitStatus, 'Sende an globale Bestenliste …');
+  setStatus(dom.winSubmitStatus, t('submit.sending'));
   const res = await submitScore(
     {
       name,
@@ -1112,7 +1167,10 @@ async function onWinSubmit() {
       hints: pendingWin.hints,
       mistakes: pendingWin.mistakes,
     },
-    { onRetry: (attempt, total) => setStatus(dom.winSubmitStatus, `Erneuter Versuch … (${attempt}/${total})`) }
+    {
+      onRetry: (attempt, total) =>
+        setStatus(dom.winSubmitStatus, t('submit.retrying', { attempt, total })),
+    }
   );
   globalSubmitInFlight = false;
 
@@ -1120,7 +1178,7 @@ async function onWinSubmit() {
     pendingWin.submittedGlobal = true; // latch: this solve is now on the global board
     // Remember what was sent under which name and where it landed, so the global
     // tab can find and mark this exact row (see matchOwnEntry).
-    pendingWin.globalName = sanitizeName(name) || 'Anonym';
+    pendingWin.globalName = sanitizeName(name);
     pendingWin.globalRank = res.rank;
     pendingWin.globalTotal = res.total;
     dom.winSubmit.disabled = true;
@@ -1131,8 +1189,8 @@ async function onWinSubmit() {
     setStatus(
       dom.winSubmitStatus,
       pct == null
-        ? `Global eingetragen: Platz ${res.rank} von ${res.total} 🌐`
-        : `Global eingetragen: Platz ${res.rank} von ${res.total} – besser als ${pct} % der Einträge 🌐`,
+        ? t('submit.done', { rank: res.rank, total: res.total })
+        : t('submit.donePercentile', { rank: res.rank, total: res.total, percent: pct }),
       'ok'
     );
     selectWinTab('global');
@@ -1143,8 +1201,8 @@ async function onWinSubmit() {
     // rejected values never will).
     const { text, allowRetry } = rejectionCopy(res.reason);
     dom.winSubmit.disabled = !allowRetry;
-    if (allowRetry) dom.winSubmit.textContent = 'Erneut versuchen';
-    setStatus(dom.winSubmitStatus, `${text} – lokal gespeichert ✓`, 'err');
+    if (allowRetry) dom.winSubmit.textContent = t('win.retry');
+    setStatus(dom.winSubmitStatus, t('submit.rejectedSaved', { text }), 'err');
     if (settings.debug) await copySubmitFailureDebug(res.attempts);
   } else {
     // The auto-retries didn't get through. Don't give up on a single episode:
@@ -1152,12 +1210,8 @@ async function onWinSubmit() {
     // This can't double-submit — submittedGlobal is still false, so it's the same
     // not-yet-recorded solve trying again; the moment one attempt succeeds it locks.
     dom.winSubmit.disabled = false;
-    dom.winSubmit.textContent = 'Erneut versuchen';
-    setStatus(
-      dom.winSubmitStatus,
-      'Global nicht erreichbar – lokal gespeichert ✓. Erneut versuchen?',
-      'err'
-    );
+    dom.winSubmit.textContent = t('win.retry');
+    setStatus(dom.winSubmitStatus, t('submit.unreachable'), 'err');
     // Debug mode on: capture *why* it failed right now, while the diagnostics
     // are still available — no confirmation, no extra button, since asking
     // would just be one more thing lost if the player closes the screen.
@@ -1609,11 +1663,15 @@ function showHint() {
   renderHint(hint);
 }
 
-const LEGEND = {
-  reason: '<span><i class="lg-reason"></i>Begründung</span>',
-  target: '<span><i class="lg-target"></i>hier setzen</span>',
-  x: '<span><i class="lg-x"></i>scheidet aus</span>',
-};
+// One legend chip: the colour swatch plus its label. Built as nodes rather than
+// an HTML string so a translated label can never be read as markup.
+function legendItem(swatchClass, key) {
+  const chip = document.createElement('span');
+  const swatch = document.createElement('i');
+  swatch.className = swatchClass;
+  chip.append(swatch, document.createTextNode(t(key)));
+  return chip;
+}
 
 function renderHint(hint) {
   currentHint = hint;
@@ -1637,12 +1695,12 @@ function renderHint(hint) {
   dom.hintTitle.textContent = hint.title;
   dom.hintText.textContent = hint.text;
 
-  const legend = [];
-  if (hint.reasonCells && hint.reasonCells.length) legend.push(LEGEND.reason);
-  if (hint.kind === 'place') legend.push(LEGEND.target);
+  dom.hintLegend.textContent = '';
+  if (hint.reasonCells && hint.reasonCells.length)
+    dom.hintLegend.appendChild(legendItem('lg-reason', 'legend.reason'));
+  if (hint.kind === 'place') dom.hintLegend.appendChild(legendItem('lg-target', 'legend.target'));
   if (hint.kind === 'eliminate' || (hint.excludedCells && hint.excludedCells.length))
-    legend.push(LEGEND.x);
-  dom.hintLegend.innerHTML = legend.join('');
+    dom.hintLegend.appendChild(legendItem('lg-x', 'legend.x'));
 
   dom.hintApply.hidden = !hint.applyLabel;
   if (hint.applyLabel) dom.hintApply.textContent = hint.applyLabel;
@@ -1730,7 +1788,7 @@ function clearCheckStatus() {
 function renderCheckStatus() {
   if (!game) return;
   const error = game.hasError(currentSolution);
-  dom.checkStatus.textContent = error ? '✗ Es gibt Fehler' : '✓ Keine Fehler';
+  dom.checkStatus.textContent = error ? t('check.errors') : t('check.ok');
   dom.checkStatus.className = 'check-status ' + (error ? 'error' : 'ok');
   dom.checkStatus.hidden = false;
 }
@@ -1978,7 +2036,7 @@ async function copyDebug(btn = dom.debugCopy) {
   if (!game) return;
   const ok = await writeToClipboard(formatDebug(buildDebugInfo()));
   const label = btn.textContent;
-  btn.textContent = ok ? '✓ Kopiert' : 'Kopieren fehlgeschlagen';
+  btn.textContent = ok ? t('debug.copied') : t('debug.copyFailed');
   setTimeout(() => (btn.textContent = label), 1500);
 }
 
@@ -1992,7 +2050,7 @@ async function copySubmitFailureDebug(attempts) {
   const info = buildDebugInfo();
   info.submitFailure = { when: new Date().toISOString(), attempts: attempts || [] };
   const ok = await writeToClipboard(formatDebug(info));
-  if (ok) dom.winSubmitStatus.textContent += ' (Debug kopiert 📋)';
+  if (ok) dom.winSubmitStatus.textContent += t('debug.copiedSuffix');
 }
 
 dom.debugCopy.addEventListener('click', () => copyDebug(dom.debugCopy));
@@ -2066,6 +2124,7 @@ function closeSettings() {
 
 function openSettings() {
   clearHint();
+  dom.languageSelect.value = settings.language;
   dom.sizeRange.value = settings.size;
   dom.sizeValue.textContent = settings.size;
   setDifficultyUI(settings.difficulty);
@@ -2082,6 +2141,51 @@ function openSettings() {
   updateDebugSubOptions();
   show(dom.settingsOverlay);
 }
+
+// ---------- Language ----------
+// Options are endonyms ("Deutsch", never "German"), so a language is always
+// listed in itself — someone who landed in the wrong language can still find
+// their own. The leading "automatic" entry is the default and IS translated.
+function populateLanguageSelect() {
+  for (const { code, name } of I18N_LANGUAGES) {
+    const opt = document.createElement('option');
+    opt.value = code;
+    opt.textContent = name;
+    dom.languageSelect.appendChild(opt);
+  }
+  dom.languageSelect.value = settings.language;
+}
+
+// Switching language reloads the page instead of re-translating in place. Not
+// for speed — swapping the labels is cheap — but because everything transient
+// would have to be re-localised too: an open hint card, the win screen, the
+// score lists, and the recogniser, which has to restart on a new `lang` anyway.
+// One code path, no half-translated corner.
+function onLanguageChange() {
+  const chosen = dom.languageSelect.value;
+  if (chosen === settings.language) return;
+  const resolved = resolveLanguage(chosen, browserLanguages());
+  // The resolved language can be unchanged even though the setting changed
+  // ("automatic" on a German browser is still German) — then there is nothing
+  // to reload for, and nothing to warn about.
+  if (resolved === getLanguage()) {
+    settings.language = chosen;
+    saveSettings(settings);
+    return;
+  }
+  // A reload always discards the board: this project persists preferences, never
+  // game state. So ask first if there is a game worth losing.
+  const inProgress = game && !game.isPristine() && !game.isWon();
+  if (inProgress && !window.confirm(t('settings.language.confirm'))) {
+    dom.languageSelect.value = settings.language; // put the picker back
+    return;
+  }
+  settings.language = chosen;
+  saveSettings(settings);
+  flushPendingWin(); // a solved-but-unsubmitted game still reaches the local list
+  location.reload();
+}
+dom.languageSelect.addEventListener('change', onLanguageChange);
 
 dom.sizeRange.addEventListener('input', () => {
   dom.sizeValue.textContent = dom.sizeRange.value;
@@ -2212,14 +2316,14 @@ async function renderLb() {
     return;
   }
   renderScoreList(dom.lbScores, [], -1);
-  dom.lbScores.firstChild.textContent = 'Lade globale Bestenliste …';
+  dom.lbScores.firstChild.textContent = t('global.loading');
   const rows = await fetchTopScores(size, difficulty);
   // Ignore a stale response if the tab or bucket changed while loading.
   const now = currentLbBucket();
   if (lbTab !== 'global' || now.size !== size || now.difficulty !== difficulty) return;
   if (!rows) {
     renderScoreList(dom.lbScores, [], -1);
-    dom.lbScores.firstChild.textContent = 'Globale Bestenliste nicht erreichbar.';
+    dom.lbScores.firstChild.textContent = t('global.unreachable');
     return;
   }
   renderScoreList(dom.lbScores, rows, -1);
@@ -2266,8 +2370,8 @@ function applySoundSetting() {
   const on = settings.sound;
   dom.toggleSound.textContent = on ? '🔊' : '🔇';
   dom.toggleSound.setAttribute('aria-pressed', String(!on)); // pressed = muted
-  dom.toggleSound.setAttribute('aria-label', on ? 'Ton stummschalten' : 'Ton einschalten');
-  dom.toggleSound.title = on ? 'Ton an' : 'Ton aus';
+  dom.toggleSound.setAttribute('aria-label', on ? t('ui.sound.mute') : t('ui.sound.unmute'));
+  dom.toggleSound.title = on ? t('ui.sound.on') : t('ui.sound.off');
   dom.soundToggle.checked = on;
 }
 
@@ -2856,16 +2960,35 @@ function toggleVoiceListening() {
   else startVoiceListening();
 }
 
+// Voice Mode is a GERMAN feature, not a translated one: js/voice.js parses a
+// German speech grammar (spelling alphabet, number words, "außer", and a set of
+// mis-hearings found by actually speaking at it), the recogniser runs at
+// VOICE_LANG = 'de-DE', and the ⓘ tutorial documents that grammar. None of that
+// transfers by translating strings, so the whole feature is gated to the German
+// UI rather than shipped half-working — a French UI driving a de-DE recogniser
+// would just produce nonsense. Lifting the gate means adding a grammar, not a
+// language pack (see CLAUDE.md → "i18n").
+const VOICE_UI_LANG = 'de';
+function voiceAvailable() {
+  return voiceSupported() && getLanguage() === VOICE_UI_LANG;
+}
+
 // Show/hide the panel + coordinate labels from the preference, and disable the
-// whole feature where the Web Speech API is missing (Safari/Firefox).
+// whole feature where the Web Speech API is missing (Safari/Firefox) or the UI
+// isn't German.
 function applyVoiceSetting() {
   const supported = voiceSupported();
-  if (dom.voiceMode) dom.voiceMode.disabled = !supported;
-  if (!supported && dom.voiceModeHint && !dom.voiceModeHint.dataset.unsupported) {
-    dom.voiceModeHint.dataset.unsupported = '1';
-    dom.voiceModeHint.textContent += ' Hinweis: In diesem Browser nicht verfügbar.';
+  const available = voiceAvailable();
+  if (dom.voiceMode) dom.voiceMode.disabled = !available;
+  // Say WHY it's off — an unexplained disabled switch reads as a bug. Appended
+  // once, after applyTranslations has put the base hint in place.
+  if (dom.voiceModeHint && !available && !dom.voiceModeHint.dataset.note) {
+    dom.voiceModeHint.dataset.note = '1';
+    dom.voiceModeHint.textContent += supported
+      ? t('settings.voice.germanOnly')
+      : t('settings.voice.unsupported');
   }
-  const on = !!settings.voice && supported;
+  const on = !!settings.voice && available;
   // Two mutually exclusive coordinate styles: small labels in each cell's corner
   // (default) or a large chess-style ruler along the board's edges.
   const edge = on && !!settings.voiceEdgeLabels;
@@ -2881,9 +3004,9 @@ function applyVoiceSetting() {
 
 // The edge-labels sub-option only makes sense with Voice Mode on, so it's shown
 // in the settings modal only while the Voice Mode switch is checked (and the
-// browser supports the feature).
+// feature is actually available — browser support plus the German UI).
 function updateVoiceSubOptions() {
-  dom.voiceEdgeField.hidden = !(voiceSupported() && dom.voiceMode.checked);
+  dom.voiceEdgeField.hidden = !(voiceAvailable() && dom.voiceMode.checked);
 }
 
 dom.voiceListen.addEventListener('click', () => {
@@ -2921,6 +3044,10 @@ function hide(node) {
 }
 
 // ---------- boot ----------
+// Translate before anything renders — this also reveals the .app shell, which
+// the CSS keeps hidden until data-i18n-ready lands (see applyTranslations).
+applyTranslations();
+populateLanguageSelect();
 // Backfill the solve history from the top list once per bucket. Devices that
 // played before the history existed would otherwise compare a fresh solve
 // against an empty past. Idempotent, so it's safe on every boot.

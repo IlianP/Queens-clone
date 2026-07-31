@@ -41,7 +41,9 @@ const pw = (await import(PLAYWRIGHT)).default;
 const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
 // Short phone on purpose: the win card is anchored at the bottom and its fixed
 // parts alone are ~390px, so this is the viewport where the height cap matters.
-const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+// Pinned to German: this test asserts on visible copy ("deiner N Partien"), so
+// the UI language must not follow whatever host the test runs on.
+const page = await browser.newPage({ viewport: { width: 375, height: 667 }, locale: 'de-DE' });
 
 const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));

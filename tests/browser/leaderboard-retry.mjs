@@ -36,7 +36,9 @@ const fail = (msg) => {
 
 const pw = (await import(PLAYWRIGHT)).default;
 const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
-const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+// Pinned to German: this test asserts on visible copy (the manual
+// "Erneut versuchen" retry label), so the UI language must not follow the host.
+const page = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 
 const errors = [];
 // The aborted submit routes below are *deliberate* network failures; the

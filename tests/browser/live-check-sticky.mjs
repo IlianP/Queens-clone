@@ -21,7 +21,10 @@ import { openGame, boardSize, cellIndex, tapCell, placeQueen } from './board-hel
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8000';
 const LIVE_DELAY = 2000;
 
-const { browser, page, errors } = await openGame(BASE_URL);
+// Pinned to German: the assertions below are about the GERMAN wording choice
+// ("Es gibt Fehler", not "einen Fehler"). Without a fixed locale the UI language
+// would follow whatever host the test runs on (see js/i18n.js).
+const { browser, page, errors } = await openGame({ baseUrl: BASE_URL, locale: 'de-DE' });
 let failed = false;
 const fail = (msg) => {
   failed = true;

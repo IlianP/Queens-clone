@@ -77,6 +77,18 @@ body {
   min-height: 100dvh;
 }
 
+/* index.html ships ENGLISH text inline (the default language), and main.js
+   swaps it for the resolved one before the first board is drawn. Without this
+   gate a German player would see one frame of English chrome. Hiding the shell
+   until then costs nothing: the board, the puzzle and every overlay are drawn
+   by JS anyway, so there is no meaningful page without it. */
+.app {
+  visibility: hidden;
+}
+html[data-i18n-ready] .app {
+  visibility: visible;
+}
+
 .app {
   max-width: 640px;
   margin: 0 auto;
@@ -1190,6 +1202,24 @@ body {
   font-size: 0.82rem;
   font-weight: 400;
   margin-top: 2px;
+}
+/* Language picker. A native <select> rather than a segmented control: it stays
+   usable when more languages join, and the OS picker is the better touch target
+   on a phone. Full width so long endonyms don't get clipped. */
+.lang-select {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--cell-line);
+  border-radius: 12px;
+  padding: 11px 12px;
+  font-size: 1rem;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--ink);
+}
+.lang-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 .range-row {
   display: flex;
