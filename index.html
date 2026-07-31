@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta
@@ -29,10 +29,10 @@
           </div>
         </div>
         <div class="toolbar">
-          <button class="btn" id="new-game" type="button">Neues Spiel</button>
-          <button class="btn icon" id="toggle-sound" type="button" aria-pressed="false" aria-label="Ton stummschalten" title="Ton">🔊</button>
-          <button class="btn icon" id="open-leaderboard" type="button" aria-label="Bestenliste" title="Bestenliste">🏆</button>
-          <button class="btn icon" id="open-settings" type="button" aria-label="Einstellungen" title="Einstellungen">⚙</button>
+          <button class="btn" id="new-game" type="button" data-i18n="ui.newGame">New game</button>
+          <button class="btn icon" id="toggle-sound" type="button" aria-pressed="false" aria-label="Mute sound" title="Sound on">🔊</button>
+          <button class="btn icon" id="open-leaderboard" type="button" data-i18n-attr="aria-label:ui.leaderboard|title:ui.leaderboard" aria-label="Leaderboard" title="Leaderboard">🏆</button>
+          <button class="btn icon" id="open-settings" type="button" data-i18n-attr="aria-label:ui.settings|title:ui.settings" aria-label="Settings" title="Settings">⚙</button>
         </div>
       </header>
 
@@ -49,7 +49,7 @@
           <div class="board-stage" id="board-stage">
             <div class="coord-cols" id="coord-cols" aria-hidden="true"></div>
             <div class="coord-rows" id="coord-rows" aria-hidden="true"></div>
-            <div class="board" id="board" role="grid" aria-label="Spielfeld"></div>
+            <div class="board" id="board" role="grid" data-i18n-attr="aria-label:ui.board" aria-label="Game board"></div>
           </div>
           <div class="message" id="message"></div>
           <!-- Prüf-Status: kurze Rückmeldung "Fehlerfrei?" ohne Position oder
@@ -64,6 +64,11 @@
                chess-like — a column letter A… plus a row number 1…, e.g. "C4".
                Shown only while the preference is on; the mic starts on demand so
                the browser's permission prompt is a deliberate tap. -->
+          <!-- German-only by design: the commands this panel drives are a German
+               speech grammar (js/voice.js), and the ⓘ tutorial below documents
+               that grammar rather than translating it. main.js hides the whole
+               feature unless the UI language is German — so these strings are
+               deliberately NOT in the i18n packs. -->
           <div class="voice-panel" id="voice-panel" hidden>
             <button class="btn voice-listen" id="voice-listen" type="button" aria-pressed="false">
               <span class="voice-mic" aria-hidden="true">🎤</span>
@@ -81,17 +86,17 @@
              as one unit with the board instead of floating far below it. In
              landscape these move into a side column (see CSS). -->
         <div class="actions">
-          <button class="btn subtle" id="check" type="button">🔎 Prüfen</button>
-          <button class="btn subtle" id="hint" type="button">💡 Hinweis</button>
-          <button class="btn subtle" id="undo" type="button" disabled>↶ Rückgängig</button>
-          <button class="btn subtle" id="reset-board" type="button">🔄 Zurücksetzen</button>
-          <button class="btn subtle" id="debug-copy" type="button" hidden>🐞 Debug kopieren</button>
+          <button class="btn subtle" id="check" type="button" data-i18n="ui.check">🔎 Check</button>
+          <button class="btn subtle" id="hint" type="button" data-i18n="ui.hint">💡 Hint</button>
+          <button class="btn subtle" id="undo" type="button" disabled data-i18n="ui.undo">↶ Undo</button>
+          <button class="btn subtle" id="reset-board" type="button" data-i18n="ui.reset">🔄 Reset</button>
+          <button class="btn subtle" id="debug-copy" type="button" hidden data-i18n="ui.debugCopy">🐞 Copy debug</button>
         </div>
       </main>
 
-      <footer class="hint">
-        Ein Tipp pro Feld: leer → Punkt → 👑 → leer. Eine Dame pro Zeile, Spalte und
-        Farbe – und keine zwei dürfen sich berühren.
+      <footer class="hint" data-i18n="ui.footerHint">
+        One tap per cell: empty → dot → 👑 → empty. One queen per row, column and
+        colour – and no two may touch.
       </footer>
     </div>
 
@@ -103,7 +108,7 @@
          visible above it so the solved board can be admired, and the action
          buttons sit within thumb reach on mobile). -->
     <div class="hint-card win-card" id="win-overlay" hidden>
-      <div class="hint-card-title">🎉 Gelöst!</div>
+      <div class="hint-card-title" data-i18n="win.title">🎉 Solved!</div>
       <p class="hint-card-text win-summary" id="win-time"></p>
       <!-- Relative feedback on the fresh result ("besser als 88 % deiner
            Partien"): available instantly and offline, unlike the global
@@ -112,8 +117,8 @@
 
       <div class="score-panel">
         <div class="score-tabs" id="win-tabs" hidden>
-          <button class="score-tab" id="win-tab-local" type="button" aria-selected="true">Lokal</button>
-          <button class="score-tab" id="win-tab-global" type="button" aria-selected="false">Global 🌐</button>
+          <button class="score-tab" id="win-tab-local" type="button" aria-selected="true" data-i18n="win.tab.local">Local</button>
+          <button class="score-tab" id="win-tab-global" type="button" aria-selected="false" data-i18n="win.tab.global">Global 🌐</button>
         </div>
         <div class="score-list" id="win-scores"></div>
       </div>
@@ -124,33 +129,34 @@
           id="win-nickname"
           type="text"
           maxlength="20"
-          placeholder="Dein Name"
+          data-i18n-attr="placeholder:win.nickname.placeholder|aria-label:win.nickname.aria"
+          placeholder="Your name"
           autocomplete="nickname"
-          aria-label="Dein Name für die Bestenliste"
+          aria-label="Your name for the leaderboard"
         />
-        <button class="btn primary" id="win-submit" type="button">Eintragen</button>
+        <button class="btn primary" id="win-submit" type="button" data-i18n="win.submit">Submit</button>
       </div>
       <p class="win-submit-status" id="win-submit-status" aria-live="polite"></p>
 
       <div class="hint-card-buttons">
-        <button class="btn primary" id="win-new-game" type="button">Neues Spiel</button>
-        <button class="btn subtle" id="win-settings" type="button">⚙ Einstellungen</button>
+        <button class="btn primary" id="win-new-game" type="button" data-i18n="win.newGame">New game</button>
+        <button class="btn subtle" id="win-settings" type="button" data-i18n="win.settings">⚙ Settings</button>
       </div>
       <!-- Debug mode only: the debug state including the score and everything the
            relative feedback was computed from. Here rather than only in the
            settings, because the interesting moment is this one. -->
       <div class="win-debug-row" id="win-debug-row" hidden>
-        <button class="btn subtle" id="win-debug-copy" type="button">📋 Debug-Status kopieren</button>
+        <button class="btn subtle" id="win-debug-copy" type="button" data-i18n="win.debugCopy">📋 Copy debug state</button>
       </div>
     </div>
 
     <!-- Settings modal -->
     <div class="overlay" id="settings-overlay" hidden>
       <div class="overlay-card settings-card">
-        <h2>Einstellungen</h2>
+        <h2 data-i18n="settings.title">Settings</h2>
 
         <label class="field">
-          <span class="field-label">Feldgröße</span>
+          <span class="field-label" data-i18n="settings.size">Board size</span>
           <div class="range-row">
             <input type="range" id="size-range" min="5" max="12" step="1" />
             <span class="range-value" id="size-value">8</span>
@@ -158,53 +164,63 @@
         </label>
 
         <div class="field">
-          <span class="field-label">Schwierigkeit</span>
-          <div class="segmented" id="difficulty" role="radiogroup" aria-label="Schwierigkeit">
-            <button type="button" data-value="easy" role="radio">Leicht</button>
-            <button type="button" data-value="medium" role="radio">Mittel</button>
-            <button type="button" data-value="hard" role="radio">Schwer</button>
+          <span class="field-label" data-i18n="settings.difficulty">Difficulty</span>
+          <div class="segmented" id="difficulty" role="radiogroup" data-i18n-attr="aria-label:settings.difficulty" aria-label="Difficulty">
+            <button type="button" data-value="easy" role="radio" data-i18n="difficulty.easy">Easy</button>
+            <button type="button" data-value="medium" role="radio" data-i18n="difficulty.medium">Medium</button>
+            <button type="button" data-value="hard" role="radio" data-i18n="difficulty.hard">Hard</button>
           </div>
-          <span class="field-hint" id="difficulty-hint" hidden
-            >Bei Feldgröße 12 sind nur schwere Rätsel möglich.</span
+          <span class="field-hint" id="difficulty-hint" hidden data-i18n="settings.difficulty.hardOnly"
+            >At board size 12 only hard puzzles are possible.</span
           >
         </div>
 
+        <label class="field">
+          <span class="field-label" data-i18n="settings.language.label">Language</span>
+          <select class="lang-select" id="language-select">
+            <option value="" data-i18n="settings.language.auto">Automatic (browser)</option>
+          </select>
+          <span class="field-hint" data-i18n="settings.language.hint"
+            >Switching the language reloads the game – a game in progress is lost.</span
+          >
+        </label>
+
         <label class="field toggle-field">
           <span>
-            <span class="field-label">Schnellmodus</span>
-            <span class="field-hint">Beim Setzen einer Dame werden Zeile, Spalte, Farbregion und angrenzende Felder automatisch gepunktet.</span>
+            <span class="field-label" data-i18n="settings.quick.label">Quick mode</span>
+            <span class="field-hint" data-i18n="settings.quick.hint">Placing a queen automatically dots its row, column, colour region and the neighbouring cells.</span>
           </span>
           <input type="checkbox" id="quick-mode" class="switch" />
         </label>
 
         <label class="field toggle-field">
           <span>
-            <span class="field-label">Live-Prüfung</span>
-            <span class="field-hint">Zeigt fortlaufend ein Statuslämpchen an, ob dein Spielstand fehlerfrei ist – ohne zu verraten, wo ein Fehler liegt. Erscheint erst kurz nach deinem letzten Zug. Ohne diese Option lässt sich der Status jederzeit über „Prüfen“ abrufen.</span>
+            <span class="field-label" data-i18n="settings.live.label">Live check</span>
+            <span class="field-hint" data-i18n="settings.live.hint">Continuously shows a status lamp for whether your board is still error-free – without revealing where a mistake is. It appears shortly after your last move. Without this option the status is available any time via “Check”.</span>
           </span>
           <input type="checkbox" id="live-check" class="switch" />
         </label>
 
         <label class="field toggle-field">
           <span>
-            <span class="field-label">Start-Animation</span>
-            <span class="field-hint">Beim Erzeugen eines Rätsels breiten sich die Farbregionen animiert aus, während sich das Feld dreht – füllt die Wartezeit bei großen Feldern.</span>
+            <span class="field-label" data-i18n="settings.intro.label">Intro animation</span>
+            <span class="field-hint" data-i18n="settings.intro.hint">While a puzzle is generated the colour regions spread out in an animation as the board rotates – it fills the wait on large boards.</span>
           </span>
           <input type="checkbox" id="intro-animation" class="switch" />
         </label>
 
         <label class="field toggle-field">
           <span>
-            <span class="field-label">Ton</span>
-            <span class="field-hint">Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise und beim Lösen. Lässt sich auch direkt oben über das Lautsprecher-Symbol stummschalten.</span>
+            <span class="field-label" data-i18n="settings.sound.label">Sound</span>
+            <span class="field-hint" data-i18n="settings.sound.hint">Short, discreet sound effects for placing a queen, dotting, hints and solving. Can also be muted directly via the speaker icon at the top.</span>
           </span>
           <input type="checkbox" id="sound-toggle" class="switch" />
         </label>
 
         <label class="field toggle-field">
           <span>
-            <span class="field-label">Sprachsteuerung (Beta)</span>
-            <span class="field-hint" id="voice-mode-hint">Steuere das Spiel mit der Stimme (Chrome/Edge, Mikrofon nötig). Alle Sprachbefehle erklärt das ⓘ im Sprach-Panel.</span>
+            <span class="field-label" data-i18n="settings.voice.label">Voice control (beta)</span>
+            <span class="field-hint" id="voice-mode-hint" data-i18n="settings.voice.hint">Steer the game with your voice (Chrome/Edge, microphone required). The ⓘ in the voice panel explains every command.</span>
           </span>
           <input type="checkbox" id="voice-mode" class="switch" />
         </label>
@@ -212,16 +228,16 @@
         <!-- Sub-option, revealed only while Voice Mode is enabled. -->
         <label class="field toggle-field voice-suboption" id="voice-edge-field" hidden>
           <span>
-            <span class="field-label">Koordinaten groß am Rand</span>
-            <span class="field-hint">Zeigt die Spalten-Buchstaben und Zeilen-Zahlen groß am Rand des Feldes an – wie beim Schachbrett – statt klein in der Ecke jedes Feldes.</span>
+            <span class="field-label" data-i18n="settings.voiceEdge.label">Large coordinates along the edge</span>
+            <span class="field-hint" data-i18n="settings.voiceEdge.hint">Shows the column letters and row numbers large along the edge of the board – like a chessboard – instead of small in each cell’s corner.</span>
           </span>
           <input type="checkbox" id="voice-edge-mode" class="switch" />
         </label>
 
         <label class="field toggle-field">
           <span>
-            <span class="field-label">Debug-Modus</span>
-            <span class="field-hint">Zeigt einen Button, der alle Infos zum aktuellen Spielstand (inkl. Hinweis) in die Zwischenablage kopiert – hilfreich beim Melden von Problemen.</span>
+            <span class="field-label" data-i18n="settings.debug.label">Debug mode</span>
+            <span class="field-hint" data-i18n="settings.debug.hint">Shows a button that copies everything about the current board (including the hint) to the clipboard – useful when reporting a problem.</span>
           </span>
           <input type="checkbox" id="debug-mode" class="switch" />
         </label>
@@ -229,17 +245,17 @@
         <!-- Sub-option, revealed only while Debug-Modus is enabled. -->
         <label class="field toggle-field debug-suboption" id="debug-extended-field" hidden>
           <span>
-            <span class="field-label">Erweiterter Debug-Modus</span>
-            <span class="field-hint">Zeichnet die letzten 10 Züge auf (inkl. Sprachbefehl-Transkript) und was „Rückgängig" jeweils entfernt hat. Dieses Protokoll wird beim „Debug kopieren" mit rauskopiert – hilfreich beim Melden von Sprachmodus-Fehlern.</span>
+            <span class="field-label" data-i18n="settings.debugExt.label">Extended debug mode</span>
+            <span class="field-hint" data-i18n="settings.debugExt.hint">Records the last 10 moves (including the voice transcript) and what each “Undo” removed. This log is included in “Copy debug” – useful when reporting voice-mode problems.</span>
           </span>
           <input type="checkbox" id="debug-extended" class="switch" />
         </label>
 
-        <p class="settings-note">Änderungen an Größe oder Schwierigkeit gelten für das nächste neue Spiel.</p>
+        <p class="settings-note" data-i18n="settings.note">Changes to size or difficulty apply to the next new game.</p>
 
         <div class="settings-buttons">
-          <button class="btn primary" id="settings-apply" type="button">Übernehmen &amp; neues Spiel</button>
-          <button class="btn subtle" id="settings-close" type="button">Schließen</button>
+          <button class="btn primary" id="settings-apply" type="button" data-i18n="settings.apply">Apply &amp; new game</button>
+          <button class="btn subtle" id="settings-close" type="button" data-i18n="settings.close">Close</button>
         </div>
       </div>
     </div>
@@ -248,10 +264,10 @@
          and — when configured — the global leaderboard). -->
     <div class="overlay" id="leaderboard-overlay" hidden>
       <div class="overlay-card leaderboard-card">
-        <h2>🏆 Bestenliste</h2>
+        <h2 data-i18n="lb.title">🏆 Leaderboard</h2>
 
         <div class="field">
-          <span class="field-label">Feldgröße</span>
+          <span class="field-label" data-i18n="settings.size">Board size</span>
           <div class="range-row">
             <input type="range" id="lb-size-range" min="5" max="12" step="1" />
             <span class="range-value" id="lb-size-value">8</span>
@@ -259,25 +275,25 @@
         </div>
 
         <div class="field">
-          <span class="field-label">Schwierigkeit</span>
-          <div class="segmented" id="lb-difficulty" role="radiogroup" aria-label="Schwierigkeit">
-            <button type="button" data-value="easy" role="radio">Leicht</button>
-            <button type="button" data-value="medium" role="radio">Mittel</button>
-            <button type="button" data-value="hard" role="radio">Schwer</button>
+          <span class="field-label" data-i18n="settings.difficulty">Difficulty</span>
+          <div class="segmented" id="lb-difficulty" role="radiogroup" data-i18n-attr="aria-label:settings.difficulty" aria-label="Difficulty">
+            <button type="button" data-value="easy" role="radio" data-i18n="difficulty.easy">Easy</button>
+            <button type="button" data-value="medium" role="radio" data-i18n="difficulty.medium">Medium</button>
+            <button type="button" data-value="hard" role="radio" data-i18n="difficulty.hard">Hard</button>
           </div>
-          <span class="field-hint" id="lb-difficulty-hint" hidden
-            >Bei Feldgröße 12 sind nur schwere Rätsel möglich.</span
+          <span class="field-hint" id="lb-difficulty-hint" hidden data-i18n="settings.difficulty.hardOnly"
+            >At board size 12 only hard puzzles are possible.</span
           >
         </div>
 
         <div class="score-tabs" id="lb-tabs" hidden>
-          <button class="score-tab" id="lb-tab-local" type="button" aria-selected="true">Lokal</button>
-          <button class="score-tab" id="lb-tab-global" type="button" aria-selected="false">Global 🌐</button>
+          <button class="score-tab" id="lb-tab-local" type="button" aria-selected="true" data-i18n="win.tab.local">Local</button>
+          <button class="score-tab" id="lb-tab-global" type="button" aria-selected="false" data-i18n="win.tab.global">Global 🌐</button>
         </div>
         <div class="score-list lb-list" id="lb-scores"></div>
 
         <div class="settings-buttons">
-          <button class="btn subtle" id="lb-close" type="button">Schließen</button>
+          <button class="btn subtle" id="lb-close" type="button" data-i18n="settings.close">Close</button>
         </div>
       </div>
     </div>
@@ -353,8 +369,8 @@
       <p class="hint-card-text" id="hint-text"></p>
       <div class="hint-legend" id="hint-legend"></div>
       <div class="hint-card-buttons">
-        <button class="btn primary" id="hint-apply" type="button">Übernehmen</button>
-        <button class="btn subtle" id="hint-close" type="button">Schließen</button>
+        <button class="btn primary" id="hint-apply" type="button" data-i18n="hintcard.apply">Apply</button>
+        <button class="btn subtle" id="hint-close" type="button" data-i18n="hintcard.close">Close</button>
       </div>
     </div>
 
@@ -367,14 +383,16 @@
       <div class="confetti" id="confetti" aria-hidden="true"></div>
       <div class="party-card" role="alertdialog" aria-labelledby="party-title">
         <div class="party-beacon" aria-hidden="true">🚨</div>
-        <div class="party-kicker">Achievement freigeschaltet</div>
-        <h2 class="party-title" id="party-title">Partymodus</h2>
-        <p class="party-text">
-          Du hast tatsächlich <strong>jedes einzelne Feld</strong> ausgepunktet –
-          keine einzige Dame weit und breit. Absolutes Chaos. Wir sind zutiefst
-          beeindruckt. 🎉
+        <div class="party-kicker" data-i18n="party.kicker">Achievement unlocked</div>
+        <h2 class="party-title" id="party-title" data-i18n="party.title">Party mode</h2>
+        <!-- data-i18n-html: this one sentence carries inline markup, so it is
+             set with innerHTML. Only ever used for our own pack values, never
+             for player or leaderboard text (see applyTranslations in main.js). -->
+        <p class="party-text" data-i18n-html="party.text">
+          You really did dot <strong>every single cell</strong> – not one queen far
+          and wide. Absolute chaos. We are deeply impressed. 🎉
         </p>
-        <button class="btn primary" id="party-close" type="button">Party beenden</button>
+        <button class="btn primary" id="party-close" type="button" data-i18n="party.close">End party</button>
       </div>
     </div>
 

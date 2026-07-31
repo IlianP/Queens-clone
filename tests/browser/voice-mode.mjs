@@ -66,7 +66,10 @@ const cellState = (page, idx) =>
 async function run() {
   const pw = (await import(PLAYWRIGHT)).default;
   const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  // Voice Mode is gated to the GERMAN UI (js/voice.js parses a German grammar —
+  // see applyVoiceSetting in js/main.js), so the locale has to be pinned here or
+  // the switch is disabled and nothing below can run.
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
 
   const errors = [];
   page.on('console', (m) => {
@@ -465,7 +468,7 @@ async function run() {
 
   // --- Unsupported browser (no Web Speech API, e.g. Safari/Firefox): the
   //     feature must gate itself off cleanly. ---
-  const page2 = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page2 = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
   await page2.addInitScript(`delete window.SpeechRecognition; delete window.webkitSpeechRecognition;`);
   await page2.goto(BASE + '/index.html');
   await page2.waitForSelector('.cell');

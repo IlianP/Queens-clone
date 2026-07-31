@@ -79,9 +79,12 @@ declare
   v_key    text;
   v_recent int;
 begin
-  -- Name säubern (Whitespace zusammenfassen, kürzen); leer -> "Anonym".
+  -- Name säubern (Whitespace zusammenfassen, kürzen). Ein leerer Name bleibt
+  -- LEER und wird NICHT durch ein Wort ersetzt: die Liste ist mehrsprachig, und
+  -- ein gespeichertes "Anonym" würde für immer in der Sprache stehen, in der es
+  -- geschrieben wurde. Den Platzhalter setzt der Client beim Anzeigen, also in
+  -- der Sprache der lesenden Person (renderScoreList in js/main.js).
   v_name := left(btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')), 20);
-  if v_name = '' then v_name := 'Anonym'; end if;
 
   -- Wertebereiche prüfen.
   if p_size < 5 or p_size > 12 then raise exception 'bad size'; end if;
@@ -149,3 +152,19 @@ grant execute on function public.top_scores(int, text, int) to anon;
 -- Bereits abgewiesene Einträge sind nicht nachträglich rekonstruierbar (sie
 -- wurden nie geschrieben) – sie liegen aber lokal auf dem Gerät des Spielenden,
 -- weil die lokale Bestenliste vor dem Senden gespeichert wird.
+--
+--   2026-07: Namenloser Eintrag wird nicht mehr serverseitig "Anonym" genannt.
+--   Die Oberfläche gibt es jetzt auf Deutsch und Englisch (weitere Sprachen
+--   folgen), und ein gespeicherter Name ist unveränderlich – er stünde also bei
+--   allen Lesenden auf Deutsch. Neu wird der leere Name leer gespeichert; den
+--   Platzhalter setzt der Client in seiner eigenen Sprache. Nur diese eine Zeile
+--   entfällt in submit_score():
+--
+--     if v_name = '' then v_name := 'Anonym'; end if;
+--
+--   Am einfachsten die Datei komplett erneut ausführen. Bereits gespeicherte
+--   "Anonym"-Zeilen bleiben, wie sie sind – sie nachträglich zu leeren wäre
+--   möglich, aber nicht nötig:
+--
+--     -- optional, nur falls Altbestand vereinheitlicht werden soll:
+--     -- update public.scores set name = '' where name = 'Anonym';

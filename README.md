@@ -1,242 +1,254 @@
 # Queens
 
-### ▶️ Jetzt spielen: **<https://ilianp.github.io/Queens-clone/>**
+**English** · [Deutsch](README.de.md)
 
-Ein Klon des LinkedIn-Spiels **Queens** – reines HTML/CSS/JavaScript, kein Build-Schritt,
-läuft direkt auf GitHub Pages und ist für Handy und Desktop optimiert.
+### ▶️ Play now: **<https://ilianp.github.io/Queens-clone/>**
 
-## Spielregeln
+A clone of the LinkedIn game **Queens** – plain HTML/CSS/JavaScript, no build step,
+runs straight off GitHub Pages and is built for phone and desktop alike.
 
-Auf einem `N × N`-Feld, das in `N` farbige Regionen aufgeteilt ist, platzierst du `N` Damen (👑):
+## Rules
 
-- genau **eine Dame pro Zeile**,
-- genau **eine pro Spalte**,
-- genau **eine pro Farbregion**,
-- und **keine zwei Damen dürfen sich berühren** – auch nicht diagonal.
+On an `N × N` board split into `N` colour regions you place `N` queens (👑):
 
-Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lösbar
-(kein Raten nötig).
+- exactly **one queen per row**,
+- exactly **one per column**,
+- exactly **one per colour region**,
+- and **no two queens may touch** – not even diagonally.
 
-## Bedienung
+Every generated puzzle has **exactly one solution** and is solvable by pure logic
+(no guessing needed).
 
-- **Tippen** durchläuft ein Feld: leer → Punkt (Ausschluss) → 👑 → leer.
-- **Neues Spiel** erzeugt ein frisches Rätsel.
-- **🔊 / 🔇** oben schaltet die Soundeffekte ohne Umweg über die Einstellungen
-  direkt stumm bzw. wieder ein.
-- **Markierungen löschen** entfernt nur deine Punkte, die Damen bleiben.
-- **Zurücksetzen** leert das aktuelle Feld.
-- **Prüfen** zeigt kurz an, ob dein aktueller Stand fehlerfrei ist – nur ein
-  grünes „✓ Keine Fehler" bzw. rotes „✗ Es gibt Fehler", **ohne** zu
-  verraten, wo ein Fehler liegt, und **ohne** den nächsten Zug vorzuschlagen
-  (das bleibt dem Hinweis vorbehalten). Als Fehler zählt jeder Regelverstoß im
-  aktuellen Stand **und** ein Abweichen von der eindeutigen Lösung, bevor eine
-  Regel bricht: eine gesetzte Dame, die nicht zur Lösung gehört, ebenso wie ein
-  Punkt auf einem Feld, auf dem laut Lösung eine Dame stehen muss.
-- Fehler (sich berührende / kollidierende Damen) werden rot markiert.
-- Eine Zeile, Spalte oder Farbregion, in der jedes Feld ausgeschlossen ist und
-  keine Dame steht, wird rot pulsierend umrandet – dort ist keine Dame mehr
-  möglich, also stimmt etwas nicht.
+## Playing
 
-## Einstellungen (⚙)
+- **Tapping** cycles a cell: empty → dot (ruled out) → 👑 → empty.
+- **New game** generates a fresh puzzle.
+- **🔊 / 🔇** at the top mutes and unmutes the sound effects directly, without
+  going through the settings.
+- **Reset** clears the current board.
+- **Check** briefly reports whether your board is still error-free – just a green
+  “✓ No mistakes” or a red “✗ There are mistakes”, **without** revealing where a
+  mistake is and **without** suggesting the next move (that is the hint's job).
+  A mistake is any rule broken on the current board **and** any departure from
+  the unique solution before a rule breaks: a queen that isn't part of the
+  solution counts, as does a dot on a cell where the solution needs a queen.
+- Mistakes (touching / colliding queens) are marked red.
+- A row, column or colour region in which every cell is ruled out and no queen
+  stands is outlined in pulsing red – no queen can go there any more, so
+  something is wrong.
 
-- **Feldgröße:** 5 bis 12. Bei **12** sind ausschließlich schwere Rätsel möglich –
-  ein 12×12-Feld ist von Natur aus schwer, „leichte“/„mittlere“ Rätsel dieser Größe
-  existieren praktisch nicht –, deshalb wird die Schwierigkeit dort auf *Schwer*
-  festgelegt.
-- **Schwierigkeit:**
-  - *Leicht* – lösbar allein durch „nur ein Feld übrig"-Schlüsse.
-  - *Mittel* – benötigt zusätzlich Zeilen-/Spalten-↔-Regionen-Schlüsse.
-  - *Schwer* – benötigt eine vorausschauende (Widerspruchs-)Deduktion.
+## Settings (⚙)
 
-  Die Schwierigkeit ist (bis Feldgröße 11) unabhängig von der Feldgröße. Da die Rätsel
-  aus vorberechneten Pools stammen (siehe unten), ist die gewählte Stufe immer exakt
-  getroffen – auch bei großen Feldern, wo z. B. sehr leichte Rätsel bei Live-Erzeugung
-  selten wären.
-- **Schnellmodus:** Beim Setzen einer Dame werden alle dadurch ausgeschlossenen Felder
-  automatisch gepunktet: die gesamte Zeile, Spalte, Farbregion und die angrenzenden Felder.
-- **Live-Prüfung:** Zeigt dauerhaft ein Statuslämpchen an, ob dein Stand fehlerfrei ist
-  (dieselbe Prüfung wie der **Prüfen**-Button, ebenfalls ohne die Fehlerstelle zu
-  verraten). Es erscheint erst kurz nach deinem letzten Zug, damit es beim Spielen nicht
-  flackert. Ohne diese Option lässt sich der Status jederzeit über **Prüfen** abrufen.
-- **Ton:** Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise
-  und beim Lösen. Lässt sich hier oder direkt über das 🔊/🔇-Symbol oben stummschalten.
-- **Sprachsteuerung (Beta):** Steuere das Spiel per Stimme. Felder werden wie beim
-  Schach benannt – ein Spalten-Buchstabe (A…, von links) plus eine Zeilen-Zahl (1…,
-  von oben), z. B. **„C4"** oder ausbuchstabiert **„Cäsar vier"**. Ein Panel zeigt einen
-  🎤-Knopf zum Zuhören, ein <strong>ⓘ</strong>-Knopf mit einem kurzen Sprachbefehl-Tutorial
-  sowie das zuletzt Erkannte; bei aktivem Modus werden zusätzlich die
-  Koordinaten eingeblendet – wahlweise klein in der Ecke jedes Feldes oder (Unter-Option
-  **„Koordinaten groß am Rand"**, nur bei aktiver Sprachsteuerung sichtbar) groß als
-  Schachbrett-Leiste am Feldrand. Befehle: **„C4"** durchläuft das Feld (wie
-  Tippen), **„C4 Dame"** setzt eine Dame, **„C4 Punkt"** einen Ausschluss, **„C4 leeren"**
-  räumt es; dazu **„Hinweis"**, **„Prüfen"**, **„Zurück"**, **„Zurücksetzen"**,
-  **„Neues Spiel"** und **„Stopp"** (Zuhören beenden). Mehrere Felder lassen sich in
-  einem Befehl aufzählen (**„Punkte auf A2, B2, C3"**) und auch ganze Spalten, Zeilen
-  oder Farbregionen mit Ausnahmen ansprechen, z. B. **„Punkte Spalte B und C außer Rot"**
-  oder **„Punkte Zeile 2 und 3 außer Spalte D"**. Eine Region lässt sich auch über eine
-  Zelle darin ansprechen (**„Punkte Region von C3"**). Der eigentliche Nutzen steckt im
-  „außer" – eine ganze Zeile/Spalte/Farbe *komplett* auszupunkten ergibt nie eine Lösung
-  (jede braucht eine Dame) und wird als „Sackgasse" gemeldet. Erscheint ein Hinweis, wird
-  er vorgelesen und lässt sich mit **„OK"** übernehmen bzw. **„Schließen"** verwerfen. Nutzt die im Browser eingebaute
-  Spracherkennung (Web Speech API) – ohne zusätzliche Abhängigkeit oder Server, aber
-  aktuell nur in **Chrome/Edge** und mit Mikrofon-Freigabe. Wo die Erkennung fehlt, ist
-  die Option deaktiviert und das Spiel läuft unverändert weiter.
+- **Language:** English or German; the default is *Automatic (browser)* – if the
+  browser language matches no available translation, **English** is used.
+  Switching the language reloads the page (you are asked first if a game is in
+  progress); a solved but not-yet-submitted result is not lost in the process.
+- **Board size:** 5 to 12. At **12** only hard puzzles are possible – a 12×12
+  board is inherently hard and “easy”/“medium” puzzles of that size essentially
+  don't exist – so the difficulty is fixed to *Hard* there.
+- **Difficulty:**
+  - *Easy* – solvable with “only one cell left” deductions alone.
+  - *Medium* – additionally needs row/column ↔ region deductions.
+  - *Hard* – needs a look-ahead (contradiction) deduction.
 
-Diese Einstellungen, der zuletzt genutzte Name und die lokalen Bestzeiten werden im
-`localStorage` gespeichert (siehe *Bestenliste* unten). Ein laufender **Spielstand**
-wird dagegen **nicht** gespeichert – ein Seiten-Reload startet ein frisches Rätsel.
+  Up to board size 11 the difficulty is independent of the board size. Since the
+  puzzles come from precomputed pools (see below), the chosen level is always hit
+  exactly – including on large boards, where a very easy puzzle would be rare if
+  it were generated live.
+- **Quick mode:** Placing a queen automatically dots every cell it rules out: the
+  whole row, column, colour region and the neighbouring cells.
+- **Live check:** Permanently shows a status lamp for whether your board is
+  error-free (the same check the **Check** button runs, likewise without
+  revealing where the mistake is). It only appears shortly after your last move
+  so it doesn't flicker while you play. Without this option the status is
+  available any time via **Check**.
+- **Sound:** Short, discreet sound effects for placing a queen, dotting, hints and
+  solving. Can be muted here or directly via the 🔊/🔇 icon at the top.
+- **Voice control (beta, German only):** Steer the game by speaking. The commands
+  are a **German** grammar (spelling alphabet, spoken number words, “außer”) and
+  not translated labels, so the option is only available while the interface is
+  set to German. Cells are named like on a chessboard – a column letter (A…, from
+  the left) plus a row number (1…, from the top), e.g. **“C4”** or spelled out
+  **“Cäsar vier”**. A panel offers a 🎤 button to start listening, an **ⓘ** button
+  with a short command tutorial, and the last thing recognised; while the mode is
+  active the coordinates are also shown on the board – either small in each cell's
+  corner or (sub-option **“Koordinaten groß am Rand”**) large as a chessboard-style
+  ruler along the edge. It uses the browser's built-in speech recognition (Web
+  Speech API) – no extra dependency and no server, but currently only in
+  **Chrome/Edge** and with microphone permission. Where recognition is missing the
+  option is disabled and the game runs on unchanged.
 
-## Bestenliste
+An entry submitted without a name stores **no** name; “Anonymous” is only the
+display, and every reader sees it in their own language.
 
-Nach dem Lösen zeigt der Gewinn-Bildschirm ein **Ergebnis** und fragt, ob du dich
-eintragen möchtest. Das Ergebnis ist eine „effektive Zeit": die reine Lösezeit plus
-ein Aufschlag pro genutztem **Tipp** (+30 s) und pro **Fehler** (+15 s, eine Dame
-abseits der eindeutigen Lösung). Kleiner ist besser. Jede Kombination aus Feldgröße
-und Schwierigkeit hat eine eigene Rangliste; über 🏆 lässt sich jede davon durchblättern.
+These settings, the last name used and the local best times are kept in
+`localStorage` (see *Leaderboard* below). A **game in progress** is deliberately
+**not** stored – reloading the page starts a fresh puzzle.
 
-- **Lokal:** Bestzeiten werden immer auf dem Gerät gespeichert (bis zu **50** je
-  Rangliste), ganz ohne Server. Der zuletzt eingegebene Name wird gemerkt, damit er
-  nach jeder Runde schon vorausgefüllt ist.
-- **Global (optional):** Ist eine Online-Rangliste eingerichtet, erscheint zusätzlich
-  ein **Eintragen**-Button und ein *Global*-Tab, ebenfalls mit bis zu 50 Einträgen.
-  Ohne Einrichtung läuft alles rein lokal weiter – Online ist nie Voraussetzung.
+## Leaderboard
 
-Beide Listen zeigen etwa sechs bis acht Zeilen und **scrollen** darüber hinaus, damit
-der Gewinn-Bildschirm nicht wächst; die eigene, frische Zeile wird dabei automatisch in
-den sichtbaren Bereich gescrollt.
+After solving, the win screen shows a **result** and asks whether you want to be
+listed. The result is an “effective time”: the raw solving time plus a penalty
+per **hint** used (+30 s) and per **mistake** (+15 s, a queen off the unique
+solution). Lower is better. Every combination of board size and difficulty has
+its own ranking; 🏆 lets you browse all of them.
 
-Weil eine Liste irgendwo endet, sagt der erste Platz dahinter für sich genommen nichts.
-Deshalb merkt sich das Spiel zusätzlich die **Ergebnisse aller** Partien je Rangliste
-(nur die Zahlen, ohne Namen und Datum) und zeigt direkt auf dem Gewinn-Bildschirm, wie
-die frische Partie im Vergleich dasteht – z. B. *„Besser als 88 % deiner 26 Partien"*,
-den Abstand zur eigenen Bestzeit oder *„🏆 Neue Bestzeit!"*. Diese Rückmeldung ist
-sofort da und braucht weder Namen noch Internet. Bei wenigen Partien (unter fünf) steht
-stattdessen die schlichte Platzierung – ein Prozentwert aus zwei Runden wäre nur Rauschen.
-Nach dem **Eintragen** in die globale Rangliste ergänzt die Statuszeile den gleichen
-Vergleich für das gesamte Feld (*„Platz 37 von 214 – besser als 83 % der Einträge"*),
-sobald dort genug Einträge zusammengekommen sind; im *Global*-Tab wird die eigene,
-gerade eingetragene Zeile dann grün umrandet – genau wie im lokalen Tab. Solange du
-nicht eingetragen hast, ist dort nichts markiert, weil dein Ergebnis dort noch nicht
-existiert (die Statuszeile weist darauf hin).
+- **Local:** Best times are always stored on the device (up to **50** per
+  ranking), with no server at all. The last name entered is remembered so it is
+  pre-filled after every round.
+- **Global (optional):** If an online ranking is set up, a **Submit** button and a
+  *Global* tab appear, likewise with up to 50 entries. Without that setup
+  everything simply stays local – online is never a requirement.
 
-Wer schon vor dieser Neuerung gespielt hat, verliert den Vergleich nicht: die
-bestehenden Top-10-Einträge werden beim ersten Start als Partie-Historie übernommen.
-Das sind allerdings nur die **besten** zehn – solange kaum neue Partien dazugekommen
-sind, fällt der Prozentwert deshalb eher zu streng aus.
+Both lists show roughly six to eight rows and **scroll** beyond that so the win
+screen doesn't grow; your own fresh row is scrolled into view automatically.
 
-### Online-Rangliste einrichten (optional, Supabase)
+Because a list ends somewhere, a first place beyond it says nothing on its own.
+So the game additionally remembers the **results of all** games per ranking (just
+the numbers, no names or dates) and shows right on the win screen how the fresh
+game compares – e.g. *“Better than 88 % of your 26 games”*, the gap to your own
+best time, or *“🏆 New best time!”*. This feedback is there instantly and needs
+neither a name nor the internet. With few games (under five) the plain placement
+is shown instead – a percentage out of two rounds would be noise.
 
-GitHub Pages liefert nur statische Dateien aus, das Spiel kann aber trotzdem per
-`fetch()` eine Online-Rangliste ansprechen. Als Backend genügt ein kostenloses
-[Supabase](https://supabase.com)-Projekt – der eigene Server wird nicht gebraucht.
+After **submitting** to the global ranking, the status line adds the same
+comparison for the whole field (*“Rank 37 of 214 – better than 83 % of all
+entries”*) once enough entries have accumulated there; in the *Global* tab your
+own freshly submitted row is then outlined in green – exactly like in the local
+tab. Until you submit, nothing is highlighted there, because your result genuinely
+isn't on that board yet (the status line points this out).
 
-1. Supabase-Projekt anlegen.
-2. `docs/leaderboard-setup.sql` im **SQL-Editor** des Projekts ausführen. Das legt die
-   Tabelle sowie die geprüften Funktionen `submit_score` / `top_scores` an (die
-   serverseitige Plausibilitätsprüfung = der Missbrauchsschutz).
-3. In `js/leaderboard.js` die **Projekt-URL** und den **öffentlichen anon-Key**
-   eintragen. Beide Werte dürfen im Browser stehen; der `service_role`-Key gehört
-   **niemals** dorthin.
+Anyone who played before this feature existed doesn't lose the comparison: the
+existing top-10 entries are adopted as game history on first start. Those are only
+the **best** ten, though – so as long as few new games have been added, the
+percentage comes out rather strict.
 
-**Ehrlicher Hinweis:** Da der Browser die Zeit selbst meldet, ist keine solche
-Rangliste manipulationssicher. Die Serverprüfungen (unmögliche Zeiten ablehnen,
-Werte begrenzen, Best-Effort Rate-Limit) halten nur groben Unfug ab – für ein
-Hobbyspiel genug, kein Turnier-Anspruch. Statt roher IP wird nur ein gesalzener
-Tageshash fürs Rate-Limit gespeichert.
+### Setting up the online ranking (optional, Supabase)
 
-Genau deshalb ist die Zeit-Untergrenze **absichtlich sehr locker**: sie lag früher
-bei „Feldgröße in Sekunden" und hat damit echte schnelle Läufe abgewiesen (ein 6×6
-in 5 s ist mit Schnellmodus gut machbar). Da ohnehin jeder Manipulierende einfach
-eine plausibel aussehende Zeit senden könnte, kostete diese Prüfung nur
-Funktionalität. Abgewiesen wird jetzt nur noch Unmögliches (0 Sekunden). Wer die
-Rangliste schon eingerichtet hat, führt den **MIGRATION**-Block am Ende von
-`docs/leaderboard-setup.sql` nach (oder einfach die ganze Datei erneut – sie ist
-wiederholbar und lässt vorhandene Daten unberührt).
+GitHub Pages only serves static files, but the game can still reach an online
+ranking via `fetch()`. A free [Supabase](https://supabase.com) project is enough
+as a backend – no server of your own needed.
 
-Lehnt der Server einen Eintrag ab, sagt der Gewinn-Bildschirm jetzt **warum**
-(z. B. „Global abgelehnt: Zeit als unmöglich eingestuft") statt „nicht erreichbar" –
-und bietet keinen sinnlosen zweiten Versuch an. Lokal gespeichert wird in jedem
-Fall, bevor überhaupt gesendet wird.
+1. Create a Supabase project.
+2. Run `docs/leaderboard-setup.sql` in the project's **SQL editor**. That creates
+   the table and the validated functions `submit_score` / `top_scores` (the
+   server-side plausibility checks = the abuse protection).
+3. Enter the **project URL** and the **public anon key** in `js/leaderboard.js`.
+   Both values may live in the browser; the `service_role` key must **never** go
+   there.
 
-## Rätsel-Pools
+**An honest note:** since the browser reports its own time, no such ranking is
+tamper-proof. The server checks (reject impossible times, bound the values,
+best-effort rate limit) only keep out crude nonsense – enough for a hobby game,
+no tournament claim. Instead of a raw IP, only a salted daily hash is stored for
+the rate limit.
 
-„Neues Spiel" startet sofort: Die Rätsel werden nicht live berechnet, sondern aus
-vorberechneten Pools in `levels/` gezogen – eine JSON-Datei pro Kombination aus
-Feldgröße und Schwierigkeit, je 50 Rätsel. Das sind **22 Pools mit zusammen 1100
-Rätseln** (Feldgröße 12 hat nur einen `schwer`-Pool, siehe unten). Damit sich
-nichts einprägt, wird jedes
-gezogene Rätsel zufällig **gedreht oder gespiegelt** (8 Symmetrien) und bekommt wie
-bisher zufällige Farben – aus 50 gespeicherten Formen entstehen so hunderte
-unterscheidbare Bretter. Innerhalb einer Sitzung wiederholt sich keine Form, bevor
-nicht alle an der Reihe waren (nur im Speicher, nichts wird persistiert).
+That is exactly why the lower time bound is **deliberately very loose**: it used
+to be “board size in seconds” and rejected genuinely fast runs (a 6×6 in 5 s is
+quite doable in quick mode). Since anyone tampering could simply send a
+plausible-looking time anyway, that check only cost functionality. Now only the
+impossible (0 seconds) is rejected. If you already set the ranking up, apply the
+**MIGRATION** block at the end of `docs/leaderboard-setup.sql` (or just run the
+whole file again – it is repeatable and leaves existing data untouched).
 
-### Zwei Formensprachen
+If the server refuses an entry, the win screen now says **why** (e.g. “Rejected
+globally: time judged impossible”) instead of “unreachable” – and offers no
+pointless second attempt. It is saved locally in any case, before anything is
+sent at all.
 
-Die Farbregionen werden in **zwei verschiedenen Stilen** gebaut, und jeder Pool
-enthält beide zur Hälfte:
+## Puzzle pools
 
-- **organisch** – amöbenartige Regionen mit ausgefransten Grenzen.
-- **blockig** – Regionen wachsen in geraden Streifen, dadurch lange gerade
-  Grenzen, rechteckige Formen und eine große Hintergrundfarbe.
+“New game” starts instantly: puzzles aren't computed live but drawn from
+precomputed pools in `levels/` – one JSON file per combination of board size and
+difficulty, 50 puzzles each. That is **22 pools holding 1100 puzzles** in total
+(board size 12 only has a `hard` pool, see above). So that nothing becomes
+familiar, every drawn puzzle is randomly **rotated or mirrored** (8 symmetries)
+and gets random colours as before – 50 stored shapes thus turn into hundreds of
+distinguishable boards. Within a session no shape repeats until every one has had
+its turn (in memory only, nothing is persisted).
 
-Weil jedes Rätsel eines Pools einmal an die Reihe kommt, bevor sich etwas
-wiederholt, wechseln sich beide Looks beim Spielen gleichmäßig ab. **An der
-Schwierigkeit ändert der Stil nichts** – sie hängt allein davon ab, welche
-Denktechniken ein Brett verlangt. Nur bei *Leicht* fällt der Unterschied kaum
-auf: diese Stufe braucht die kleinen „geschenkten" Regionen, die den blockigen
-Look erst ausmachen würden.
+### Two shape languages
 
-Schlägt das Laden eines Pools fehl (z. B. offline geänderte Dateien), erzeugt das
-Spiel das Rätsel wie früher live im Hintergrund – es gibt also immer ein Brett,
-dann mit zufällig gewähltem Stil.
+The colour regions are built in **two different styles**, and every pool holds
+half of each:
 
-Die Pools werden mit `node tools/generate-levels.mjs` erzeugt und mit
-`node tools/verify-levels.mjs` geprüft (Eindeutigkeit, Schwierigkeit, Symmetrien,
-Lösbarkeit rein über Hinweise). Nach Änderungen an Generator-/Solver-Logik müssen
-beide erneut laufen.
+- **organic** – amoeba-like regions with ragged borders.
+- **blocky** – regions grow in straight strips, giving long straight borders,
+  rectangular shapes and one large background colour.
 
-## Deployment auf GitHub Pages
+Because every puzzle in a pool comes up once before anything repeats, the two
+looks alternate evenly while playing. **The style changes nothing about the
+difficulty** – that depends solely on which thinking techniques a board demands.
+Only at *Easy* is the difference barely noticeable: that level needs the small
+“gifted” regions that would be what makes the blocky look in the first place.
 
-Das Repo enthält einen GitHub-Actions-Workflow (`.github/workflows/deploy.yml`), der die
-Seite bei jedem Push automatisch deployt. Einmalige Einrichtung:
+If loading a pool fails (e.g. files changed offline), the game generates the
+puzzle live in the background as it used to – so there is always a board, then
+with a randomly chosen style.
 
-1. In den Repository-**Settings → Pages** unter *Build and deployment → Source* den Wert
-   **„GitHub Actions"** auswählen.
-2. Auf einen der im Workflow konfigurierten Branches pushen (`main`, `master` oder den
-   Entwicklungs-Branch).
-3. Nach dem Durchlauf der Action ist die Seite unter der angezeigten Pages-URL erreichbar.
+The pools are built with `node tools/generate-levels.mjs` and checked with
+`node tools/verify-levels.mjs` (uniqueness, difficulty, symmetries, solvability
+purely via hints). After changes to the generator/solver logic, both have to run
+again.
 
-Da es sich um eine statische Seite handelt, kannst du alternativ in den Pages-Settings
-auch „Deploy from a branch" wählen und den Repo-Root (`/`) veröffentlichen.
+## Deploying to GitHub Pages
 
-## Projektstruktur
+The repo contains a GitHub Actions workflow (`.github/workflows/deploy.yml`) that
+deploys the site automatically on every push. One-time setup:
+
+1. In the repository **Settings → Pages**, under *Build and deployment → Source*,
+   pick **“GitHub Actions”**.
+2. Push to one of the branches configured in the workflow (`main`, `master` or the
+   development branch).
+3. Once the action has run, the site is reachable at the Pages URL it reports.
+
+Since this is a static site, you can alternatively pick “Deploy from a branch” in
+the Pages settings and publish the repo root (`/`).
+
+## Project structure
 
 ```
-index.html                – Seitengerüst
-css/styles.css            – Layout & responsives, mobiles Design
-js/solver.js              – Regeln, Lösungszählung, Logik-Solver (Schwierigkeitsbewertung)
-js/generator.js           – Rätselerzeugung mit garantiert eindeutiger Lösung (Fallback & Pool-Erzeugung)
-js/levels.js              – Lädt die vorberechneten Pools, dreht/spiegelt zufällig
-js/game.js                – Spielzustand, Schnellmodus, Konflikt- & Gewinnerkennung
-js/hint.js                – Nächster logischer Schluss als erklärbarer Hinweis
-js/highscores.js          – Score-Modell, lokale Bestzeiten & Partie-Historie für den Vergleich (localStorage)
-js/leaderboard.js         – Optionale globale Online-Rangliste (Supabase, fällt still auf lokal zurück)
-js/settings.js            – Einstellungen & letzter Name (localStorage)
-js/audio.js               – Minimalistische Soundeffekte (Web Audio API, ohne Asset-Dateien)
-js/voice.js               – Sprachsteuerung: reiner Befehls-Parser + Web-Speech-Wrapper (ohne DOM)
-js/main.js                – DOM-Anbindung, Rendering, Steuerung
-levels/                   – Vorberechnete Rätsel-Pools (JSON, pro Größe × Schwierigkeit)
-docs/leaderboard-setup.sql – SQL zum Einrichten der optionalen Supabase-Rangliste
-tools/generate-levels.mjs – Erzeugt die Pools neu
-tools/verify-levels.mjs   – Prüft alle Pools (Eindeutigkeit, Stufe, Symmetrien, Hinweise)
-tools/build-artifact.mjs  – Bündelt die App in eine Datei (Mobil-Test als Artifact)
+index.html                – Page skeleton
+css/styles.css            – Layout & responsive, mobile design
+js/solver.js              – Rules, solution counting, logic solver (difficulty rating)
+js/generator.js           – Puzzle generation with a guaranteed-unique solution (fallback & pool builds)
+js/levels.js              – Loads the precomputed pools, rotates/mirrors at random
+js/game.js                – Game state, quick mode, conflict & win detection
+js/hint.js                – The next logical deduction as an explainable hint
+js/highscores.js          – Score model, local best times & game history for the comparison (localStorage)
+js/leaderboard.js         – Optional global online ranking (Supabase, falls back to local silently)
+js/settings.js            – Preferences & last name (localStorage)
+js/i18n.js                – Translation layer: t(), language resolution (no DOM)
+js/i18n/en.js, de.js      – Language packs (one key set, identical per language)
+js/audio.js               – Minimalist sound effects (Web Audio API, no asset files)
+js/voice.js               – Voice control: pure command parser + Web Speech wrapper (no DOM)
+js/main.js                – DOM wiring, rendering, controls
+levels/                   – Precomputed puzzle pools (JSON, per size × difficulty)
+docs/leaderboard-setup.sql – SQL for setting up the optional Supabase ranking
+tools/generate-levels.mjs – Rebuilds the pools
+tools/verify-levels.mjs   – Checks all pools (uniqueness, level, symmetries, hints)
+tools/build-artifact.mjs  – Bundles the app into one file (mobile test as an Artifact)
+tests/logic/verify-i18n.mjs – Checks the language packs for matching keys (runs in CI)
 ```
 
-## Lokal ausführen
+## Translating
 
-Wegen ES-Modulen muss die Seite über einen Webserver laufen (nicht per `file://`):
+The interface is available in **English** and **German**. All text lives in
+`js/i18n/<language>.js`; every file carries exactly the same set of keys. Another
+language is a copy of `js/i18n/en.js` plus an entry in `I18N_PACKS` /
+`I18N_LANGUAGES` in `js/i18n.js`.
+
+`node tests/logic/verify-i18n.mjs` checks that no language loses a key or a
+placeholder – it runs in CI too, so a slip shows up at build time rather than on
+screen. Deliberately not translated are the **voice control** (a German speech
+grammar, see above) and the **debug log** (developer output; one fixed language
+keeps bug reports readable).
+
+## Running locally
+
+Because of ES modules the page has to be served over HTTP (not via `file://`):
 
 ```bash
 python3 -m http.server 8000
-# dann http://localhost:8000 öffnen
+# then open http://localhost:8000
 ```

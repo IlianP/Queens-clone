@@ -30,10 +30,26 @@ const CHROMIUM = '/opt/pw-browsers/chromium';
 // Launch a mobile-sized Chromium (this is a touch-first game — always test at
 // phone size) and open the game. Returns { browser, page } plus a collected
 // `errors` array you should assert stays empty. Caller closes the browser.
-export async function openGame(baseUrl = 'http://localhost:8000') {
+//
+// Accepts either a base URL (the original form) or an options object:
+//   openGame('http://localhost:8000')
+//   openGame({ baseUrl, locale, storage })
+// `locale` sets the browser language, which is what decides the UI language on
+// a first visit (see resolveLanguage in js/i18n.js) — so a test that asserts on
+// visible text should pin it rather than inherit the host's. `storage` is a
+// plain object written into localStorage before the app boots, for starting a
+// test from a chosen preference.
+export async function openGame(opts = {}) {
+  const { baseUrl = 'http://localhost:8000', locale = 'en-US', storage = null } =
+    typeof opts === 'string' ? { baseUrl: opts } : opts;
   const pw = (await import(PLAYWRIGHT)).default;
   const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, locale });
+  if (storage) {
+    await page.addInitScript((s) => {
+      for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v);
+    }, storage);
+  }
 
   const errors = [];
   page.on('console', (m) => {
