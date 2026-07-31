@@ -1,5 +1,7 @@
 # Queens
 
+[English](README.md) · **Deutsch**
+
 ### ▶️ Jetzt spielen: **<https://ilianp.github.io/Queens-clone/>**
 
 Ein Klon des LinkedIn-Spiels **Queens** – reines HTML/CSS/JavaScript, kein Build-Schritt,
@@ -39,6 +41,11 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 
 ## Einstellungen (⚙)
 
+- **Sprache:** Deutsch oder Englisch; voreingestellt ist *Automatisch (Browser)* –
+  passt die Browsersprache zu keiner vorhandenen Übersetzung, wird **Englisch**
+  genommen. Ein Sprachwechsel lädt die Seite neu (läuft gerade eine Partie, wird
+  vorher gefragt); ein bereits gelöstes, noch nicht eingetragenes Ergebnis geht
+  dabei nicht verloren.
 - **Feldgröße:** 5 bis 12. Bei **12** sind ausschließlich schwere Rätsel möglich –
   ein 12×12-Feld ist von Natur aus schwer, „leichte“/„mittlere“ Rätsel dieser Größe
   existieren praktisch nicht –, deshalb wird die Schwierigkeit dort auf *Schwer*
@@ -60,7 +67,10 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   flackert. Ohne diese Option lässt sich der Status jederzeit über **Prüfen** abrufen.
 - **Ton:** Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise
   und beim Lösen. Lässt sich hier oder direkt über das 🔊/🔇-Symbol oben stummschalten.
-- **Sprachsteuerung (Beta):** Steuere das Spiel per Stimme. Felder werden wie beim
+- **Sprachsteuerung (Beta, nur auf Deutsch):** Steuere das Spiel per Stimme. Die
+  Sprachbefehle sind eine **deutsche** Grammatik (Buchstabiertafel, Zahlwörter,
+  „außer") und keine übersetzten Beschriftungen – deshalb ist die Option nur
+  verfügbar, wenn die Oberfläche auf Deutsch steht. Felder werden wie beim
   Schach benannt – ein Spalten-Buchstabe (A…, von links) plus eine Zeilen-Zahl (1…,
   von oben), z. B. **„C4"** oder ausbuchstabiert **„Cäsar vier"**. Ein Panel zeigt einen
   🎤-Knopf zum Zuhören, ein <strong>ⓘ</strong>-Knopf mit einem kurzen Sprachbefehl-Tutorial
@@ -81,6 +91,9 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   Spracherkennung (Web Speech API) – ohne zusätzliche Abhängigkeit oder Server, aber
   aktuell nur in **Chrome/Edge** und mit Mikrofon-Freigabe. Wo die Erkennung fehlt, ist
   die Option deaktiviert und das Spiel läuft unverändert weiter.
+
+Bei einem Eintrag ohne Namen wird **kein** Name gespeichert; „Anonym" ist nur die
+Anzeige und erscheint bei allen Lesenden in ihrer eigenen Sprache.
 
 Diese Einstellungen, der zuletzt genutzte Name und die lokalen Bestzeiten werden im
 `localStorage` gespeichert (siehe *Bestenliste* unten). Ein laufender **Spielstand**
@@ -222,6 +235,8 @@ js/hint.js                – Nächster logischer Schluss als erklärbarer Hinwe
 js/highscores.js          – Score-Modell, lokale Bestzeiten & Partie-Historie für den Vergleich (localStorage)
 js/leaderboard.js         – Optionale globale Online-Rangliste (Supabase, fällt still auf lokal zurück)
 js/settings.js            – Einstellungen & letzter Name (localStorage)
+js/i18n.js                – Übersetzungsschicht: t(), Sprachwahl (ohne DOM)
+js/i18n/en.js, de.js      – Sprachpakete (ein Schlüsselsatz, identisch je Sprache)
 js/audio.js               – Minimalistische Soundeffekte (Web Audio API, ohne Asset-Dateien)
 js/voice.js               – Sprachsteuerung: reiner Befehls-Parser + Web-Speech-Wrapper (ohne DOM)
 js/main.js                – DOM-Anbindung, Rendering, Steuerung
@@ -230,7 +245,22 @@ docs/leaderboard-setup.sql – SQL zum Einrichten der optionalen Supabase-Rangli
 tools/generate-levels.mjs – Erzeugt die Pools neu
 tools/verify-levels.mjs   – Prüft alle Pools (Eindeutigkeit, Stufe, Symmetrien, Hinweise)
 tools/build-artifact.mjs  – Bündelt die App in eine Datei (Mobil-Test als Artifact)
+tests/logic/verify-i18n.mjs – Prüft die Sprachpakete auf gleiche Schlüssel (läuft in CI)
 ```
+
+## Übersetzen
+
+Die Oberfläche gibt es auf **Deutsch** und **Englisch**. Alle Texte liegen in
+`js/i18n/<sprache>.js`; jede Datei enthält exakt denselben Satz Schlüssel. Eine
+weitere Sprache ist eine Kopie von `js/i18n/en.js` plus ein Eintrag in
+`I18N_PACKS`/`I18N_LANGUAGES` in `js/i18n.js`.
+
+`node tests/logic/verify-i18n.mjs` prüft, dass keine Sprache Schlüssel oder
+Platzhalter verliert – das läuft auch in CI, ein Versehen fällt also beim Build
+auf und nicht erst auf dem Bildschirm. Nicht übersetzt sind bewusst die
+**Sprachsteuerung** (eine deutsche Sprach-Grammatik, siehe oben) und das
+**Debug-Protokoll** (Entwickler-Ausgabe; eine feste Sprache hält Fehlermeldungen
+lesbar).
 
 ## Lokal ausführen
 

@@ -7,8 +7,11 @@ current when the architecture or workflow changes.
 
 A browser clone of the LinkedIn game **Queens**: a static site in plain
 HTML/CSS/JavaScript with **no build step and no dependencies**. It uses native
-ES modules and ships as-is to GitHub Pages. Player-facing text is **German** —
-match that language in UI strings, hint copy, and `README.md`.
+ES modules and ships as-is to GitHub Pages. Player-facing text is **localised**
+(English + German, see "i18n" below) — never hard-code a UI string, add a key to
+every language pack instead. Two surfaces stay single-language on purpose: Voice
+Mode (German) and the debug journal (German); both are documented below.
+`README.md` is English, `README.de.md` the German original — keep them in step.
 
 Live site: https://ilianp.github.io/Queens-clone/
 
@@ -38,6 +41,10 @@ before re-deriving how to drive things:
   is exactly the smoke test below: solve generated puzzles end-to-end by applying
   `computeHint` repeatedly and assert all `N` queens land on the `solution`. Run
   it after any `solver.js` / `generator.js` / `hint.js` / `game.js` change.
+- `tests/logic/verify-i18n.mjs` — the i18n guard: identical key sets across packs,
+  same value *types*, every template still uses the parameters the fallback uses,
+  and every key referenced from `index.html` / `t('…')` exists. Run it after
+  touching any UI string.
 - `tests/browser/` — Playwright driving the real DOM. Playwright + Chromium are
   **environment-provided** (fixed `/opt` paths, no repo dependency), so these run
   only in that kind of environment. `board-helpers.mjs` encapsulates the fiddly
@@ -106,10 +113,76 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores`) fail soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
-| `js/settings.js` | Preferences (size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
+| `js/i18n.js` | Translation layer: `t(key, params)`, `resolveLanguage`, the pack registry. **Pure** — no DOM, no browser globals at import time, so Node can import it (`js/hint.js` depends on it and the logic tests import that). Mirrors the audio/voice/leaderboard layering |
+| `js/i18n/en.js`, `js/i18n/de.js` | The language packs. Flat `key → string \| (params) => string` maps, one identical key set per language — `tests/logic/verify-i18n.mjs` fails CI otherwise |
+| `js/settings.js` | Preferences (language/size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
 | `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. `isRefinaliseExtension(prevText, newText)` is the **pure** detector for the other half of the same problem: Chrome finalising a sentence it cut short ("Punkte Zeile 1" before "… außer Region E1"). A premature **fill** can't be repaired by re-running the narrower one (marking only adds), so `main.js` rolls the earlier fill back — identity-checking its undo snapshot against the stack top — and applies the completed utterance. It is only a *detector*: the full new transcript is re-parsed, never stripped. Mirrors the audio/leaderboard layering |
 | `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, voice panel + coordinate labels (per-cell corner labels or an edge ruler — the `.board-stage` wraps the board so the rulers sit outside the intro rotation), debug export (with an optional `debugExtended` journal — the last 20 voice/board events: **every** heard final incl. ones that changed nothing (op `gehört`) plus effect entries, the raw voice transcript, replay-skips, and exactly what each undo removed; back-to-back coordinate finals also carry a short replay guard so a re-finalise doesn't double-apply). Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
+
+### i18n (what is translated, and what deliberately isn't)
+
+`index.html` ships the **English** baseline inline and `<html lang="en">`;
+`applyTranslations()` in `main.js` swaps it for the resolved language at boot.
+The `.app` shell is `visibility: hidden` until `data-i18n-ready` lands on
+`<html>`, so a German player never sees a frame of English. Without JS the page
+has no board anyway, so gating on it costs nothing — but it does mean
+`build-artifact.mjs` guards that the hook exists (the Artifact has no `<head>`,
+only the body slice, so a lost hook would render blank).
+
+- Markup: `data-i18n="key"` (textContent), `data-i18n-attr="aria-label:key|title:key"`,
+  and `data-i18n-html="key"` for the *one* value with inline markup
+  (`party.text`). `data-i18n-html` is for **our own pack values only** — player
+  and leaderboard text still goes in with `textContent`, never `innerHTML`.
+- Language resolution (`resolveLanguage`, pure/testable): an explicit stored pick
+  wins; otherwise the first `navigator.languages` entry with a pack; otherwise
+  **English** — deliberately not German, so an unrecognised locale gets the
+  widest-reach default. `settings.language === ''` means "follow the browser".
+- Changing the language **reloads the page**. Not for speed (swapping ~150 keys
+  is nothing) but because every transient surface would otherwise need
+  re-localising: open hint card, win screen, score lists, and the recogniser,
+  which has to restart on a new `lang` regardless. A reload always discards the
+  board (this project persists preferences, never game state), so
+  `onLanguageChange` confirms first when a game is in progress and calls
+  `flushPendingWin()` so an unsubmitted solve still reaches the local list.
+- Composed sentences are **functions per language**, not `%s` templates — word
+  order and agreement differ, so each pack writes its own sentence. Plurals and
+  ordinals live inside the pack that needs them (`enOrdinal`, `dePlural`); there
+  is no shared plural engine and shouldn't be.
+- Units in `hint.js` travel as **kinds** (`'region' | 'row' | 'col'`) and only
+  become words at the point a sentence is built. Never branch on a translated
+  string.
+- An unnamed score is stored **empty**, client- and server-side
+  (`docs/leaderboard-setup.sql` no longer substitutes `'Anonym'`): a stored word
+  would be frozen in the writer's language on a list everyone reads. The
+  placeholder is rendered per reader. That SQL change needs the project owner to
+  re-run the file in Supabase — see its `MIGRATION` block.
+- **Voice Mode is German-only, and that is not a gap to fill by translating.**
+  `js/voice.js` is a *German speech grammar* — spelling alphabet, spoken number
+  words, exclusion phrases, and a set of mis-hearings found by actually speaking
+  at the recogniser (`"damit"` for "Dame", `"aus der"` for "außer"). None of that
+  transfers via a language pack; another language needs its own grammar, its own
+  empirically-gathered mis-hearings, its own rewritten ⓘ tutorial (which
+  documents the grammar rather than translating it), and its own
+  `tests/logic/voice-parse.mjs` table. `applyVoiceSetting` gates the whole
+  feature to `getLanguage() === 'de'` and says why in the settings hint — a
+  French UI driving a `de-DE` recogniser would just produce nonsense. Lifting the
+  gate means adding a grammar, not a pack.
+- **The debug journal is deliberately untranslated** (German op labels like
+  `gehört`, `Dame E4`, `Replay übersprungen`). It is developer output that ends
+  up in bug reports; pinning it to one language keeps those readable, and it is
+  mostly Voice-Mode telemetry anyway. Keep new journal labels out of the packs.
+- Adding a language = copy `js/i18n/en.js`, register it in `I18N_PACKS` +
+  `I18N_LANGUAGES`, add it to `build-artifact.mjs`'s module list (**before**
+  `js/i18n.js` — it builds `I18N_PACKS` in a top-level `const`, so a later
+  declaration is in the temporal dead zone and the classic-script bundle throws
+  at load). Then run `node tests/logic/verify-i18n.mjs`. Watch the layout: FR/ES
+  run 15–30 % longer than EN/DE and `.btn` is `white-space: nowrap`, while
+  `.voice-transcript` / `.voice-status` / `.score-name` are single-line ellipsis.
+- Browser tests that assert on visible copy **must pin a locale**
+  (`openGame({ locale: 'de-DE' })`, or `newPage({ locale })`) — otherwise the UI
+  language follows the CI host. `voice-mode.mjs` must be German or the switch is
+  disabled and nothing runs.
 
 ### Difficulty ↔ solver ↔ hint (keep these aligned)
 

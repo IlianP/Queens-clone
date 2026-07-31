@@ -37,6 +37,16 @@ rounding never claims a flat 0/100 unless the score really beat none/all),
 pre-history device doesn't report "von 0 Partien") and `matchOwnEntry`. It
 installs a small in-memory `localStorage` stand-in, so it stays pure Node.
 
+`verify-i18n.mjs` is the guard that makes adding a language safe. It can't judge
+a translation, but it checks everything mechanical: that every pack in `js/i18n/`
+carries exactly the fallback's key set (nothing missing, nothing dead), that a key
+is a string in every pack or a function in every pack (a template silently turned
+into a plain string would swallow its parameters), that every template runs and
+returns a non-empty string, that a translation still *uses* every parameter the
+fallback uses — dropping `{rank}` loses the information the sentence was built to
+carry — and that every key referenced from `index.html` or from a literal `t('…')`
+in `js/` actually exists. Pure Node, so CI runs it on every push.
+
 `voice-parse.mjs` covers `parseVoiceCommand` in `js/voice.js` — the pure German
 transcript → command parser behind Voice Mode. It checks the chess-style
 coordinate mapping (letter=column, number=row, e.g. "C4"), the German spelling
@@ -120,6 +130,16 @@ await browser.close();
 
 Always assert `errors` (collected console/page errors) stays empty, and test at
 a phone-sized viewport — this is a touch-first game.
+
+**Pin the locale if you assert on visible text.** The UI language now follows the
+browser on a first visit (see `js/i18n.js`), so an unpinned test reads whatever
+language the host happens to be in. `openGame({ locale: 'de-DE' })` (or
+`newPage({ viewport, locale })` for the tests that build their own page) fixes it;
+`openGame` also takes `{ storage }` to seed `localStorage` before boot. Tests
+asserting German copy — `live-check-sticky.mjs`, `leaderboard-retry.mjs`,
+`win-feedback.mjs` — pin `de-DE` for that reason, and `voice-mode.mjs` *must*:
+Voice Mode is gated to the German UI, so the switch is disabled otherwise and
+nothing below it runs.
 
 `blocky-style.mjs` covers the `blocky` region-growth style in `js/generator.js`
 (see `../CLAUDE.md` → "Region-growth styles"). It generates blocky boards across
