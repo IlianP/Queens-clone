@@ -109,6 +109,24 @@ clickable and Playwright then waits out a full 30 s timeout. A JS error inside
 `onWin` looks exactly like that, so the helper throws with the collected page
 errors instead of hanging — which is how an unimported constant was found.
 
+`i18n-layout.mjs` is the layout half of the i18n guard — `logic/verify-i18n.mjs`
+checks that the packs *match*, this one checks that they *fit*. It walks all four
+languages: the top bar at seven widths (320–640), then every pack value rendered
+with realistic parameters into the real element it appears in (hint card, win
+card, party overlay, status line), plus the live board/settings/leaderboard
+surfaces and `<html lang>`.
+
+It asserts on **element** geometry, never the page's, and that distinction is the
+whole point: `<body>` has `overflow-x: clip`, so a row that stops fitting
+produces no scrollbar, and `.brand` is a column flex with
+`align-items: flex-start`, which lets children spill past the column instead of
+shrinking with it. Together those hid a real collision — the `<h1>` kept its full
+width inside a squeezed `.brand` and painted "Queens" underneath the toolbar
+buttons. German had been shaving the "s" off since the packs landed and no test
+noticed; French made it a 35px overlap. Wrapping to a second line is a **pass**,
+not a failure: below ~360px the row doesn't fit in any language, English
+included.
+
 `voice-mode.mjs` drives Voice Mode end-to-end through the real DOM. There's no
 microphone here, so it **injects a fake `SpeechRecognition`** (via
 `addInitScript`) and pushes transcripts at it with `window.__fakeVoice.emitFinal`

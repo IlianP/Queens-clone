@@ -18,6 +18,8 @@
 // bundle): no `import.meta`, and no top-level name collisions.
 import { I18N_EN } from './i18n/en.js';
 import { I18N_DE } from './i18n/de.js';
+import { I18N_FR } from './i18n/fr.js';
+import { I18N_ES } from './i18n/es.js';
 
 // Every pack is measured against this one: it is the default language, the
 // baseline text `index.html` ships with, and the fallback for a missing key.
@@ -26,6 +28,8 @@ export const I18N_FALLBACK = 'en';
 export const I18N_PACKS = {
   en: I18N_EN,
   de: I18N_DE,
+  fr: I18N_FR,
+  es: I18N_ES,
 };
 
 // Selectable languages, in menu order. Names are endonyms — a language is
@@ -33,6 +37,8 @@ export const I18N_PACKS = {
 export const I18N_LANGUAGES = [
   { code: 'en', name: 'English' },
   { code: 'de', name: 'Deutsch' },
+  { code: 'fr', name: 'Français' },
+  { code: 'es', name: 'Español' },
 ];
 
 export function i18nSupported(lang) {

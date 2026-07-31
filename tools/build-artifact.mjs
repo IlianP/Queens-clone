@@ -48,6 +48,8 @@ function strip(code) {
 
 const i18nEn = strip(read('js/i18n/en.js'));
 const i18nDe = strip(read('js/i18n/de.js'));
+const i18nFr = strip(read('js/i18n/fr.js'));
+const i18nEs = strip(read('js/i18n/es.js'));
 const i18n = strip(read('js/i18n.js'));
 const settings = strip(read('js/settings.js'));
 const audio = strip(read('js/audio.js'));
@@ -135,7 +137,7 @@ const workerSrc =
 // sandboxed Artifact frame can't grant mic access, so voiceSupported() gates it
 // off there and the panel simply doesn't run.)
 const pageBundle = [
-  i18nEn, i18nDe, i18n,
+  i18nEn, i18nDe, i18nFr, i18nEs, i18n,
   settings, audio, voice, solver, generator, levels, highscores, game, hint, leaderboard, main,
 ].join('\n\n');
 

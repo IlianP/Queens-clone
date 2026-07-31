@@ -41,9 +41,9 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 
 ## Einstellungen (⚙)
 
-- **Sprache:** Deutsch oder Englisch; voreingestellt ist *Automatisch (Browser)* –
-  passt die Browsersprache zu keiner vorhandenen Übersetzung, wird **Englisch**
-  genommen. Ein Sprachwechsel lädt die Seite neu (läuft gerade eine Partie, wird
+- **Sprache:** Deutsch, Englisch, Französisch oder Spanisch; voreingestellt ist
+  *Automatisch (Browser)* – passt die Browsersprache zu keiner vorhandenen
+  Übersetzung, wird **Englisch** genommen. Ein Sprachwechsel lädt die Seite neu (läuft gerade eine Partie, wird
   vorher gefragt); ein bereits gelöstes, noch nicht eingetragenes Ergebnis geht
   dabei nicht verloren.
 - **Feldgröße:** 5 bis 12. Bei **12** sind ausschließlich schwere Rätsel möglich –
@@ -236,7 +236,8 @@ js/highscores.js          – Score-Modell, lokale Bestzeiten & Partie-Historie 
 js/leaderboard.js         – Optionale globale Online-Rangliste (Supabase, fällt still auf lokal zurück)
 js/settings.js            – Einstellungen & letzter Name (localStorage)
 js/i18n.js                – Übersetzungsschicht: t(), Sprachwahl (ohne DOM)
-js/i18n/en.js, de.js      – Sprachpakete (ein Schlüsselsatz, identisch je Sprache)
+js/i18n/en.js, de.js,     – Sprachpakete (ein Schlüsselsatz, identisch je Sprache)
+  fr.js, es.js
 js/audio.js               – Minimalistische Soundeffekte (Web Audio API, ohne Asset-Dateien)
 js/voice.js               – Sprachsteuerung: reiner Befehls-Parser + Web-Speech-Wrapper (ohne DOM)
 js/main.js                – DOM-Anbindung, Rendering, Steuerung
@@ -250,10 +251,18 @@ tests/logic/verify-i18n.mjs – Prüft die Sprachpakete auf gleiche Schlüssel (
 
 ## Übersetzen
 
-Die Oberfläche gibt es auf **Deutsch** und **Englisch**. Alle Texte liegen in
-`js/i18n/<sprache>.js`; jede Datei enthält exakt denselben Satz Schlüssel. Eine
-weitere Sprache ist eine Kopie von `js/i18n/en.js` plus ein Eintrag in
-`I18N_PACKS`/`I18N_LANGUAGES` in `js/i18n.js`.
+Die Oberfläche gibt es auf **Deutsch**, **Englisch**, **Französisch** und
+**Spanisch**. Alle Texte liegen in `js/i18n/<sprache>.js`; jede Datei enthält
+exakt denselben Satz Schlüssel. Eine weitere Sprache ist eine Kopie von
+`js/i18n/en.js` plus ein Eintrag in `I18N_PACKS`/`I18N_LANGUAGES` in
+`js/i18n.js` und in der Modulliste in `tools/build-artifact.mjs`.
+
+Ein Sprachpaket ist keine Wort-für-Wort-Übersetzung: zusammengesetzte Sätze sind
+**Funktionen**, jede Sprache schreibt also ihren eigenen Satz, statt fremde
+Platzhalter zu füllen, und Plural- bzw. Ordnungszahlregeln liegen in dem Paket,
+das sie braucht (Französisch behandelt 0 als Singular, Spanisch nicht). Auch das
+Layout im Blick behalten – die Beschriftungen sind `white-space: nowrap` und die
+romanischen Sprachen laufen deutlich länger als Englisch.
 
 `node tests/logic/verify-i18n.mjs` prüft, dass keine Sprache Schlüssel oder
 Platzhalter verliert – das läuft auch in CI, ein Versehen fällt also beim Build
