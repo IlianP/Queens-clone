@@ -378,14 +378,32 @@ Both suppress the percentage when the sample is too small to mean anything
 plain placement; `percentileBetter` counts a tie as half and never rounds to a
 flat 0/100 unless the score really beat none/all.
 
-`seedSolveHistory()` runs once at boot and backfills an **empty** bucket history
-from that bucket's top list. Devices that played before the history existed
-would otherwise compare a fresh solve against nothing — the card claiming "von 2
-Partien" directly above ten older entries. It is idempotent (a bucket is only
-seeded while its history is empty), so no migration flag exists; keep it that
-way. Known and accepted: seeded scores are the player's *best* ten, not a fair
-sample, so a percentile against a freshly seeded bucket understates the new
-solve. Real solves dilute it.
+`seedSolveHistory()` runs once at boot and backfills each bucket's history from
+that bucket's top list. Devices that played before the history existed would
+otherwise compare a fresh solve against nothing — the card claiming "von 2
+Partien" directly above ten older entries. It **tops up** a partly filled history
+too, not just an empty one: a device that recorded a handful of solves before
+this backfill shipped would otherwise compare against those few forever (the
+observed symptom: "besser als 100 % deiner 7 Partien · Platz 1 von 8" printed
+directly above a sixteen-row list with a better time at the top — `bestScore`
+already read both stores, `rank`/`total`/`percentile` only the history).
+
+What makes topping up safe is `mergeSolveSamples(history, topScores)`, pure and
+the only place that reconciles the two stores: **never concatenate them.** Every
+solve since the history existed is in *both*, so concatenating double-counts it;
+each also holds what the other lost (the top list remembers pre-history solves,
+the history remembers solves that fell off the list's cap — that's how a 280
+survives with nothing near it in the list, from when the cap was still 10). The
+merge is a multiset union — per score value `max(count in history, count in top
+list)` — and backfilled scores go to the *front*, where the history cap evicts
+first, so real recorded solves are never displaced. That makes a re-run a no-op,
+which is why no migration flag exists; keep it that way.
+
+Known and accepted: the recovered scores are the player's *best* ones, not a fair
+sample, so a percentile against a freshly backfilled bucket understates the new
+solve (real solves dilute it); anything evicted while the list still held 10 is
+gone, so the reported count is a lower bound on games actually played; and two
+distinct solves with an identical score, one in each store, collapse into one.
 
 The global tab marks the player's own row with the same `.me` highlight the local
 list uses, but only **after** a submit — before that the solve genuinely isn't on

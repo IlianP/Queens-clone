@@ -197,33 +197,81 @@ export function recordSolve(size, difficulty, score) {
   return list;
 }
 
-// Backfill empty histories from the top list. Without this, the history is
-// empty on every device that played before it existed, so the win card would
-// claim "von 2 Partien" right above a full ten-entry list — the numbers visibly
-// contradicting each other (the exact symptom this fixes).
+// Fold a bucket's top-list scores into its history, adding only the solves the
+// history doesn't already account for. Pure.
 //
-// The seeded scores are the only past solves still on record, so they are all
-// we can offer. Two consequences, both deliberate:
-//   * they are the player's BEST ten, not a fair sample, so a percentile against
-//     a freshly seeded bucket is pessimistic — it understates how good the new
-//     solve was. Real solves dilute that with every game played.
-//   * chronological order is unknown; the top-list order is kept, which puts them
-//     at the front of the array where the cap evicts first. That is right: they
-//     are the oldest thing in there.
+// The two stores overlap: every solve since the history existed was written to
+// BOTH, so concatenating them would count those games twice and skew every
+// percentile. They also each hold something the other lost — the top list keeps
+// old solves from before the history existed, the history keeps solves that fell
+// off the top list's cap. So the merge is a multiset union: per score value keep
+// `max(count in history, count in top list)`, i.e. add a top-list score only as
+// often as it appears there beyond the history's own copies.
 //
-// Idempotent by construction — a bucket is only seeded while its history is
-// empty, and a seeded bucket never becomes empty again — so no migration flag is
-// needed, and clearing the history deliberately re-seeds what's left.
-// Returns the number of buckets seeded.
+// The one case this gets wrong is two genuinely different solves with an
+// identical score, one recorded only in the history and one only in the top
+// list: they collapse into one. That undercounts by a single game; the
+// alternative (double-counting every shared solve) is far worse.
+//
+// Extras go to the FRONT: their chronological position is unknown, but they are
+// certainly older than anything the history recorded itself, and the front is
+// where the cap evicts first — so a full history of real solves is never
+// displaced by best-biased backfill.
+export function mergeSolveSamples(history, topScores) {
+  const clean = (list) =>
+    (Array.isArray(list) ? list : [])
+      .map((v) => Math.round(Number(v)))
+      .filter((v) => Number.isFinite(v) && v >= 0);
+  const hist = clean(history);
+  const top = clean(topScores);
+  if (!top.length) return hist;
+  const have = new Map();
+  for (const s of hist) have.set(s, (have.get(s) || 0) + 1);
+  const seen = new Map();
+  const extra = [];
+  for (const s of top) {
+    const n = (seen.get(s) || 0) + 1;
+    seen.set(s, n);
+    if (n > (have.get(s) || 0)) extra.push(s);
+  }
+  if (!extra.length) return hist;
+  return extra.concat(hist).slice(-MAX_SOLVE_HISTORY);
+}
+
+// Backfill histories from the top list. Without this, the history is empty on
+// every device that played before it existed, so the win card would claim "von 2
+// Partien" right above a full ten-entry list — the numbers visibly contradicting
+// each other (the exact symptom this fixes).
+//
+// Buckets are topped up rather than only seeded when empty: a device that played
+// a few games after the history shipped but before this backfill did would
+// otherwise keep comparing against those few games forever, while the list below
+// the card shows every older solve. `mergeSolveSamples` is what makes topping up
+// safe — see there for why the two stores can't simply be concatenated.
+//
+// The recovered scores are the only past solves still on record, so they are all
+// we can offer, and they are the player's BEST ones rather than a fair sample:
+// a percentile against a freshly backfilled bucket is pessimistic — it
+// understates how good the new solve was. Real solves dilute that with every
+// game played. Anything that fell off the top list before it held 50 entries is
+// gone for good, so the count stays a lower bound on the games really played.
+//
+// Idempotent by construction — a second run finds every top-list score already
+// accounted for (and a run truncated by the cap stays truncated, since the merge
+// then returns a list of unchanged length) — so no migration flag is needed, and
+// clearing the history deliberately re-seeds what's left.
+// Returns the number of buckets changed.
 export function seedSolveHistory() {
   const history = loadSolveHistory();
   const top = loadLocalScores();
   let seeded = 0;
   for (const key of Object.keys(top)) {
-    if (history[key] && history[key].length) continue;
     const scores = top[key].map((e) => e.score).filter((s) => Number.isFinite(s));
     if (!scores.length) continue;
-    history[key] = scores.slice(0, MAX_SOLVE_HISTORY);
+    const before = history[key] || [];
+    const merged = mergeSolveSamples(before, scores);
+    if (merged.length === before.length) continue;
+    history[key] = merged;
     seeded++;
   }
   if (seeded) {

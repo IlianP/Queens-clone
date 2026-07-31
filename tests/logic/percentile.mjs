@@ -25,6 +25,7 @@ const {
   getPersonalStats,
   saveLocalScore,
   seedSolveHistory,
+  mergeSolveSamples,
   matchOwnEntry,
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
@@ -154,6 +155,38 @@ for (const s of [300, 310, 320]) recordSolve(6, 'easy', s);
   eq(st.isBest, false, '100 does not beat the surviving 40');
 }
 
+// --- mergeSolveSamples ------------------------------------------------------
+// The two stores overlap, so the merge must add only what the history is
+// actually missing — never a second copy of a solve both stores recorded.
+{
+  const j = (a) => JSON.stringify(a);
+  eq(j(mergeSolveSamples([], [30, 20, 10])), '[30,20,10]', 'empty history takes every top score');
+  eq(j(mergeSolveSamples([10, 20], [])), '[10,20]', 'no top list → history unchanged');
+  eq(j(mergeSolveSamples([20, 10], [10, 20])), '[20,10]', 'fully overlapping stores add nothing');
+  // The realistic case: a few solves recorded since the history existed, plus
+  // older ones that only ever reached the top list.
+  eq(
+    j(mergeSolveSamples([82, 68], [24, 36, 68, 82])),
+    '[24,36,82,68]',
+    'only the unmatched top scores are prepended, oldest-first'
+  );
+  // Duplicate values are counted, not deduplicated: two 90s in the list and one
+  // in the history means one 90 is still missing.
+  eq(j(mergeSolveSamples([90], [90, 90])), '[90,90]', 'a second copy in the list counts as a second solve');
+  eq(j(mergeSolveSamples([90, 90], [90])), '[90,90]', 'the history may hold more copies than the list');
+  // A solve the top list dropped (worse than every listed entry) survives.
+  eq(j(mergeSolveSamples([280], [24, 36])), '[24,36,280]', 'history-only scores are kept');
+  eq(j(mergeSolveSamples(['x', -1, 40], ['y', 30])), '[30,40]', 'junk values are dropped');
+  // At the cap, backfill loses out to real recorded solves.
+  {
+    const full = Array.from({ length: MAX_SOLVE_HISTORY }, (_, i) => 1000 + i);
+    const merged = mergeSolveSamples(full, [1, 2, 3]);
+    eq(merged.length, MAX_SOLVE_HISTORY, 'merging cannot exceed the cap');
+    eq(merged[merged.length - 1], full[full.length - 1], 'the newest real solve is kept');
+    eq(merged[0], 1000, 'the prepended backfill is what falls off, not a real solve');
+  }
+}
+
 // --- seedSolveHistory -------------------------------------------------------
 // A device that played before the history existed has a full top list and no
 // history at all. Left alone, the win card would compare a fresh solve against
@@ -177,12 +210,39 @@ eq(getSolveScores(9, 'medium').length, 0, 'no history yet (pre-feature device)')
   eq(st.bestScore, 14, 'best comes from the seeded history');
 }
 
-// A bucket that already has history is left untouched (no double counting).
+// A bucket whose history already accounts for every listed solve is left alone —
+// the shared solve must not be counted twice.
 localStorage.clear();
 saveLocalScore(7, 'hard', { name: 'Ich', seconds: 90, hints: 0, mistakes: 0, score: 90 });
 recordSolve(7, 'hard', 90);
-eq(seedSolveHistory(), 0, 'a bucket with history is not seeded');
+eq(seedSolveHistory(), 0, 'a fully covered bucket is not touched');
 eq(JSON.stringify(getSolveScores(7, 'hard')), '[90]', 'existing history unchanged');
+
+// A PARTLY filled history is topped up, not skipped: the device played a few
+// games after the history shipped but has older solves that only the top list
+// remembers. Leaving it alone is what made the win card say "besser als 100 %
+// deiner 7 Partien" directly above a sixteen-entry list with a better time in it.
+localStorage.clear();
+for (const s of [24, 68, 82, 160]) {
+  saveLocalScore(12, 'hard', { name: 'Ich', seconds: s, hints: 0, mistakes: 0, score: s });
+}
+for (const s of [82, 68, 280]) recordSolve(12, 'hard', s); // 280 fell off the old 10-entry list
+{
+  eq(seedSolveHistory(), 1, 'the partly filled bucket is topped up');
+  eq(
+    JSON.stringify(getSolveScores(12, 'hard')),
+    '[24,160,82,68,280]',
+    'only the solves the history was missing are added'
+  );
+  eq(seedSolveHistory(), 0, 'topping up again does nothing (idempotent)');
+
+  // And the card now agrees with the list underneath it.
+  const st = getPersonalStats(12, 'hard', 26);
+  eq(st.total, 5, 'every known solve counts, each exactly once');
+  eq(st.rank, 2, 'ranked behind the 24 the list shows on top');
+  eq(st.percentile, 80, 'beats four of five');
+  eq(st.bestScore, 24, 'best still comes from the merged picture');
+}
 
 // Nothing to seed from at all.
 localStorage.clear();

@@ -33,8 +33,10 @@ so it takes a few seconds.
 `percentile.mjs` covers the relative-feedback half of `js/highscores.js` — the
 solve history, `percentileBetter` / `globalPercentile` (ties count half, and the
 rounding never claims a flat 0/100 unless the score really beat none/all),
-`getPersonalStats`, the `seedSolveHistory` backfill (idempotent, and the reason a
-pre-history device doesn't report "von 0 Partien") and `matchOwnEntry`. It
+`getPersonalStats`, the `seedSolveHistory` backfill with its `mergeSolveSamples`
+multiset union (idempotent; the reason a pre-history device doesn't report "von 0
+Partien", that a partly filled history is topped up rather than skipped, and that
+a solve sitting in *both* stores is still counted once) and `matchOwnEntry`. It
 installs a small in-memory `localStorage` stand-in, so it stays pure Node.
 
 `verify-i18n.mjs` is the guard that makes adding a language safe. It can't judge
