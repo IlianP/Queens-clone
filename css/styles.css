@@ -100,8 +100,15 @@ html[data-i18n-ready] .app {
 }
 
 /* ---------- Top bar ---------- */
+/* The row's width is language-dependent: `.toolbar` is flex:none and its labels
+   are nowrap, so "New game" (8 chars) and "Nouvelle partie" (15) need different
+   amounts of room, and on a small phone the longest pack decides. Wrapping is
+   the honest answer — below ~360px the row does not fit in ANY language (the
+   toolbar alone wants 238px of the 288px available), so the toolbar drops to a
+   second line instead of the title sliding under the buttons. */
 .topbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -118,10 +125,23 @@ html[data-i18n-ready] .app {
   min-width: 0;
 }
 
+/* Last-resort bound on the title. `.brand` is a column flex with
+   align-items:flex-start, which sizes children to their own content and lets
+   them spill PAST the column's width — so a shrunken `.brand` did not shrink
+   the h1, it just let "Queens" paint underneath the buttons, silently, because
+   `overflow-x: clip` on <body> hides the page-level symptom. (German already
+   shaved the "s" off before French made it obvious.) max-width pins the h1 to
+   the column so the worst case is an ellipsis, not a collision; the wrap above
+   is what keeps it from being reached. */
 .topbar h1 {
   margin: 0;
   font-size: clamp(1.4rem, 5vw, 1.9rem);
   letter-spacing: 0.5px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .toolbar {
@@ -150,17 +170,29 @@ html[data-i18n-ready] .app {
   line-height: 1;
 }
 
-/* Very narrow phones: trim the toolbar so the row still fits without relying
-   on the clip safety net (which would otherwise shave the ⚙ edge). */
-@media (max-width: 360px) {
+/* Phones: trim the row so it stays on ONE line at the common widths (375–430px)
+   in every shipped language, and only wraps on genuinely narrow screens. The
+   threshold is 430px rather than 360px because the width needed is
+   language-dependent — "New game" is 8 characters, "Nouvelle partie" is 15, and
+   the longest pack decides. Tighter gaps and horizontal padding buy back ~16px,
+   the smaller title another ~14px; together that covers the spread across en/de/
+   fr/es down to 375px. Only the HORIZONTAL padding shrinks below the base rule —
+   9px vertical is the touch-target height, which this game cannot afford to
+   trim. The `.icon` line looks redundant but is not: `.btn.icon` is declared
+   AFTER this block and ties on specificity with `.toolbar .btn`, so without its
+   own override the later rule would win and icon buttons would keep 10px 12px. */
+@media (max-width: 430px) {
+  .topbar h1 {
+    font-size: clamp(1.2rem, 5vw, 1.9rem);
+  }
   .toolbar {
-    gap: 6px;
+    gap: 4px;
   }
   .toolbar .btn {
-    padding: 9px 11px;
+    padding: 9px;
   }
   .toolbar .btn.icon {
-    padding: 9px 10px;
+    padding: 9px;
   }
 }
 

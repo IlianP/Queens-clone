@@ -8,7 +8,8 @@ current when the architecture or workflow changes.
 A browser clone of the LinkedIn game **Queens**: a static site in plain
 HTML/CSS/JavaScript with **no build step and no dependencies**. It uses native
 ES modules and ships as-is to GitHub Pages. Player-facing text is **localised**
-(English + German, see "i18n" below) — never hard-code a UI string, add a key to
+(English, German, French, Spanish — see "i18n" below) — never hard-code a UI
+string, add a key to
 every language pack instead. Two surfaces stay single-language on purpose: Voice
 Mode (German) and the debug journal (German); both are documented below.
 `README.md` is English, `README.de.md` the German original — keep them in step.
@@ -114,7 +115,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores`) fail soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
 | `js/i18n.js` | Translation layer: `t(key, params)`, `resolveLanguage`, the pack registry. **Pure** — no DOM, no browser globals at import time, so Node can import it (`js/hint.js` depends on it and the logic tests import that). Mirrors the audio/voice/leaderboard layering |
-| `js/i18n/en.js`, `js/i18n/de.js` | The language packs. Flat `key → string \| (params) => string` maps, one identical key set per language — `tests/logic/verify-i18n.mjs` fails CI otherwise |
+| `js/i18n/en.js`, `de.js`, `fr.js`, `es.js` | The language packs. Flat `key → string \| (params) => string` maps, one identical key set per language — `tests/logic/verify-i18n.mjs` fails CI otherwise. Each pack owns its own plural/ordinal helpers (`frPlural` treats 0 as singular, `esPlural` doesn't) and its own noun choices; fr/es pin the piece to the local name of the *n*-queens problem (`dame` / `reina`), and their three unit words are all feminine, which is what lets the hint sentences interpolate a bare `la ${unit}` |
 | `js/settings.js` | Preferences (language/size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
 | `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. `isRefinaliseExtension(prevText, newText)` is the **pure** detector for the other half of the same problem: Chrome finalising a sentence it cut short ("Punkte Zeile 1" before "… außer Region E1"). A premature **fill** can't be repaired by re-running the narrower one (marking only adds), so `main.js` rolls the earlier fill back — identity-checking its undo snapshot against the stack top — and applies the completed utterance. It is only a *detector*: the full new transcript is re-parsed, never stripped. Mirrors the audio/leaderboard layering |
@@ -179,6 +180,19 @@ only the body slice, so a lost hook would render blank).
   at load). Then run `node tests/logic/verify-i18n.mjs`. Watch the layout: FR/ES
   run 15–30 % longer than EN/DE and `.btn` is `white-space: nowrap`, while
   `.voice-transcript` / `.voice-status` / `.score-name` are single-line ellipsis.
+- **A longer label does not report itself as an overflow.** `overflow-x: clip` on
+  `<body>` hides page-level overflow, and `.brand` is a column flex with
+  `align-items: flex-start`, which sizes children to their own content and lets
+  them spill *past* the column — so a long `ui.newGame` shrank `.brand` while the
+  `<h1>` kept its width and painted "Queens" underneath the toolbar buttons.
+  Nothing scrolled, nothing was clipped, no test failed; German had been shaving
+  the "s" off since the packs landed and it only became obvious in French. The
+  fix is layered: `.topbar` wraps, the `<h1>` has `max-width: 100%` + ellipsis as
+  the last resort, and the ≤430px media query trims horizontal padding (never
+  vertical — that's the touch target) so 375–430px stays one row in every pack.
+  When adding a language, measure the top bar at 320/360/375/390/414px, not just
+  the modals — and assert on *element* geometry (collision, `scrollWidth` vs
+  `clientWidth`), because the page-level check is blind here.
 - Browser tests that assert on visible copy **must pin a locale**
   (`openGame({ locale: 'de-DE' })`, or `newPage({ locale })`) — otherwise the UI
   language follows the CI host. `voice-mode.mjs` must be German or the switch is
