@@ -23,11 +23,17 @@
 const frPlural = (n, one, many) => `${n} ${n < 2 ? one : many}`;
 // 1er, then "e" for everything after it: 2e, 3e, 4e …
 const frOrdinal = (n) => (n === 1 ? '1er' : `${n}e`);
+// French writes "88 %" with a space before the sign — a non-breaking one, so it
+// never wraps to its own line. Which space exactly (NBSP vs. narrow NBSP) is a
+// CLDR question that moves between ICU versions, so it is delegated to Intl
+// instead of typed by hand; see js/i18n/en.js for why this helper is per-pack.
+const frLocale = 'fr-FR';
+const frPercent = (n) =>
+  new Intl.NumberFormat(frLocale, { style: 'percent', maximumFractionDigits: 0 }).format(Number(n) / 100);
 
 export const I18N_FR = {
   // ---------- meta ----------
   'lang.htmlLang': 'fr',
-  'lang.locale': 'fr-FR',
 
   // ---------- top bar / actions ----------
   'ui.newGame': 'Nouvelle partie',
@@ -90,7 +96,7 @@ export const I18N_FR = {
   'win.personal.bestDetail': ({ delta, bucket }) => `${delta} de mieux que ton ancien record · ${bucket}`,
   'win.personal.rank': ({ rank, total }) => `Ton ${frOrdinal(rank)} meilleur temps sur ${total} parties`,
   'win.personal.percentile': ({ percent, total, capped }) =>
-    `Mieux que ${percent} % de tes ${capped ? `${total} dernières parties` : `${total} parties`}`,
+    `Mieux que ${frPercent(percent)} de tes ${capped ? `${total} dernières parties` : `${total} parties`}`,
   'win.personal.detail': ({ bucket, toBest }) => `${bucket} · ${toBest}`,
   'win.personal.detailRank': ({ rank, total, bucket, toBest }) =>
     `Place ${rank} sur ${total} · ${bucket} · ${toBest}`,
@@ -106,7 +112,7 @@ export const I18N_FR = {
   'submit.retrying': ({ attempt, total }) => `Nouvel essai … (${attempt}/${total})`,
   'submit.done': ({ rank, total }) => `Publié : place ${rank} sur ${total} 🌐`,
   'submit.donePercentile': ({ rank, total, percent }) =>
-    `Publié : place ${rank} sur ${total} – mieux que ${percent} % des entrées 🌐`,
+    `Publié : place ${rank} sur ${total} – mieux que ${frPercent(percent)} des entrées 🌐`,
   'submit.unreachable': 'Classement global inaccessible – enregistré en local ✓. Réessayer ?',
   'submit.rejectedSaved': ({ text }) => `${text} – enregistré en local ✓`,
   'submit.reject.implausibleTime': 'Refusé au niveau global : temps jugé impossible',

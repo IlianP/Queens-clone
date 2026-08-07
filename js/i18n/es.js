@@ -22,11 +22,16 @@
 const esPlural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 // 1.º, 2.º, 3.º … the masculine ordinal indicator, for "tu 2.º mejor tiempo".
 const esOrdinal = (n) => `${n}.º`;
+// Spanish writes "88 %" WITH a space (RAE) — a non-breaking one, so the sign
+// never wraps to its own line. Intl/CLDR owns that rule; see js/i18n/en.js for
+// why this helper is per-pack rather than shared.
+const esLocale = 'es-ES';
+const esPercent = (n) =>
+  new Intl.NumberFormat(esLocale, { style: 'percent', maximumFractionDigits: 0 }).format(Number(n) / 100);
 
 export const I18N_ES = {
   // ---------- meta ----------
   'lang.htmlLang': 'es',
-  'lang.locale': 'es-ES',
 
   // ---------- top bar / actions ----------
   'ui.newGame': 'Partida nueva',
@@ -89,7 +94,7 @@ export const I18N_ES = {
   'win.personal.bestDetail': ({ delta, bucket }) => `${delta} mejor que tu récord anterior · ${bucket}`,
   'win.personal.rank': ({ rank, total }) => `Tu ${esOrdinal(rank)} mejor tiempo de ${total} partidas`,
   'win.personal.percentile': ({ percent, total, capped }) =>
-    `Mejor que el ${percent} % de tus ${capped ? `${total} últimas partidas` : `${total} partidas`}`,
+    `Mejor que el ${esPercent(percent)} de tus ${capped ? `${total} últimas partidas` : `${total} partidas`}`,
   'win.personal.detail': ({ bucket, toBest }) => `${bucket} · ${toBest}`,
   'win.personal.detailRank': ({ rank, total, bucket, toBest }) =>
     `Puesto ${rank} de ${total} · ${bucket} · ${toBest}`,
@@ -105,7 +110,7 @@ export const I18N_ES = {
   'submit.retrying': ({ attempt, total }) => `Reintentando … (${attempt}/${total})`,
   'submit.done': ({ rank, total }) => `Publicado: puesto ${rank} de ${total} 🌐`,
   'submit.donePercentile': ({ rank, total, percent }) =>
-    `Publicado: puesto ${rank} de ${total}, mejor que el ${percent} % de las entradas 🌐`,
+    `Publicado: puesto ${rank} de ${total}, mejor que el ${esPercent(percent)} de las entradas 🌐`,
   'submit.unreachable': 'Clasificación global inaccesible: guardado en local ✓. ¿Reintentar?',
   'submit.rejectedSaved': ({ text }) => `${text}: guardado en local ✓`,
   'submit.reject.implausibleTime': 'Rechazado en la global: el tiempo se considera imposible',
