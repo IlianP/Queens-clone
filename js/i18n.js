@@ -79,11 +79,6 @@ export function getLanguage() {
   return currentLang;
 }
 
-// BCP-47 tag for Intl / SpeechSynthesis / <html lang>, from the active pack.
-export function currentLocale() {
-  return t('lang.locale');
-}
-
 // Missing keys are reported once each: a silent empty string is how a language
 // pack rots unnoticed, and throwing would take the whole page down over one
 // label.

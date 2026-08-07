@@ -17,11 +17,22 @@ const enOrdinal = (n) => {
   const suffix = { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th';
   return `${n}${suffix}`;
 };
+// Percent typography is locale data, not a hand-typed space: English writes
+// "88%", while German/French/Spanish write "88 %" — and with a NON-BREAKING
+// space, so the sign can never wrap onto a line of its own. Intl/CLDR owns
+// those rules, so the number is formatted rather than concatenated. Like the
+// plural helper this is per-pack: a pack value must not depend on which
+// language happens to be active, or the French sentence would come out with
+// English spacing whenever `currentLang` is 'en' (which is exactly what
+// tests/browser/i18n-layout.mjs measures). `style: 'percent'` scales by 100,
+// hence the /100 — `percent` arrives as a whole number.
+const enLocale = 'en-GB';
+const enPercent = (n) =>
+  new Intl.NumberFormat(enLocale, { style: 'percent', maximumFractionDigits: 0 }).format(Number(n) / 100);
 
 export const I18N_EN = {
   // ---------- meta ----------
   'lang.htmlLang': 'en',
-  'lang.locale': 'en-GB',
 
   // ---------- top bar / actions ----------
   'ui.newGame': 'New game',
@@ -83,7 +94,7 @@ export const I18N_EN = {
   'win.personal.bestDetail': ({ delta, bucket }) => `${delta} faster than your previous record · ${bucket}`,
   'win.personal.rank': ({ rank, total }) => `Your ${enOrdinal(rank)}-best of ${total} games`,
   'win.personal.percentile': ({ percent, total, capped }) =>
-    `Better than ${percent} % of your ${capped ? `last ${total}` : total} games`,
+    `Better than ${enPercent(percent)} of your ${capped ? `last ${total}` : total} games`,
   'win.personal.detail': ({ bucket, toBest }) => `${bucket} · ${toBest}`,
   'win.personal.detailRank': ({ rank, total, bucket, toBest }) =>
     `Rank ${rank} of ${total} · ${bucket} · ${toBest}`,
@@ -99,7 +110,7 @@ export const I18N_EN = {
   'submit.retrying': ({ attempt, total }) => `Retrying … (${attempt}/${total})`,
   'submit.done': ({ rank, total }) => `Submitted: rank ${rank} of ${total} 🌐`,
   'submit.donePercentile': ({ rank, total, percent }) =>
-    `Submitted: rank ${rank} of ${total} – better than ${percent} % of all entries 🌐`,
+    `Submitted: rank ${rank} of ${total} – better than ${enPercent(percent)} of all entries 🌐`,
   'submit.unreachable': 'Global leaderboard unreachable – saved locally ✓. Try again?',
   'submit.rejectedSaved': ({ text }) => `${text} – saved locally ✓`,
   'submit.reject.implausibleTime': 'Rejected globally: time judged impossible',

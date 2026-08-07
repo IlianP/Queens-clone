@@ -18,11 +18,16 @@
 
 // German plural: only 1 is singular.
 const dePlural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+// German writes "88 %" WITH a space (DIN 5008) — a non-breaking one, so the
+// sign never wraps to its own line. Intl/CLDR owns that rule; see js/i18n/en.js
+// for why this helper is per-pack rather than shared.
+const deLocale = 'de-DE';
+const dePercent = (n) =>
+  new Intl.NumberFormat(deLocale, { style: 'percent', maximumFractionDigits: 0 }).format(Number(n) / 100);
 
 export const I18N_DE = {
   // ---------- meta ----------
   'lang.htmlLang': 'de',
-  'lang.locale': 'de-DE',
 
   // ---------- top bar / actions ----------
   'ui.newGame': 'Neues Spiel',
@@ -84,7 +89,7 @@ export const I18N_DE = {
   'win.personal.bestDetail': ({ delta, bucket }) => `${delta} besser als dein bisheriger Rekord · ${bucket}`,
   'win.personal.rank': ({ rank, total }) => `Deine ${rank}.-beste von ${total} Partien`,
   'win.personal.percentile': ({ percent, total, capped }) =>
-    `Besser als ${percent} % ${capped ? `deiner letzten ${total}` : `deiner ${total}`} Partien`,
+    `Besser als ${dePercent(percent)} ${capped ? `deiner letzten ${total}` : `deiner ${total}`} Partien`,
   'win.personal.detail': ({ bucket, toBest }) => `${bucket} · ${toBest}`,
   'win.personal.detailRank': ({ rank, total, bucket, toBest }) =>
     `Platz ${rank} von ${total} · ${bucket} · ${toBest}`,
@@ -100,7 +105,7 @@ export const I18N_DE = {
   'submit.retrying': ({ attempt, total }) => `Erneuter Versuch … (${attempt}/${total})`,
   'submit.done': ({ rank, total }) => `Global eingetragen: Platz ${rank} von ${total} 🌐`,
   'submit.donePercentile': ({ rank, total, percent }) =>
-    `Global eingetragen: Platz ${rank} von ${total} – besser als ${percent} % der Einträge 🌐`,
+    `Global eingetragen: Platz ${rank} von ${total} – besser als ${dePercent(percent)} der Einträge 🌐`,
   'submit.unreachable': 'Global nicht erreichbar – lokal gespeichert ✓. Erneut versuchen?',
   'submit.rejectedSaved': ({ text }) => `${text} – lokal gespeichert ✓`,
   'submit.reject.implausibleTime': 'Global abgelehnt: Zeit als unmöglich eingestuft',
@@ -116,7 +121,11 @@ export const I18N_DE = {
   'settings.size': 'Feldgröße',
   'settings.difficulty': 'Schwierigkeit',
   'settings.difficulty.hardOnly': 'Bei Feldgröße 12 sind nur schwere Rätsel möglich.',
-  'settings.language.label': 'Sprache',
+  // "Anzeigesprache", not "Sprache": this label sits a few rows above
+  // "Sprachsteuerung (Beta)", and two settings starting with "Sprach…" that mean
+  // entirely different things read as one feature. English/French/Spanish have
+  // no such collision ("Language" vs. "Voice control"), so only German qualifies.
+  'settings.language.label': 'Anzeigesprache',
   'settings.language.auto': 'Automatisch (Browser)',
   'settings.language.hint':
     'Ein Sprachwechsel lädt das Spiel neu – eine laufende Partie geht dabei verloren.',
