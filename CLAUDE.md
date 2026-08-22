@@ -119,7 +119,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/settings.js` | Preferences (language/size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
 | `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. `isRefinaliseExtension(prevText, newText)` is the **pure** detector for the other half of the same problem: Chrome finalising a sentence it cut short ("Punkte Zeile 1" before "… außer Region E1"). A premature **fill** can't be repaired by re-running the narrower one (marking only adds), so `main.js` rolls the earlier fill back — identity-checking its undo snapshot against the stack top — and applies the completed utterance. It is only a *detector*: the full new transcript is re-parsed, never stripped. Mirrors the audio/leaderboard layering |
-| `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, voice panel + coordinate labels (per-cell corner labels or an edge ruler — the `.board-stage` wraps the board so the rulers sit outside the intro rotation), debug export (with an optional `debugExtended` journal — the last 20 voice/board events: **every** heard final incl. ones that changed nothing (op `gehört`) plus effect entries, the raw voice transcript, replay-skips, and exactly what each undo removed; back-to-back coordinate finals also carry a short replay guard so a re-finalise doesn't double-apply). Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
+| `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, QR share dialog, voice panel + coordinate labels (per-cell corner labels or an edge ruler — the `.board-stage` wraps the board so the rulers sit outside the intro rotation), debug export (with an optional `debugExtended` journal — the last 20 voice/board events: **every** heard final incl. ones that changed nothing (op `gehört`) plus effect entries, the raw voice transcript, replay-skips, and exactly what each undo removed; back-to-back coordinate finals also carry a short replay guard so a re-finalise doesn't double-apply). Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
 
 ### i18n (what is translated, and what deliberately isn't)
 
@@ -321,6 +321,34 @@ lineCells, excludedCells, applyLabel }`. `kind` is one of `place` /
 `targetCells`, so a single `eliminate` hint may legitimately mark several cells
 at once (e.g. every cell that dead-ends the same unit) — plural copy and the
 apply-label plural are handled in `hint.js`/`elimHint`.
+
+### Sharing (the QR code)
+
+The settings card's title row carries a small QR button on the right, level with
+the heading (`.settings-head`), which opens a second overlay on top of the
+settings — `#qr-overlay`, z-index 21, with the settings staying visible behind
+it, so closing the code returns there rather than to the board. That is why
+Escape has to close the QR **first and return**, and why `closeSettings()` also
+hides it: the code is a child dialog, never a sibling.
+
+**The app ships no QR generator.** The address is fixed (GitHub Pages), so the
+code is fixed too: a plain `<svg>` in `index.html`. `tools/generate-qr.mjs` is a
+dev-only, dependency-free byte-mode encoder that produces it —
+`node tools/generate-qr.mjs` prints the SVG, `--check` verifies index.html still
+carries the current one. Regenerate and paste it in **if the site's URL ever
+changes**, and update the visible link under the code (two independent strings —
+`tests/logic/qr-code.mjs` checks they agree).
+
+A wrong QR code still *looks* like a QR code, which is why the test decodes
+rather than compares: `tests/logic/qr-code.mjs` reads the finished matrix back
+the way a scanner does (unmask, lift the format bits, de-interleave, read the
+byte segment) with no code shared with the encoder, then asserts index.html
+embeds exactly the code for the live URL. The rendered end of it —
+that the browser paints something a real scanner reads at phone size, in both
+themes — was verified with a headless render decoded by jsQR; that check needs
+dependencies this repo doesn't carry, so it isn't committed. If you change the
+SVG output (colours, quiet zone, sizing), redo it rather than trusting the eye:
+the quiet zone and the light plate are the parts a dark theme silently eats.
 
 ### Highscores / leaderboard
 

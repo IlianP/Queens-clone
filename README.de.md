@@ -92,6 +92,13 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   aktuell nur in **Chrome/Edge** und mit Mikrofon-Freigabe. Wo die Erkennung fehlt, ist
   die Option deaktiviert und das Spiel läuft unverändert weiter.
 
+Oben rechts in den Einstellungen, auf Höhe der Überschrift, sitzt ein kleiner
+**QR-Button**: er zeigt die Web-Adresse des Spiels als QR-Code, damit jemand
+neben dir einfach die Kamera darauf hält und sofort losspielt – ganz ohne
+Installation. Der Code ist festes Markup (die App bringt keinen Generator mit);
+`node tools/generate-qr.mjs` erzeugt ihn neu, falls sich die Adresse einmal
+ändert.
+
 Bei einem Eintrag ohne Namen wird **kein** Name gespeichert; „Anonym" ist nur die
 Anzeige und erscheint bei allen Lesenden in ihrer eigenen Sprache.
 
@@ -246,6 +253,7 @@ docs/leaderboard-setup.sql – SQL zum Einrichten der optionalen Supabase-Rangli
 tools/generate-levels.mjs – Erzeugt die Pools neu
 tools/verify-levels.mjs   – Prüft alle Pools (Eindeutigkeit, Stufe, Symmetrien, Hinweise)
 tools/build-artifact.mjs  – Bündelt die App in eine Datei (Mobil-Test als Artifact)
+tools/generate-qr.mjs     – Erzeugt den Teilen-QR-Code in index.html neu
 tests/logic/verify-i18n.mjs – Prüft die Sprachpakete auf gleiche Schlüssel (läuft in CI)
 ```
 

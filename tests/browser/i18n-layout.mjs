@@ -230,6 +230,12 @@ for (const [locale, code] of LOCALES) {
     await page.click('#open-settings');
     await page.waitForTimeout(300);
     live = live.concat(await page.evaluate(LIVE_PROBE));
+    // The QR share dialog opens on top of the settings — its heading, hint and
+    // close button are pack values too, and the card is the narrowest one.
+    await page.click('#open-qr');
+    await page.waitForTimeout(300);
+    live = live.concat(await page.evaluate(LIVE_PROBE));
+    await page.keyboard.press('Escape');
     await page.click('#settings-close');
     await page.click('#open-leaderboard');
     await page.waitForTimeout(400);

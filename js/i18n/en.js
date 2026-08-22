@@ -163,6 +163,13 @@ export const I18N_EN = {
   'settings.apply': 'Apply & new game',
   'settings.close': 'Close',
 
+  // ---------- share / QR dialog ----------
+  'qr.button': 'Share game via QR code',
+  'qr.title': 'Share game',
+  'qr.hint':
+    'Point a phone camera at the code – the game opens straight in the browser, nothing to install.',
+  'qr.alt': 'QR code for the game’s web address',
+
   // ---------- leaderboard modal ----------
   'lb.title': '🏆 Leaderboard',
 

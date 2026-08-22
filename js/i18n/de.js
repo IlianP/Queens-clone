@@ -162,6 +162,13 @@ export const I18N_DE = {
   'settings.apply': 'Übernehmen & neues Spiel',
   'settings.close': 'Schließen',
 
+  // ---------- share / QR dialog ----------
+  'qr.button': 'Spiel per QR-Code teilen',
+  'qr.title': 'Spiel teilen',
+  'qr.hint':
+    'Handy-Kamera auf den Code halten – das Spiel öffnet sich direkt im Browser, ganz ohne Installation.',
+  'qr.alt': 'QR-Code mit der Web-Adresse des Spiels',
+
   // ---------- leaderboard modal ----------
   'lb.title': '🏆 Bestenliste',
 
