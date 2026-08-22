@@ -153,7 +153,27 @@
     <!-- Settings modal -->
     <div class="overlay" id="settings-overlay" hidden>
       <div class="overlay-card settings-card">
-        <h2 data-i18n="settings.title">Settings</h2>
+        <!-- Title row: the share button sits at the right edge, level with the
+             heading, so it costs no vertical space and stays out of the crowded
+             toolbar above the board. -->
+        <div class="settings-head">
+          <h2 data-i18n="settings.title">Settings</h2>
+          <button
+            class="btn icon qr-btn"
+            id="open-qr"
+            type="button"
+            data-i18n-attr="aria-label:qr.button|title:qr.button"
+            aria-label="Share game via QR code"
+            title="Share game via QR code"
+          >
+            <svg class="qr-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="6.5" height="6.5" rx="1" />
+              <rect x="14.5" y="3" width="6.5" height="6.5" rx="1" />
+              <rect x="3" y="14.5" width="6.5" height="6.5" rx="1" />
+              <path d="M14.5 14.5h3v3h-3zM20.5 14.5h.5M14.5 20.5h.5M18.5 18.5h2.5M21 19v2M18 21h1" />
+            </svg>
+          </button>
+        </div>
 
         <label class="field">
           <span class="field-label" data-i18n="settings.size">Board size</span>
@@ -256,6 +276,32 @@
         <div class="settings-buttons">
           <button class="btn primary" id="settings-apply" type="button" data-i18n="settings.apply">Apply &amp; new game</button>
           <button class="btn subtle" id="settings-close" type="button" data-i18n="settings.close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- QR share dialog: opens ON TOP of the settings (which stay behind it), so
+         closing it lands back where it was opened from. The code is a fixed,
+         pre-rendered SVG of the GitHub Pages address — the app ships no QR
+         generator. Regenerate with `node tools/generate-qr.mjs` if the address
+         ever changes; `--check` verifies this markup is still in sync. -->
+    <div class="overlay qr-overlay" id="qr-overlay" hidden>
+      <div class="overlay-card qr-card">
+        <h2 data-i18n="qr.title">Share game</h2>
+        <p class="field-hint qr-hint" data-i18n="qr.hint">
+          Point a phone camera at the code – the game opens straight in the browser, nothing to install.
+        </p>
+        <div class="qr-code" role="img" data-i18n-attr="aria-label:qr.alt" aria-label="QR code for the game's web address">
+          <svg class="qr-svg" viewBox="0 0 37 37" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" aria-hidden="true"><rect width="37" height="37" fill="#ffffff"/><path fill="#101426" d="M4 4h7v1h-7zM12 4h1v1h-1zM16 4h7v1h-7zM26 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM13 5h3v1h-3zM17 5h1v1h-1zM22 5h3v1h-3zM26 5h1v1h-1zM32 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM15 6h1v1h-1zM18 6h1v1h-1zM21 6h4v1h-4zM26 6h1v1h-1zM28 6h3v1h-3zM32 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h2v1h-2zM15 7h1v1h-1zM17 7h1v1h-1zM20 7h1v1h-1zM22 7h2v1h-2zM26 7h1v1h-1zM28 7h3v1h-3zM32 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h1v1h-1zM16 8h1v1h-1zM18 8h5v1h-5zM24 8h1v1h-1zM26 8h1v1h-1zM28 8h3v1h-3zM32 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h1v1h-1zM14 9h1v1h-1zM16 9h1v1h-1zM20 9h2v1h-2zM23 9h2v1h-2zM26 9h1v1h-1zM32 9h1v1h-1zM4 10h7v1h-7zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h7v1h-7zM12 11h2v1h-2zM15 11h1v1h-1zM18 11h1v1h-1zM21 11h3v1h-3zM4 12h1v1h-1zM8 12h1v1h-1zM11 12h4v1h-4zM17 12h3v1h-3zM21 12h9v1h-9zM32 12h1v1h-1zM5 13h1v1h-1zM7 13h2v1h-2zM11 13h1v1h-1zM18 13h5v1h-5zM26 13h7v1h-7zM4 14h1v1h-1zM10 14h2v1h-2zM13 14h1v1h-1zM16 14h5v1h-5zM22 14h1v1h-1zM24 14h1v1h-1zM32 14h1v1h-1zM6 15h1v1h-1zM8 15h2v1h-2zM12 15h1v1h-1zM15 15h3v1h-3zM19 15h1v1h-1zM21 15h2v1h-2zM24 15h2v1h-2zM27 15h1v1h-1zM29 15h1v1h-1zM31 15h2v1h-2zM5 16h2v1h-2zM8 16h1v1h-1zM10 16h1v1h-1zM12 16h1v1h-1zM14 16h1v1h-1zM16 16h2v1h-2zM19 16h1v1h-1zM23 16h1v1h-1zM25 16h1v1h-1zM31 16h1v1h-1zM4 17h1v1h-1zM11 17h1v1h-1zM14 17h2v1h-2zM17 17h4v1h-4zM25 17h8v1h-8zM4 18h4v1h-4zM9 18h2v1h-2zM16 18h1v1h-1zM19 18h1v1h-1zM21 18h1v1h-1zM25 18h2v1h-2zM29 18h2v1h-2zM32 18h1v1h-1zM5 19h3v1h-3zM11 19h1v1h-1zM16 19h1v1h-1zM18 19h1v1h-1zM20 19h3v1h-3zM25 19h4v1h-4zM31 19h2v1h-2zM5 20h1v1h-1zM10 20h2v1h-2zM17 20h2v1h-2zM21 20h1v1h-1zM24 20h1v1h-1zM31 20h1v1h-1zM4 21h6v1h-6zM13 21h2v1h-2zM19 21h2v1h-2zM26 21h4v1h-4zM31 21h2v1h-2zM6 22h1v1h-1zM8 22h1v1h-1zM10 22h1v1h-1zM12 22h2v1h-2zM15 22h5v1h-5zM21 22h2v1h-2zM27 22h1v1h-1zM30 22h1v1h-1zM32 22h1v1h-1zM6 23h2v1h-2zM11 23h3v1h-3zM16 23h2v1h-2zM19 23h1v1h-1zM21 23h2v1h-2zM24 23h2v1h-2zM28 23h1v1h-1zM31 23h2v1h-2zM4 24h2v1h-2zM7 24h2v1h-2zM10 24h1v1h-1zM15 24h1v1h-1zM17 24h1v1h-1zM19 24h1v1h-1zM21 24h1v1h-1zM23 24h7v1h-7zM32 24h1v1h-1zM12 25h2v1h-2zM15 25h1v1h-1zM17 25h3v1h-3zM22 25h1v1h-1zM24 25h1v1h-1zM28 25h1v1h-1zM32 25h1v1h-1zM4 26h7v1h-7zM12 26h3v1h-3zM16 26h1v1h-1zM19 26h1v1h-1zM21 26h4v1h-4zM26 26h1v1h-1zM28 26h3v1h-3zM32 26h1v1h-1zM4 27h1v1h-1zM10 27h1v1h-1zM13 27h1v1h-1zM15 27h1v1h-1zM18 27h1v1h-1zM20 27h5v1h-5zM28 27h1v1h-1zM31 27h1v1h-1zM4 28h1v1h-1zM6 28h3v1h-3zM10 28h1v1h-1zM12 28h1v1h-1zM14 28h2v1h-2zM17 28h2v1h-2zM20 28h2v1h-2zM23 28h7v1h-7zM31 28h1v1h-1zM4 29h1v1h-1zM6 29h3v1h-3zM10 29h1v1h-1zM13 29h1v1h-1zM15 29h1v1h-1zM17 29h1v1h-1zM19 29h2v1h-2zM22 29h1v1h-1zM24 29h2v1h-2zM32 29h1v1h-1zM4 30h1v1h-1zM6 30h3v1h-3zM10 30h1v1h-1zM13 30h1v1h-1zM15 30h2v1h-2zM19 30h4v1h-4zM24 30h2v1h-2zM29 30h4v1h-4zM4 31h1v1h-1zM10 31h1v1h-1zM13 31h1v1h-1zM18 31h1v1h-1zM21 31h2v1h-2zM24 31h1v1h-1zM26 31h1v1h-1zM29 31h1v1h-1zM31 31h2v1h-2zM4 32h7v1h-7zM12 32h2v1h-2zM15 32h5v1h-5zM21 32h1v1h-1zM24 32h3v1h-3zM29 32h1v1h-1zM31 32h1v1h-1z"/></svg>
+        </div>
+        <p class="qr-url">
+          <a href="https://ilianp.github.io/Queens-clone/" target="_blank" rel="noopener"
+            >ilianp.github.io/Queens-clone</a
+          >
+        </p>
+
+        <div class="settings-buttons">
+          <button class="btn subtle" id="qr-close" type="button" data-i18n="settings.close">Close</button>
         </div>
       </div>
     </div>

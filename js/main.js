@@ -138,6 +138,9 @@ const dom = {
   voiceEdgeMode: el('voice-edge-mode'),
   settingsApply: el('settings-apply'),
   settingsClose: el('settings-close'),
+  openQr: el('open-qr'),
+  qrOverlay: el('qr-overlay'),
+  qrClose: el('qr-close'),
   voicePanel: el('voice-panel'),
   voiceListen: el('voice-listen'),
   voiceListenLabel: el('voice-listen-label'),
@@ -2114,10 +2117,25 @@ dom.settingsOverlay.addEventListener('click', (e) => {
   if (e.target === dom.settingsOverlay) closeSettings();
 });
 
+// ---------- Share (QR) ----------
+// Handing the game to someone standing next to you: the code is fixed markup in
+// index.html (no generator ships with the app), so this is only open/close. It
+// layers ON TOP of the settings — they stay open behind it, and closing the code
+// lands back there.
+dom.openQr.addEventListener('click', () => {
+  playUi();
+  show(dom.qrOverlay);
+});
+dom.qrClose.addEventListener('click', () => hide(dom.qrOverlay));
+dom.qrOverlay.addEventListener('click', (e) => {
+  if (e.target === dom.qrOverlay) hide(dom.qrOverlay);
+});
+
 // Settings can be opened from the win card (its ⚙ button hides the card first).
 // Closing settings without starting a new game must bring the win card back, so
 // the solved board's score entry isn't stranded behind a frozen board.
 function closeSettings() {
+  hide(dom.qrOverlay);
   hide(dom.settingsOverlay);
   if (game && game.isWon()) show(dom.winOverlay);
 }
@@ -2353,6 +2371,12 @@ dom.lbTabGlobal.addEventListener('click', () => selectLbTab('global'));
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    // The QR code layers over the settings, so it takes Escape first —
+    // otherwise one key would close both and drop the player back at the board.
+    if (!dom.qrOverlay.hidden) {
+      hide(dom.qrOverlay);
+      return;
+    }
     if (!dom.settingsOverlay.hidden) closeSettings();
     hide(dom.leaderboardOverlay);
     hide(dom.voiceHelpOverlay);

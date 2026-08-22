@@ -79,6 +79,12 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
   **Chrome/Edge** and with microphone permission. Where recognition is missing the
   option is disabled and the game runs on unchanged.
 
+Top right in the settings, level with the heading, sits a small **QR button**: it
+opens the game's web address as a QR code, so someone next to you can point their
+camera at it and start playing right away – nothing to install. The code is fixed
+markup (no generator ships with the app); `node tools/generate-qr.mjs` regenerates
+it should the address ever change.
+
 An entry submitted without a name stores **no** name; “Anonymous” is only the
 display, and every reader sees it in their own language.
 
@@ -230,6 +236,7 @@ docs/leaderboard-setup.sql – SQL for setting up the optional Supabase ranking
 tools/generate-levels.mjs – Rebuilds the pools
 tools/verify-levels.mjs   – Checks all pools (uniqueness, level, symmetries, hints)
 tools/build-artifact.mjs  – Bundles the app into one file (mobile test as an Artifact)
+tools/generate-qr.mjs     – Regenerates the share QR code embedded in index.html
 tests/logic/verify-i18n.mjs – Checks the language packs for matching keys (runs in CI)
 ```
 

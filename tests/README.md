@@ -49,6 +49,16 @@ fallback uses — dropping `{rank}` loses the information the sentence was built
 carry — and that every key referenced from `index.html` or from a literal `t('…')`
 in `js/` actually exists. Pure Node, so CI runs it on every push.
 
+`qr-code.mjs` covers the share QR code. The encoder lives in
+`tools/generate-qr.mjs` (dev-only; the app itself ships no generator, just the
+finished SVG in `index.html`), and a broken QR is invisible — it still looks like
+a QR code — so this test **decodes** rather than eyeballs: it reads the finished
+module matrix back the way a scanner does (unmask, lift the format bits,
+de-interleave the blocks, read the byte segment) with no code path shared with
+the encoder, across several ECC levels and versions. Then it asserts `index.html`
+embeds exactly the code the encoder produces for the live address, and that the
+link printed under the code says the same thing. Pure Node, so CI runs it.
+
 `voice-parse.mjs` covers `parseVoiceCommand` in `js/voice.js` — the pure German
 transcript → command parser behind Voice Mode. It checks the chess-style
 coordinate mapping (letter=column, number=row, e.g. "C4"), the German spelling
@@ -113,7 +123,7 @@ errors instead of hanging — which is how an unimported constant was found.
 checks that the packs *match*, this one checks that they *fit*. It walks all four
 languages: the top bar at seven widths (320–640), then every pack value rendered
 with realistic parameters into the real element it appears in (hint card, win
-card, party overlay, status line), plus the live board/settings/leaderboard
+card, party overlay, status line), plus the live board/settings/leaderboard/QR-share
 surfaces and `<html lang>`.
 
 It asserts on **element** geometry, never the page's, and that distinction is the
@@ -160,6 +170,14 @@ asserting German copy — `live-check-sticky.mjs`, `leaderboard-retry.mjs`,
 `win-feedback.mjs` — pin `de-DE` for that reason, and `voice-mode.mjs` *must*:
 Voice Mode is gated to the German UI, so the switch is disabled otherwise and
 nothing below it runs.
+
+`qr-share.mjs` drives the QR share dialog: that the button really sits in the
+settings' title row (right edge, level with the heading, a full-size touch
+target), that the dialog *layers* on the settings — they stay open behind it, so
+Escape and a backdrop tap close the code only and the second press closes the
+settings — that the code renders large enough to scan and the card fits a phone
+screen, and that the link under it points at the shared address. What the code
+*encodes* is `logic/qr-code.mjs`'s job.
 
 `blocky-style.mjs` covers the `blocky` region-growth style in `js/generator.js`
 (see `../CLAUDE.md` → "Region-growth styles"). It generates blocky boards across

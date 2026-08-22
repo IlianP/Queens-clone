@@ -166,6 +166,13 @@ export const I18N_FR = {
   'settings.apply': 'Appliquer & rejouer',
   'settings.close': 'Fermer',
 
+  // ---------- share / QR dialog ----------
+  'qr.button': 'Partager le jeu par QR code',
+  'qr.title': 'Partager le jeu',
+  'qr.hint':
+    'Dirige l’appareil photo d’un téléphone vers le code – le jeu s’ouvre directement dans le navigateur, sans rien installer.',
+  'qr.alt': 'QR code de l’adresse web du jeu',
+
   // ---------- leaderboard modal ----------
   'lb.title': '🏆 Classement',
 
