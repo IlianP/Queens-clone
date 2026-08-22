@@ -1054,6 +1054,17 @@ html[data-i18n-ready] .app {
   font-size: 0.8rem;
   color: var(--muted);
 }
+/* Third line: the same solve against the last N days. Shown only when it adds
+   something (see getPersonalStats), so it costs card height rarely — and when
+   it does, it is the smallest line of the three. */
+.win-personal-window {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.win-personal-window.best {
+  color: #17a06a;
+  font-weight: 700;
+}
 
 /* Debug-only row under the win buttons — its own line so the two real actions
    keep their full width, and deliberately smaller than them. */
@@ -1097,6 +1108,31 @@ html[data-i18n-ready] .app {
   color: var(--muted);
   cursor: pointer;
   touch-action: manipulation;
+  /* Three tabs have to survive a 320px phone in four languages: never wrap to a
+     second line, clip instead. Only the Bestenliste has a third tab. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.score-tab[hidden] {
+  display: none;
+}
+/* Three tabs at 320px is the tightest case in the app: at the base size the
+   widest label ("Global 🌐" — the emoji alone is ~14px) overruns its third of
+   the row in every language and gets ellipsed. Shrinking the type and the gaps
+   below 380px buys back the ~10px that needs; vertical padding is untouched, so
+   the touch target keeps its height. The win card has only two tabs and is
+   unaffected either way. */
+@media (max-width: 380px) {
+  .score-tabs {
+    gap: 3px;
+    padding: 3px;
+  }
+  .score-tab {
+    font-size: 0.75rem;
+    padding: 7px 4px;
+  }
 }
 .score-tab[aria-selected="true"] {
   background: var(--accent);
@@ -1133,6 +1169,23 @@ html[data-i18n-ready] .app {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* How long ago the entry was set. Sits between the name and the score, never
+   wraps, and never squeezes the score: the NAME is the flexible column (it has
+   min-width:0 and ellipses), so a long "vor 2 Monaten" shortens the name rather
+   than pushing the time out of the row. */
+.score-age {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+/* Anything from the last week. Colour alone carries no meaning here — the text
+   already says "vor 3 Tagen"; this only makes fresh play catch the eye. */
+.score-age.fresh {
+  color: #17a06a;
+  font-weight: 600;
 }
 .score-val {
   font-variant-numeric: tabular-nums;

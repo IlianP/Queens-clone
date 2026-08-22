@@ -19,11 +19,12 @@ import {
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
+  MIN_RECENT_SOLVES,
   MAX_LOCAL_ENTRIES,
   HINT_PENALTY,
   MISTAKE_PENALTY,
 } from './highscores.js';
-import { leaderboardConfigured, submitScore, fetchTopScores } from './leaderboard.js';
+import { leaderboardConfigured, submitScore, fetchTopScores, fetchBucketCounts } from './leaderboard.js';
 import {
   t,
   setLanguage,
@@ -122,6 +123,7 @@ const dom = {
   lbTabs: el('lb-tabs'),
   lbTabLocal: el('lb-tab-local'),
   lbTabGlobal: el('lb-tab-global'),
+  lbTabPeriod: el('lb-tab-period'),
   lbScores: el('lb-scores'),
   lbClose: el('lb-close'),
   settingsOverlay: el('settings-overlay'),
@@ -843,6 +845,38 @@ function setStatus(node, text, kind = '') {
   node.className = 'win-submit-status' + (kind ? ' ' + kind : '');
 }
 
+// When an entry was solved, in epoch ms, or null when unknown. The two lists
+// carry it differently — the local one stores an ISO `date`, the global one
+// sends `created_at`, parsed to `at` in leaderboard.js — and an un-migrated
+// server sends nothing at all, which simply means no age is shown.
+function entryTime(e) {
+  const raw = e.at != null ? e.at : e.date ? Date.parse(e.date) : NaN;
+  const at = Number(raw);
+  return Number.isFinite(at) && at > 0 ? at : null;
+}
+
+// An age as { value, unit } for Intl.RelativeTimeFormat, which each language
+// pack turns into words (see 'score.age'). The unit travels as a kind, the same
+// way hint.js passes 'region' | 'row' | 'col' rather than a translated noun.
+function ageParts(ms) {
+  const sec = Math.max(0, Math.round(ms / 1000));
+  if (sec < 60) return { value: sec, unit: 'second' };
+  const min = Math.round(sec / 60);
+  if (min < 60) return { value: min, unit: 'minute' };
+  const hours = Math.round(min / 60);
+  if (hours < 24) return { value: hours, unit: 'hour' };
+  const days = Math.round(hours / 24);
+  if (days < 31) return { value: days, unit: 'day' };
+  const months = Math.round(days / 30.44);
+  if (months < 12) return { value: months, unit: 'month' };
+  return { value: Math.round(days / 365.25), unit: 'year' };
+}
+
+// Entries younger than this are called out in colour. A leaderboard without
+// dates reads as frozen — this is the cheapest possible signal that someone
+// else is actually playing, and it needs no second list and no ranking rules.
+const FRESH_MS = 7 * 24 * 60 * 60 * 1000;
+
 // Render score entries into a container. Names may come from other players via
 // the global leaderboard, so they go in with textContent (never innerHTML) to
 // keep untrusted text inert. highlightIdx (0-based) marks the player's own row.
@@ -855,14 +889,19 @@ function renderScoreList(container, entries, highlightIdx = -1) {
     container.appendChild(empty);
     return;
   }
+  const now = Date.now();
   entries.forEach((e, i) => {
     const row = document.createElement('div');
     row.className = 'score-row' + (i === highlightIdx ? ' me' : '');
-    row.title = t('score.rowTitle', {
+    const rowTitle = t('score.rowTitle', {
       time: fmtTime(e.seconds),
       hints: e.hints,
       mistakes: e.mistakes,
     });
+    const at = entryTime(e);
+    // The exact date goes in the tooltip, the rough age in the row: "vor 3
+    // Tagen" is what a reader wants at a glance, the timestamp only on demand.
+    row.title = at == null ? rowTitle : `${rowTitle} · ${t('score.rowDate', { at })}`;
     const rank = document.createElement('span');
     rank.className = 'score-rank';
     rank.textContent = `${i + 1}.`;
@@ -872,7 +911,14 @@ function renderScoreList(container, entries, highlightIdx = -1) {
     const val = document.createElement('span');
     val.className = 'score-val';
     val.textContent = fmtTime(e.score);
-    row.append(rank, name, val);
+    row.append(rank, name);
+    if (at != null) {
+      const age = document.createElement('span');
+      age.className = 'score-age' + (now - at < FRESH_MS ? ' fresh' : '');
+      age.textContent = t('score.age', ageParts(now - at));
+      row.appendChild(age);
+    }
+    row.appendChild(val);
     container.appendChild(row);
   });
   scrollRowIntoView(container, highlightIdx);
@@ -960,6 +1006,32 @@ function renderPersonalFeedback(stats, size, difficulty) {
     d.textContent = detail;
     box.appendChild(d);
   }
+  const recentLine = recentFeedback(stats);
+  if (recentLine) {
+    const r = document.createElement('span');
+    r.className = 'win-personal-window' + (stats.recent.isBest ? ' best' : '');
+    r.textContent = recentLine;
+    box.appendChild(r);
+  }
+}
+
+// The time-scoped half of the personal feedback, or '' when there is nothing to
+// say. getPersonalStats already withholds `recent` unless it adds something the
+// all-time lines don't carry (too few solves in the window, or a window that
+// covers the whole history), so this only has to pick the wording:
+// current form as a record, as a percentage, or — where a percentage would be
+// noise or a kick — as the plain placement.
+function recentFeedback(stats) {
+  const r = stats.recent;
+  if (!r) return '';
+  if (r.isBest) return t('win.personal.recentBest', { days: r.days });
+  if (r.percentile == null || r.percentile === 0)
+    return t('win.personal.recentRank', { rank: r.rank, total: r.total + 1, days: r.days });
+  return t('win.personal.recentPercentile', {
+    percent: r.percentile,
+    total: r.total,
+    days: r.days,
+  });
 }
 
 function onWin() {
@@ -1955,6 +2027,14 @@ function buildResultDebug() {
           delta: p.delta,
           historyAtCap: p.capped,
           maxHistory: MAX_SOLVE_HISTORY,
+          // The rolling window behind the third feedback line. `datedSolves`
+          // is the ceiling for it: solves recorded before timestamps existed
+          // (or backfilled without a date) can never enter a window, so a
+          // window smaller than expected is explained here rather than
+          // looking like a bug.
+          datedSolves: p.dated,
+          recent: p.recent,
+          minRecentSolves: MIN_RECENT_SOLVES,
         }
       : null,
     // The raw stores behind it, so the numbers above can be recomputed by hand.
@@ -2283,6 +2363,22 @@ dom.settingsApply.addEventListener('click', () => {
 // helpers keep the size-12-is-hard-only rule consistent with the settings modal.
 let lbTab = 'local';
 
+// The time-scoped global view. Rolling days rather than a calendar month: a
+// month is empty on the 1st and full on the 28th, so the same result would read
+// completely differently depending on the date — and this game's buckets are far
+// too thin to survive that. 90 days is one constant; widen or narrow it here.
+const PERIOD_DAYS = 90;
+const PERIOD_MS = PERIOD_DAYS * 24 * 60 * 60 * 1000;
+// Below this many entries inside the window there is no field to rank, so the
+// tab is not offered at all. A leaderboard of three is worse than none: it
+// promises a comparison it cannot make.
+const MIN_PERIOD_ENTRIES = 5;
+// Bucket key → { total, recent } from score_counts, or null when the server
+// can't answer (offline, or SQL not re-run — see fetchBucketCounts). Cached for
+// the session: it decides tab visibility, not the list contents, so it may be a
+// few minutes stale.
+const periodCounts = new Map();
+
 function setSegmented(container, value) {
   for (const btn of container.querySelectorAll('button')) {
     btn.setAttribute('aria-checked', String(btn.dataset.value === value));
@@ -2316,29 +2412,72 @@ function openLeaderboard() {
   setSegmented(dom.lbDifficulty, difficulty);
   applyHardOnly(dom.lbDifficulty, dom.lbDifficultyHint, size);
   dom.lbTabs.hidden = !leaderboardConfigured();
+  // The label carries the window length, so it is built here rather than in the
+  // markup — one constant, four languages, no hard-coded "90" anywhere.
+  dom.lbTabPeriod.textContent = t('win.tab.period', { days: PERIOD_DAYS });
+  dom.lbTabPeriod.title = t('win.tab.periodAria', { days: PERIOD_DAYS });
+  dom.lbTabPeriod.setAttribute('aria-label', t('win.tab.periodAria', { days: PERIOD_DAYS }));
   selectLbTab('local');
   show(dom.leaderboardOverlay);
+  refreshPeriodTab();
 }
 
 function selectLbTab(tab) {
   lbTab = tab;
   dom.lbTabLocal.setAttribute('aria-selected', String(tab === 'local'));
   dom.lbTabGlobal.setAttribute('aria-selected', String(tab === 'global'));
+  dom.lbTabPeriod.setAttribute('aria-selected', String(tab === 'period'));
   renderLb();
+}
+
+// Is the window worth its own tab in this bucket? Two ways to say no, and both
+// matter: too few entries inside it to rank at all, and — the mirror image — a
+// bucket whose entries are ALL inside it, where the tab would just be a second
+// copy of the global list under a different name.
+function periodOffered(counts) {
+  return !!counts && counts.recent >= MIN_PERIOD_ENTRIES && counts.recent < counts.total;
+}
+
+// Decide whether to show the period tab for the bucket now selected. Fails
+// closed: while the answer is unknown — still loading, offline, or a database
+// where the SQL hasn't been re-run — the tab stays hidden and the modal behaves
+// exactly as it did before this feature.
+async function refreshPeriodTab() {
+  const { size, difficulty } = currentLbBucket();
+  const key = `${size}-${difficulty}`;
+  if (!leaderboardConfigured()) return hidePeriodTab();
+  if (!periodCounts.has(key)) {
+    hidePeriodTab();
+    const counts = await fetchBucketCounts(size, difficulty, Date.now() - PERIOD_MS);
+    periodCounts.set(key, counts);
+    // The player may have moved the size slider while that was in flight; the
+    // answer is cached either way, but it isn't about the visible bucket.
+    const now = currentLbBucket();
+    if (now.size !== size || now.difficulty !== difficulty) return;
+  }
+  if (periodOffered(periodCounts.get(key))) dom.lbTabPeriod.hidden = false;
+  else hidePeriodTab();
+}
+
+function hidePeriodTab() {
+  dom.lbTabPeriod.hidden = true;
+  if (lbTab === 'period') selectLbTab('global'); // never strand the view on a gone tab
 }
 
 async function renderLb() {
   const { size, difficulty } = currentLbBucket();
-  if (lbTab !== 'global') {
+  if (lbTab === 'local') {
     renderScoreList(dom.lbScores, getLocalScores(size, difficulty), -1);
     return;
   }
+  const since = lbTab === 'period' ? Date.now() - PERIOD_MS : null;
+  const tab = lbTab;
   renderScoreList(dom.lbScores, [], -1);
   dom.lbScores.firstChild.textContent = t('global.loading');
-  const rows = await fetchTopScores(size, difficulty);
+  const rows = await fetchTopScores(size, difficulty, { since });
   // Ignore a stale response if the tab or bucket changed while loading.
   const now = currentLbBucket();
-  if (lbTab !== 'global' || now.size !== size || now.difficulty !== difficulty) return;
+  if (lbTab !== tab || now.size !== size || now.difficulty !== difficulty) return;
   if (!rows) {
     renderScoreList(dom.lbScores, [], -1);
     dom.lbScores.firstChild.textContent = t('global.unreachable');
@@ -2359,15 +2498,18 @@ dom.lbSizeRange.addEventListener('input', () => {
   dom.lbSizeValue.textContent = dom.lbSizeRange.value;
   applyHardOnly(dom.lbDifficulty, dom.lbDifficultyHint, dom.lbSizeRange.value);
   renderLb();
+  refreshPeriodTab(); // another bucket, another answer to "is there a field?"
 });
 dom.lbDifficulty.addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-value]');
   if (!btn || btn.disabled) return;
   setSegmented(dom.lbDifficulty, btn.dataset.value);
   renderLb();
+  refreshPeriodTab();
 });
 dom.lbTabLocal.addEventListener('click', () => selectLbTab('local'));
 dom.lbTabGlobal.addEventListener('click', () => selectLbTab('global'));
+dom.lbTabPeriod.addEventListener('click', () => selectLbTab('period'));
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {

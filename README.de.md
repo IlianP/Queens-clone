@@ -125,13 +125,33 @@ Beide Listen zeigen etwa sechs bis acht Zeilen und **scrollen** darüber hinaus,
 der Gewinn-Bildschirm nicht wächst; die eigene, frische Zeile wird dabei automatisch in
 den sichtbaren Bereich gescrollt.
 
+Jede Zeile zeigt außerdem, **wie alt** der Eintrag ist („vor 3 Tagen"; das genaue Datum
+steht im Tooltip), und alles aus der letzten Woche ist grün hervorgehoben. Ohne diese
+Angabe wirkt eine Rangliste eingefroren – so sieht man auf einen Blick, ob gerade
+jemand spielt.
+
+Ist die globale Rangliste eingerichtet und in einer Rangliste genug los, kommt ein
+dritter Reiter **„90 Tage"** dazu: dieselbe Liste, aber nur mit Einträgen aus diesem
+Zeitfenster. Er erscheint **nur dort, wo er etwas aussagt** – bei weniger als fünf
+Einträgen im Fenster gäbe es nichts zu vergleichen, und wenn ohnehin alle Einträge
+hineinfallen, wäre er nur eine Kopie der Gesamtliste. Bewusst ein *rollierendes*
+Fenster statt „dieser Monat": ein Kalendermonat ist am Ersten leer und am 28. voll,
+dasselbe Ergebnis läse sich also je nach Datum völlig anders.
+
 Weil eine Liste irgendwo endet, sagt der erste Platz dahinter für sich genommen nichts.
 Deshalb merkt sich das Spiel zusätzlich die **Ergebnisse aller** Partien je Rangliste
-(nur die Zahlen, ohne Namen und Datum) und zeigt direkt auf dem Gewinn-Bildschirm, wie
+(nur Ergebnis und Zeitpunkt, ohne Namen) und zeigt direkt auf dem Gewinn-Bildschirm, wie
 die frische Partie im Vergleich dasteht – z. B. *„Besser als 88 % deiner 26 Partien"*,
 den Abstand zur eigenen Bestzeit oder *„🏆 Neue Bestzeit!"*. Diese Rückmeldung ist
 sofort da und braucht weder Namen noch Internet. Bei wenigen Partien (unter fünf) steht
 stattdessen die schlichte Platzierung – ein Prozentwert aus zwei Runden wäre nur Rauschen.
+Weil die Partie-Historie zu jeder Partie auch das **Datum** kennt, kommt bei Bedarf
+eine dritte Zeile dazu, die dieselbe Partie mit deiner *aktuellen Form* vergleicht:
+*„Letzte 30 Tage: besser als 92 % von 12 Partien"* oder *„🔥 Deine beste Zeit der
+letzten 30 Tage"*. Auch sie erscheint nur, wenn sie etwas hinzufügt – liegen alle
+deine Partien innerhalb der 30 Tage, sagt sie nichts, was die Zeile darüber nicht
+schon sagt, und bleibt weg.
+
 Nach dem **Eintragen** in die globale Rangliste ergänzt die Statuszeile den gleichen
 Vergleich für das gesamte Feld (*„Platz 37 von 214 – besser als 83 % der Einträge"*),
 sobald dort genug Einträge zusammengekommen sind; im *Global*-Tab wird die eigene,
@@ -140,9 +160,10 @@ nicht eingetragen hast, ist dort nichts markiert, weil dein Ergebnis dort noch n
 existiert (die Statuszeile weist darauf hin).
 
 Wer schon vor dieser Neuerung gespielt hat, verliert den Vergleich nicht: die
-bestehenden Top-10-Einträge werden beim ersten Start als Partie-Historie übernommen.
-Das sind allerdings nur die **besten** zehn – solange kaum neue Partien dazugekommen
-sind, fällt der Prozentwert deshalb eher zu streng aus.
+bestehenden Einträge der lokalen Bestenliste werden beim ersten Start als
+Partie-Historie übernommen – mitsamt ihrem Datum, sodass auch das 30-Tage-Fenster
+sofort funktioniert. Das sind allerdings nur die **besten** Partien – solange kaum
+neue dazugekommen sind, fällt der Prozentwert deshalb eher zu streng aus.
 
 ### Online-Rangliste einrichten (optional, Supabase)
 
@@ -152,8 +173,11 @@ GitHub Pages liefert nur statische Dateien aus, das Spiel kann aber trotzdem per
 
 1. Supabase-Projekt anlegen.
 2. `docs/leaderboard-setup.sql` im **SQL-Editor** des Projekts ausführen. Das legt die
-   Tabelle sowie die geprüften Funktionen `submit_score` / `top_scores` an (die
-   serverseitige Plausibilitätsprüfung = der Missbrauchsschutz).
+   Tabelle sowie die geprüften Funktionen `submit_score` / `top_scores` /
+   `score_counts` an (die serverseitige Plausibilitätsprüfung = der Missbrauchsschutz).
+   Wer die Rangliste schon länger betreibt, führt die Datei einfach erneut aus: ohne
+   das laufen Alter und 90-Tage-Reiter nicht – der Rest bleibt unverändert, weil
+   beides still zurückfällt, statt etwas kaputtzumachen.
 3. In `js/leaderboard.js` die **Projekt-URL** und den **öffentlichen anon-Key**
    eintragen. Beide Werte dürfen im Browser stehen; der `service_role`-Key gehört
    **niemals** dorthin.

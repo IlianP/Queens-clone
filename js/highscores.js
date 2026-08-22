@@ -15,13 +15,23 @@
 // docs/leaderboard-setup.sql, so keep the two in sync.
 //
 // A SECOND, much smaller store sits next to that top list: the solve
-// history (`queens-clone-solves`), one flat array of scores per bucket. The top
-// list deliberately throws away everything below its cap (MAX_LOCAL_ENTRIES), so
-// it can't answer "how did this solve compare to all the others?" — past the cap
+// history (`queens-clone-solves`), one flat array per bucket. The top list
+// deliberately throws away everything below its cap (MAX_LOCAL_ENTRIES), so it
+// can't answer "how did this solve compare to all the others?" — past the cap
 // every result looks alike, whether it just missed the list or came dead last.
-// The history keeps just the numbers (no names, no dates) so that relative
-// feedback ("besser als 88 % deiner Partien") stays possible for a few bytes
-// per solve.
+// The history keeps only what such a comparison needs (no names) so that
+// relative feedback ("besser als 88 % deiner Partien") stays possible for a few
+// bytes per solve.
+//
+// A history entry is stored in one of two shapes, and both are read:
+//   [score, timestampMs]  — a dated solve (what recordSolve writes today)
+//   score                 — an UNDATED solve: written by the pre-dating build,
+//                           or backfilled from a top-list entry that has no date
+// Dates arrived later than the history itself, so "undated" is a permanent part
+// of the format, not a migration step: those solves can never be placed on a
+// timeline. Everything time-scoped (see RECENT_WINDOW_DAYS) therefore counts
+// dated solves only, while the all-time figures count every solve — an undated
+// solve still happened, it just happened at an unknown time.
 //
 // Constraints (this file is concatenated into the classic-script Artifact
 // bundle, see tools/build-artifact.mjs): no `import.meta`, and no top-level
@@ -46,6 +56,17 @@ export const MAX_SOLVE_HISTORY = 500;
 export const MIN_SOLVES_FOR_PERCENTILE = 5;
 // Same idea for the global board, where a young bucket has very few entries.
 export const MIN_GLOBAL_FOR_PERCENTILE = 20;
+
+// The rolling window behind the time-scoped half of the personal feedback
+// ("besser als 92 % deiner Partien der letzten 30 Tage"). Rolling rather than
+// calendar-based on purpose: a calendar month is empty on the 1st and full on
+// the 28th, so the same solve would read very differently depending on the date.
+// One constant — widen it here and every surface follows.
+export const RECENT_WINDOW_DAYS = 30;
+export const RECENT_WINDOW_MS = RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+// Fewer dated solves than this inside the window and there is nothing to compare
+// against — the window line is dropped rather than shown over a field of two.
+export const MIN_RECENT_SOLVES = 3;
 
 const SCORES_KEY = 'queens-clone-highscores';
 const SOLVES_KEY = 'queens-clone-solves';
@@ -154,7 +175,28 @@ export function previewRank(size, difficulty, score) {
 // Solve history — every solve, not just the best few
 // ---------------------------------------------------------------------------
 
+// One history entry, canonical form: a score plus when it was solved, or null
+// when that is unknown (see the format note at the top of this file). Returns
+// null for anything unusable, which is how junk is dropped on read.
+function normalizeSolve(v) {
+  const pair = Array.isArray(v);
+  const score = Math.round(Number(pair ? v[0] : v));
+  if (!Number.isFinite(score) || score < 0) return null;
+  const raw = pair ? Number(v[1]) : NaN;
+  // A timestamp is only kept when it is a plausible epoch-ms value; anything
+  // else (0, a bare year, NaN) reads as "undated" rather than as 1970.
+  const at = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : null;
+  return { score, at };
+}
+
+// Back to storage shape: dated solves as [score, at], undated as a bare number,
+// so a history written before dates existed round-trips unchanged.
+function serializeSolve(e) {
+  return e.at == null ? e.score : [e.score, e.at];
+}
+
 // Read the whole history store, dropping anything malformed. Never throws.
+// Returns { bucketKey: Solve[] } with Solve = { score, at } — see normalizeSolve.
 export function loadSolveHistory() {
   try {
     const raw = localStorage.getItem(SOLVES_KEY);
@@ -164,9 +206,7 @@ export function loadSolveHistory() {
     const out = {};
     for (const key of Object.keys(data)) {
       if (!Array.isArray(data[key])) continue;
-      const list = data[key]
-        .map((v) => Math.round(Number(v)))
-        .filter((v) => Number.isFinite(v) && v >= 0);
+      const list = data[key].map(normalizeSolve).filter(Boolean);
       out[key] = list.slice(-MAX_SOLVE_HISTORY);
     }
     return out;
@@ -175,30 +215,46 @@ export function loadSolveHistory() {
   }
 }
 
-export function getSolveScores(size, difficulty) {
-  return loadSolveHistory()[bucketKey(size, difficulty)] || [];
-}
-
-// Append one finished solve. Oldest entries fall off at the cap. Returns the
-// bucket's new history. Call this exactly once per solve — main.js does it from
-// commitPendingWin, the single funnel every finished game passes through.
-export function recordSolve(size, difficulty, score) {
-  const s = Math.round(Number(score));
-  if (!Number.isFinite(s) || s < 0) return getSolveScores(size, difficulty);
-  const all = loadSolveHistory();
-  const key = bucketKey(size, difficulty);
-  const list = (all[key] || []).concat(s).slice(-MAX_SOLVE_HISTORY);
-  all[key] = list;
+function saveSolveHistory(history) {
+  const out = {};
+  for (const key of Object.keys(history)) out[key] = history[key].map(serializeSolve);
   try {
-    localStorage.setItem(SOLVES_KEY, JSON.stringify(all));
+    localStorage.setItem(SOLVES_KEY, JSON.stringify(out));
   } catch (e) {
     /* storage unavailable (e.g. private mode) — history just won't persist */
   }
+}
+
+// The dated form: every solve in a bucket with its timestamp (null when
+// unknown), oldest first.
+export function getSolveEntries(size, difficulty) {
+  return loadSolveHistory()[bucketKey(size, difficulty)] || [];
+}
+
+// The scores alone, which is all the all-time comparisons need.
+export function getSolveScores(size, difficulty) {
+  return getSolveEntries(size, difficulty).map((e) => e.score);
+}
+
+// Append one finished solve. Oldest entries fall off at the cap. Returns the
+// bucket's new history as Solve[]. Call this exactly once per solve — main.js
+// does it from commitPendingWin, the single funnel every finished game passes
+// through. `at` is injectable so tests can lay out a history over time.
+export function recordSolve(size, difficulty, score, at = Date.now()) {
+  const entry = normalizeSolve([score, at]);
+  if (!entry) return getSolveEntries(size, difficulty);
+  const all = loadSolveHistory();
+  const key = bucketKey(size, difficulty);
+  const list = (all[key] || []).concat(entry).slice(-MAX_SOLVE_HISTORY);
+  all[key] = list;
+  saveSolveHistory(all);
   return list;
 }
 
-// Fold a bucket's top-list scores into its history, adding only the solves the
-// history doesn't already account for. Pure.
+// Fold a bucket's top-list entries into its history, adding only the solves the
+// history doesn't already account for. Pure. Both arguments accept either form
+// of a solve — a bare score, a [score, at] pair, or a top-list Entry
+// ({ score, date }) — and the result is always canonical Solve[].
 //
 // The two stores overlap: every solve since the history existed was written to
 // BOTH, so concatenating them would count those games twice and skew every
@@ -216,26 +272,39 @@ export function recordSolve(size, difficulty, score) {
 // Extras go to the FRONT: their chronological position is unknown, but they are
 // certainly older than anything the history recorded itself, and the front is
 // where the cap evicts first — so a full history of real solves is never
-// displaced by best-biased backfill.
+// displaced by best-biased backfill. That ordering is about eviction, not about
+// time: a backfilled entry keeps its own date (top-list entries have one), which
+// is what lets a freshly seeded device answer "the last 30 days" at all.
 export function mergeSolveSamples(history, topScores) {
   const clean = (list) =>
     (Array.isArray(list) ? list : [])
-      .map((v) => Math.round(Number(v)))
-      .filter((v) => Number.isFinite(v) && v >= 0);
+      .map((v) => (v && typeof v === 'object' && !Array.isArray(v) ? entryToSolve(v) : normalizeSolve(v)))
+      .filter(Boolean);
   const hist = clean(history);
   const top = clean(topScores);
   if (!top.length) return hist;
   const have = new Map();
-  for (const s of hist) have.set(s, (have.get(s) || 0) + 1);
+  for (const e of hist) have.set(e.score, (have.get(e.score) || 0) + 1);
   const seen = new Map();
   const extra = [];
-  for (const s of top) {
-    const n = (seen.get(s) || 0) + 1;
-    seen.set(s, n);
-    if (n > (have.get(s) || 0)) extra.push(s);
+  for (const e of top) {
+    const n = (seen.get(e.score) || 0) + 1;
+    seen.set(e.score, n);
+    if (n > (have.get(e.score) || 0)) extra.push(e);
   }
   if (!extra.length) return hist;
   return extra.concat(hist).slice(-MAX_SOLVE_HISTORY);
+}
+
+// A top-list Entry ({ score, date: ISO string }) as a history Solve. The date is
+// the moment the entry was saved, i.e. the moment it was solved — normalizeEntry
+// stamps it on write — so a backfilled solve lands on the timeline correctly.
+function entryToSolve(entry) {
+  // `date` is the top list's ISO string, `at` the history's epoch-ms — accept
+  // both so a canonical Solve can be merged back in without losing its date.
+  const raw = entry.date != null ? entry.date : entry.at;
+  const at = typeof raw === 'string' ? Date.parse(raw) : Number(raw);
+  return normalizeSolve([entry.score, at]);
 }
 
 // Backfill histories from the top list. Without this, the history is empty on
@@ -266,21 +335,17 @@ export function seedSolveHistory() {
   const top = loadLocalScores();
   let seeded = 0;
   for (const key of Object.keys(top)) {
-    const scores = top[key].map((e) => e.score).filter((s) => Number.isFinite(s));
-    if (!scores.length) continue;
+    // Entries, not bare scores: the top list carries the solve date, and that
+    // date is the only way a pre-existing solve can join a time window.
+    const entries = top[key].filter((e) => Number.isFinite(e.score));
+    if (!entries.length) continue;
     const before = history[key] || [];
-    const merged = mergeSolveSamples(before, scores);
+    const merged = mergeSolveSamples(before, entries);
     if (merged.length === before.length) continue;
     history[key] = merged;
     seeded++;
   }
-  if (seeded) {
-    try {
-      localStorage.setItem(SOLVES_KEY, JSON.stringify(history));
-    } catch (e) {
-      /* storage unavailable — the seed just won't persist */
-    }
-  }
+  if (seeded) saveSolveHistory(history);
   return seeded;
 }
 
@@ -305,6 +370,19 @@ export function percentileBetter(score, others) {
   return pct;
 }
 
+// Placement of `score` within a field of other scores: 1-based rank (ties in
+// favour of the new solve, the same convention as previewRank) plus the
+// percentile, suppressed while the field is too small to mean anything.
+function placeAmong(score, others) {
+  let rank = 1;
+  for (const o of others) if (o < score) rank++;
+  return {
+    total: others.length,
+    rank,
+    percentile: others.length >= MIN_SOLVES_FOR_PERCENTILE ? percentileBetter(score, others) : null,
+  };
+}
+
 // Everything the win screen needs to describe a fresh solve relative to the
 // player's own past ones, computed BEFORE the solve is recorded:
 //   total      — previous solves in this bucket (0 on the very first one)
@@ -315,24 +393,50 @@ export function percentileBetter(score, others) {
 //   bestScore  — the previous best, or null when there wasn't one
 //   delta      — |score − bestScore| in seconds, null without a previous best
 //   capped     — the history is at its cap, so `total` is "your last N", not all
-export function getPersonalStats(size, difficulty, score) {
-  const others = getSolveScores(size, difficulty);
-  const total = others.length;
+//   recent     — the same picture over the last RECENT_WINDOW_DAYS days, or null
+//                when it wouldn't say anything (see below)
+//
+// `recent` is deliberately absent more often than present. It is dropped when
+// the window holds fewer than MIN_RECENT_SOLVES dated solves (nothing to compare
+// against), and — just as important — when the window covers every solve on
+// record: a player whose games are all from the last month would otherwise get
+// two lines saying the same thing in different words. So it appears exactly when
+// it adds information the all-time figures don't already carry.
+export function getPersonalStats(size, difficulty, score, { now = Date.now(), windowMs = RECENT_WINDOW_MS } = {}) {
+  const entries = getSolveEntries(size, difficulty);
+  const others = entries.map((e) => e.score);
+  const all = placeAmong(score, others);
   // The all-time best survives in the top list even if the history has
   // rolled past it, so take the better of the two as the record to beat.
   const top = getLocalScores(size, difficulty);
   const candidates = others.concat(top.map((e) => e.score));
   const bestScore = candidates.length ? Math.min(...candidates) : null;
-  let rank = 1;
-  for (const o of others) if (o < score) rank++;
+
+  const since = now - windowMs;
+  const inWindow = entries.filter((e) => e.at != null && e.at >= since).map((e) => e.score);
+  let recent = null;
+  if (inWindow.length >= MIN_RECENT_SOLVES && inWindow.length < entries.length) {
+    const place = placeAmong(score, inWindow);
+    const windowBest = Math.min(...inWindow);
+    recent = {
+      ...place,
+      days: Math.round(windowMs / (24 * 60 * 60 * 1000)),
+      isBest: score < windowBest,
+      bestScore: windowBest,
+      delta: Math.abs(score - windowBest),
+    };
+  }
+
   return {
-    total,
-    rank,
-    percentile: total >= MIN_SOLVES_FOR_PERCENTILE ? percentileBetter(score, others) : null,
+    total: all.total,
+    rank: all.rank,
+    percentile: all.percentile,
     isBest: bestScore != null && score < bestScore,
     bestScore,
     delta: bestScore == null ? null : Math.abs(score - bestScore),
-    capped: total >= MAX_SOLVE_HISTORY,
+    capped: all.total >= MAX_SOLVE_HISTORY,
+    dated: entries.filter((e) => e.at != null).length,
+    recent,
   };
 }
 
