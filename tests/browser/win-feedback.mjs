@@ -171,9 +171,18 @@ try {
   const seeded = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('queens-clone-solves') || '{}')
   );
+  // Entries are [score, timestamp] pairs; the timestamp is the one the top-list
+  // entry carried, which is what lets a seeded device answer "the last 30 days".
   check(
     'boot seeds the solve history from the existing top list',
-    JSON.stringify(seeded['5-easy']) === JSON.stringify(PAST)
+    JSON.stringify(seeded['5-easy'].map((e) => (Array.isArray(e) ? e[0] : e))) ===
+      JSON.stringify(PAST)
+  );
+  check(
+    'the seeded solves keep the top list\'s date',
+    seeded['5-easy'].every(
+      (e) => Array.isArray(e) && e[1] === Date.parse('2026-01-01T00:00:00.000Z')
+    )
   );
 
   if (!(await solveViaHints())) throw new Error('could not reach a win via hints');
@@ -234,6 +243,22 @@ try {
     check('the own row is scrolled into the visible box', layout.meVisible);
   }
 
+  // --- 1c. entry age: dated rows show one, undated rows show none ---------
+  {
+    const ages = await page.evaluate(() =>
+      [...document.querySelectorAll('#win-scores .score-row')].map((r) => {
+        const a = r.querySelector('.score-age');
+        return a ? a.textContent : null;
+      })
+    );
+    // The 50 seeded entries are from 2026-01-01, so months old; the previewed
+    // fresh row isn't saved yet and has no date at all.
+    const dated = ages.filter((a) => a !== null);
+    check('the local list shows how old its entries are', dated.length >= MAX_LOCAL - 1);
+    check('… as a relative age', dated.every((a) => /vor|gestern|Jahr/.test(a)));
+    check('the not-yet-saved preview row carries no age', ages.some((a) => a === null));
+  }
+
   // --- 2. global tab before submitting: nothing highlighted, and it says why ---
   await page.click('#win-tab-global');
   await page.waitForFunction(
@@ -242,6 +267,12 @@ try {
   );
   let s = await listState();
   check('global list loaded', s.rows.length === otherRows.length);
+  // The mock answers like an un-migrated server: no created_at anywhere. The
+  // list must render exactly as before rather than showing "vor 56 Jahren".
+  check(
+    'rows without created_at show no age (un-migrated server)',
+    await page.evaluate(() => !document.querySelector('#win-scores .score-age'))
+  );
   check('nothing is highlighted before submitting', s.rows.every((r) => !r.me));
   check('the status line explains the absence', /Noch nicht eingetragen/.test(s.status));
 
@@ -262,7 +293,9 @@ try {
   check('the highlighted row is the freshly submitted one', meIdx === 2);
   check(
     'status reports placement and the share beaten',
-    /Platz 3 von 40/.test(s.status) && /besser als \d+ %/.test(s.status)
+    // \s, not a literal space: German renders "88 %" with a NON-BREAKING one
+    // (Intl/DIN 5008), so a plain space never matches.
+    /Platz 3 von 40/.test(s.status) && /besser als \d+\s%/.test(s.status)
   );
 
   // Switching away and back keeps the highlight (it must not depend on the
@@ -286,6 +319,49 @@ try {
   check('… with the personal comparison inputs', new RegExp(`"previousSolves": ${MAX_LOCAL}`).test(dbg));
   check('… with the raw history it was computed from', new RegExp(`"historyCount": ${MAX_LOCAL + 1}`).test(dbg));
   check('… and the global result', /"rank": 3/.test(dbg) && /"total": 40/.test(dbg));
+
+  // --- 6. the rolling-window line on a second solve -------------------------
+  // The history is rewritten between the two games: a batch of old solves plus a
+  // few from the last few days, which is exactly the shape that makes the third
+  // line meaningful (a window that holds a field, but not the whole history).
+  {
+    await page.evaluate(() => {
+      const day = 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      localStorage.setItem(
+        'queens-clone-solves',
+        JSON.stringify({
+          '5-easy': [
+            ...[40, 45, 50, 55, 60, 65].map((s, i) => [s, now - (300 - i) * day]), // long past
+            ...[200, 210, 220, 230].map((s, i) => [s, now - (6 - i) * day]), // current form
+          ],
+        })
+      );
+    });
+    await page.click('#win-new-game');
+    await page.waitForTimeout(300);
+    if (!(await solveViaHints())) throw new Error('could not reach a second win');
+    const win = await page.evaluate(() => ({
+      all: document.querySelector('#win-personal .win-personal-main')?.textContent || '',
+      window: document.querySelector('#win-personal .win-personal-window')?.textContent || '',
+    }));
+    console.log('    window line:', JSON.stringify(win.window));
+    check('the win card adds a line for the rolling window', !!win.window);
+    check('… naming the window length', /30 Tage/.test(win.window));
+    check(
+      '… and comparing against the recent solves only',
+      /besser als|Platz|beste Zeit/.test(win.window)
+    );
+    check('the all-time line is still there next to it', !!win.all);
+    // A third line is still a line: the card's height cap has to absorb it on
+    // the short phone this test runs on.
+    const layout = await page.evaluate(() => {
+      const card = document.getElementById('win-overlay').getBoundingClientRect();
+      const header = (document.querySelector('header') || document.querySelector('h1')).getBoundingClientRect();
+      return { cardTop: Math.round(card.top), headerBottom: Math.round(header.bottom) };
+    });
+    check('the extra line does not push the card over the top bar', layout.cardTop >= layout.headerBottom);
+  }
 
   if (errors.length) check(`no console errors (got ${JSON.stringify(errors)})`, false);
 } catch (e) {

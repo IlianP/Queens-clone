@@ -25,6 +25,13 @@ const deLocale = 'de-DE';
 const dePercent = (n) =>
   new Intl.NumberFormat(deLocale, { style: 'percent', maximumFractionDigits: 0 }).format(Number(n) / 100);
 
+// Age of a leaderboard entry ("vor 3 Tagen") and its exact date. Intl owns both
+// wordings: relative time has its own irregulars per language ("gestern", not
+// "vor 1 Tag"), and a date format is a locale convention, not a translation.
+// `numeric: 'auto'` is what buys those irregulars; 'short' keeps a row narrow.
+const deRelTime = new Intl.RelativeTimeFormat(deLocale, { numeric: 'auto', style: 'short' });
+const deDateTime = new Intl.DateTimeFormat(deLocale, { dateStyle: 'medium', timeStyle: 'short' });
+
 export const I18N_DE = {
   // ---------- meta ----------
   'lang.htmlLang': 'de',
@@ -67,11 +74,17 @@ export const I18N_DE = {
   'score.you': 'Du',
   'score.rowTitle': ({ time, hints, mistakes }) =>
     `Zeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
+  // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —
+  // the fallback only catches a caller passing something else entirely.
+  'score.age': ({ value, unit }) => deRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
+  'score.rowDate': ({ at }) => `Eingetragen: ${deDateTime.format(new Date(at))}`,
 
   // ---------- win card ----------
   'win.title': '🎉 Gelöst!',
   'win.tab.local': 'Lokal',
   'win.tab.global': 'Global 🌐',
+  'win.tab.period': ({ days }) => `${days} Tage`,
+  'win.tab.periodAria': ({ days }) => `Bestenliste der letzten ${days} Tage`,
   'win.nickname.placeholder': 'Dein Name',
   'win.nickname.aria': 'Dein Name für die Bestenliste',
   'win.submit': 'Eintragen',
@@ -93,6 +106,13 @@ export const I18N_DE = {
   'win.personal.detail': ({ bucket, toBest }) => `${bucket} · ${toBest}`,
   'win.personal.detailRank': ({ rank, total, bucket, toBest }) =>
     `Platz ${rank} von ${total} · ${bucket} · ${toBest}`,
+  // The same comparison over a rolling window: how the solve stacks up against
+  // current form, not against a record that may be a year old.
+  'win.personal.recentBest': ({ days }) => `🔥 Deine beste Zeit der letzten ${days} Tage`,
+  'win.personal.recentPercentile': ({ percent, total, days }) =>
+    `Letzte ${days} Tage: besser als ${dePercent(percent)} von ${dePlural(total, 'Partie', 'Partien')}`,
+  'win.personal.recentRank': ({ rank, total, days }) =>
+    `Letzte ${days} Tage: Platz ${rank} von ${total}`,
   'win.personal.toBest.equal': 'gleichauf mit deiner Bestzeit',
   'win.personal.toBest.delta': ({ delta }) => `+${delta} zur Bestzeit`,
 

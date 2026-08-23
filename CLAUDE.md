@@ -42,6 +42,11 @@ before re-deriving how to drive things:
   is exactly the smoke test below: solve generated puzzles end-to-end by applying
   `computeHint` repeatedly and assert all `N` queens land on the `solution`. Run
   it after any `solver.js` / `generator.js` / `hint.js` / `game.js` change.
+- `tests/logic/leaderboard-period.mjs` — the read half of `leaderboard.js`: that a
+  windowed read sends `p_since` and an all-time read does **not**, that
+  `created_at` becomes `at` (and its absence reads as undated), and that every
+  time-scoped call fails soft to `null`. Run it after touching `leaderboard.js`
+  or `docs/leaderboard-setup.sql`.
 - `tests/logic/verify-i18n.mjs` — the i18n guard: identical key sets across packs,
   same value *types*, every template still uses the parameters the fallback uses,
   and every key referenced from `index.html` / `t('…')` exists. Run it after
@@ -112,8 +117,8 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`). Shipped pools are **mixed**: half organic, half blocky, each entry tagged `t` — see "Mixing the two styles" |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
-| `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic |
-| `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores`) fail soft to `null` (offline/unconfigured/CSP) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
+| `js/highscores.js` | Score model (`computeScore` = time + hint/mistake penalties) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic. History entries are **dated** (`[score, at]`, or a bare `score` for the undated ones — see "Time in the score data") |
+| `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores` — optional `{ since }` window, `created_at` per row — and `fetchBucketCounts`) fail soft to `null` (offline/unconfigured/CSP/SQL-not-re-run) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
 | `js/i18n.js` | Translation layer: `t(key, params)`, `resolveLanguage`, the pack registry. **Pure** — no DOM, no browser globals at import time, so Node can import it (`js/hint.js` depends on it and the logic tests import that). Mirrors the audio/voice/leaderboard layering |
 | `js/i18n/en.js`, `de.js`, `fr.js`, `es.js` | The language packs. Flat `key → string \| (params) => string` maps, one identical key set per language — `tests/logic/verify-i18n.mjs` fails CI otherwise. Each pack owns its own plural/ordinal/percent helpers (`frPlural` treats 0 as singular, `esPlural` doesn't; `enPercent` renders `88%` while `de`/`fr`/`es` render `88 %` with a non-breaking space, delegated to `Intl.NumberFormat` rather than typed by hand) and its own noun choices; fr/es pin the piece to the local name of the *n*-queens problem (`dame` / `reina`), and their three unit words are all feminine, which is what lets the hint sentences interpolate a bare `la ${unit}` |
 | `js/settings.js` | Preferences (language/size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
@@ -402,7 +407,8 @@ for a network fault that didn't exist and offered a retry that could not work.
 **Relative feedback (beyond the absolute placement).** The local top list discards
 everything past `MAX_LOCAL_ENTRIES`, so it cannot answer "how does this solve compare to
 all my others?" — a second, tiny store does: `queens-clone-solves`, one flat
-array of scores per bucket (numbers only, no names/dates), capped at
+array per bucket of `[score, timestamp]` pairs (no names; see "Time in the score
+data" for the undated legacy form), capped at
 `MAX_SOLVE_HISTORY` with the oldest falling off. `recordSolve` is called from
 `commitPendingWin` — the single funnel every finished game passes through, and
 already guarded by `pendingWin.saved`, so a solve is counted exactly once. The
@@ -465,6 +471,54 @@ empty-history bug undiagnosable from an export. The win card carries its own
 copy button (`#win-debug-row`, debug-only) because the interesting moment is the
 one right after a solve.
 
+### Time in the score data (entry age, rolling windows)
+
+Both stores now carry *when* a solve happened, and the three surfaces built on
+that are deliberately **conditional** — each one hides itself where it would say
+nothing:
+
+- **Entry age per row** (`renderScoreList` → `entryTime` / `ageParts` +
+  `score.age`). The local list has always stored an ISO `date`; `top_scores` now
+  returns `created_at` too. The unit travels as an Intl kind (`'day'`, `'month'`,
+  …) and each pack turns it into words via `Intl.RelativeTimeFormat`
+  (`numeric: 'auto'`, so -1 day reads "gestern"), exactly like `hint.js` passing
+  unit *kinds* rather than nouns. A row with no timestamp — an un-migrated
+  server, or the not-yet-saved preview row on the win card — simply shows none.
+- **The personal window** (`getPersonalStats(...).recent`, `RECENT_WINDOW_DAYS`
+  = 30): the same comparison over current form, rendered as a third
+  `.win-personal` line. Dropped when the window holds fewer than
+  `MIN_RECENT_SOLVES` dated solves, and — just as important — when it covers the
+  *whole* history, where it would only reword the all-time line.
+- **The global period tab** (`PERIOD_DAYS` = 90, `MIN_PERIOD_ENTRIES` = 5, in
+  `main.js`): a third tab in the Bestenliste modal only. `score_counts` answers
+  `{ total, recent }` per bucket and `periodOffered` gates the tab on
+  `recent >= MIN_PERIOD_ENTRIES && recent < total` — the same two-sided rule.
+  This matters because the bucket space is already thin: 22 buckets over ~240
+  global entries, so an unconditional month tab would be empty nearly everywhere.
+
+Rolling windows, not calendar months: a calendar month is empty on the 1st and
+full on the 28th, so the identical solve would read completely differently
+depending on the date. Both lengths are one constant each.
+
+**Undated solves are permanent, not a migration step.** A history entry is
+`[score, at]` or a bare `score`; the bare form is what the pre-dating build wrote
+and what a top-list entry without a usable date backfills to. Time-scoped figures
+count dated solves only, all-time figures count every solve (an undated solve did
+happen). `seedSolveHistory` passes top-list *entries* rather than scores into
+`mergeSolveSamples` precisely so the backfill keeps their `date` — that is what
+lets a device that just updated answer "the last 30 days" at all.
+
+**The SQL migration is optional at runtime, and that is load-bearing.**
+`top_scores` had to be dropped and recreated (its return columns changed), and
+`score_counts` is new — so until the project owner re-runs
+`docs/leaderboard-setup.sql`, the deployed site talks to a server that has
+neither. Both paths fail soft: no `created_at` → no age shown; `score_counts`
+404 → the period tab never appears. `fetchTopScores` therefore sends `p_since`
+**only when set**, so the plain all-time call stays byte-for-byte the pre-feature
+one and keeps resolving against the old three-argument function. Keep it that way
+— an unconditional parameter would 404 the global tab on every un-migrated
+database.
+
 **List length is a layout question, not a data one.** Both lists hold up to 50
 (`MAX_LOCAL_ENTRIES`, `TOP_SCORES_LIMIT` — `top_scores` clamps `p_limit` to 100
 server-side, so 50 needs no SQL change, and the bucket index covers the ORDER BY,
@@ -479,10 +533,15 @@ off-screen, so `scrollRowIntoView` centres it; it runs in a `requestAnimationFra
 because both callers build the list *before* revealing their card, and rects are
 all zero while it's still `display: none`.
 
-`tests/logic/percentile.mjs` covers the pure logic (with a localStorage shim) and
+`tests/logic/percentile.mjs` covers the pure logic (with a localStorage shim,
+including the dated storage format and the window rules) and
 `tests/browser/win-feedback.mjs` the wiring — seeding, the highlight, the
-pre-submit note and the debug block, with every RPC mocked so the live
-leaderboard is never written to. Bundle constraint:
+pre-submit note, entry ages, the window line and the debug block, with every RPC
+mocked so the live leaderboard is never written to.
+`tests/browser/leaderboard-period.mjs` covers the adaptive tab bucket by bucket
+(offered / too thin / everything recent / server without `score_counts`) and
+measures the three-tab row down to 320px — three tabs plus "Global 🌐" is the
+tightest label row in the app, which is why `.score-tabs` shrinks below 380px. Bundle constraint:
 `highscores.js`/`leaderboard.js` are concatenated into one classic script, so
 **no top-level name collisions** (that's why the store key is `SCORES_KEY`, not
 another `KEY`) and **no `import.meta`**.

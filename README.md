@@ -110,13 +110,32 @@ its own ranking; 🏆 lets you browse all of them.
 Both lists show roughly six to eight rows and **scroll** beyond that so the win
 screen doesn't grow; your own fresh row is scrolled into view automatically.
 
+Every row also shows **how old** the entry is (“3 days ago”; the exact date is in the
+tooltip), and anything from the last week is highlighted in green. Without that a
+leaderboard reads as frozen – this way you can see at a glance whether anyone is
+playing right now.
+
+When the global ranking is set up and a bucket is busy enough, a third tab **“90
+days”** appears: the same list, restricted to entries from that window. It shows up
+**only where it says something** – with fewer than five entries inside the window there
+would be nothing to compare, and if every entry falls inside it anyway, it would just
+be a copy of the global list. Deliberately a *rolling* window rather than “this month”:
+a calendar month is empty on the 1st and full on the 28th, so the same result would
+read completely differently depending on the date.
+
 Because a list ends somewhere, a first place beyond it says nothing on its own.
-So the game additionally remembers the **results of all** games per ranking (just
-the numbers, no names or dates) and shows right on the win screen how the fresh
+So the game additionally remembers the **results of all** games per ranking (the
+score and when it was solved, no names) and shows right on the win screen how the fresh
 game compares – e.g. *“Better than 88 % of your 26 games”*, the gap to your own
 best time, or *“🏆 New best time!”*. This feedback is there instantly and needs
 neither a name nor the internet. With few games (under five) the plain placement
 is shown instead – a percentage out of two rounds would be noise.
+
+Because the game history now knows the **date** of every game, a third line is added
+where it helps, comparing the same solve against your *current form*: *“Last 30 days:
+better than 92 % of 12 games”* or *“🔥 Your best time in 30 days”*. It, too, only shows
+up when it adds something – if all your games fall inside those 30 days it says nothing
+the line above doesn't already say, and is left out.
 
 After **submitting** to the global ranking, the status line adds the same
 comparison for the whole field (*“Rank 37 of 214 – better than 83 % of all
@@ -126,9 +145,11 @@ tab. Until you submit, nothing is highlighted there, because your result genuine
 isn't on that board yet (the status line points this out).
 
 Anyone who played before this feature existed doesn't lose the comparison: the
-existing top-10 entries are adopted as game history on first start. Those are only
-the **best** ten, though – so as long as few new games have been added, the
-percentage comes out rather strict.
+existing entries of the local list are adopted as game history on first start –
+including their date, so the 30-day window works right away too. Those are only the
+**best** games, though – so as long as few new ones have been added, the percentage
+comes out rather strict.
+
 
 ### Setting up the online ranking (optional, Supabase)
 
@@ -138,8 +159,11 @@ as a backend – no server of your own needed.
 
 1. Create a Supabase project.
 2. Run `docs/leaderboard-setup.sql` in the project's **SQL editor**. That creates
-   the table and the validated functions `submit_score` / `top_scores` (the
-   server-side plausibility checks = the abuse protection).
+   the table and the validated functions `submit_score` / `top_scores` /
+   `score_counts` (the server-side plausibility checks = the abuse protection).
+   If you have been running the ranking for a while, simply run the file again:
+   without it the entry age and the 90-day tab stay off – nothing else changes, since
+   both fail soft instead of breaking anything.
 3. Enter the **project URL** and the **public anon key** in `js/leaderboard.js`.
    Both values may live in the browser; the `service_role` key must **never** go
    there.

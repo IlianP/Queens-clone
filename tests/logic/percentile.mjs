@@ -22,6 +22,7 @@ const {
   globalPercentile,
   recordSolve,
   getSolveScores,
+  getSolveEntries,
   getPersonalStats,
   saveLocalScore,
   seedSolveHistory,
@@ -30,7 +31,17 @@ const {
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
+  MIN_RECENT_SOLVES,
+  RECENT_WINDOW_DAYS,
+  RECENT_WINDOW_MS,
 } = await import('../../js/highscores.js');
+
+const DAY = 24 * 60 * 60 * 1000;
+// A fixed "now" keeps every window assertion reproducible.
+const NOW = Date.parse('2026-06-15T12:00:00Z');
+const daysAgo = (d) => NOW - d * DAY;
+// The history's own shape is dated; most assertions only care about the scores.
+const scoresOf = (list) => list.map((e) => e.score);
 
 let failed = false;
 const fail = (msg) => {
@@ -84,6 +95,39 @@ eq(JSON.stringify(getSolveScores(9, 'hard')), '[300,200]', 'history keeps every 
 eq(JSON.stringify(getSolveScores(9, 'medium')), '[111]', 'buckets are independent');
 recordSolve(9, 'hard', NaN);
 eq(getSolveScores(9, 'hard').length, 2, 'a bad value is ignored');
+
+// Every recorded solve is dated, and the raw store keeps it as [score, at] so
+// the timestamp survives a reload.
+{
+  const dated = getSolveEntries(9, 'hard');
+  eq(dated.every((e) => Number.isFinite(e.at)), true, 'recorded solves carry a timestamp');
+  recordSolve(9, 'hard', 150, daysAgo(3));
+  eq(getSolveEntries(9, 'hard')[2].at, daysAgo(3), 'an explicit timestamp is kept verbatim');
+  const raw = JSON.parse(localStorage.getItem('queens-clone-solves'))['9-hard'];
+  eq(JSON.stringify(raw[2]), JSON.stringify([150, daysAgo(3)]), 'stored as a [score, at] pair');
+}
+
+// A history written by the build that predates timestamps is a flat number
+// array. It must still read — those solves simply have no date, forever.
+localStorage.clear();
+localStorage.setItem('queens-clone-solves', JSON.stringify({ '9-hard': [300, 200, 250] }));
+{
+  eq(JSON.stringify(getSolveScores(9, 'hard')), '[300,200,250]', 'legacy number entries still read');
+  eq(getSolveEntries(9, 'hard').every((e) => e.at === null), true, 'legacy entries are undated');
+  recordSolve(9, 'hard', 100);
+  const raw = JSON.parse(localStorage.getItem('queens-clone-solves'))['9-hard'];
+  eq(typeof raw[0], 'number', 'an undated entry round-trips as a bare number');
+  eq(Array.isArray(raw[3]), true, 'the new solve is written dated alongside it');
+}
+
+// Junk timestamps degrade to "undated" rather than to 1970.
+localStorage.clear();
+localStorage.setItem(
+  'queens-clone-solves',
+  JSON.stringify({ '9-hard': [[120, 0], [130, 'gestern'], [140, -5]] })
+);
+eq(getSolveEntries(9, 'hard').every((e) => e.at === null), true, 'implausible timestamps read as undated');
+eq(JSON.stringify(getSolveScores(9, 'hard')), '[120,130,140]', 'but the scores survive');
 
 // Malformed storage must not throw — it degrades to an empty history.
 localStorage.setItem('queens-clone-solves', '{ not json');
@@ -155,11 +199,71 @@ for (const s of [300, 310, 320]) recordSolve(6, 'easy', s);
   eq(st.isBest, false, '100 does not beat the surviving 40');
 }
 
+// --- getPersonalStats: the rolling window -----------------------------------
+// The window is the point of the timestamps: "how am I doing lately", separate
+// from an all-time record that may be years old.
+localStorage.clear();
+for (const s of [100, 110, 120, 130, 140, 150]) recordSolve(10, 'hard', s, daysAgo(200)); // long past
+for (const s of [300, 310, 320, 330, 340]) recordSolve(10, 'hard', s, daysAgo(5)); // recent form
+{
+  const st = getPersonalStats(10, 'hard', 305, { now: NOW });
+  eq(st.total, 11, 'all-time counts every solve');
+  eq(st.rank, 8, 'ranked behind the six old ones and the 300');
+  eq(st.recent.days, RECENT_WINDOW_DAYS, 'the window reports its own length');
+  eq(st.recent.total, 5, 'the window counts only the dated solves inside it');
+  eq(st.recent.rank, 2, 'second-best of the recent five');
+  eq(st.recent.percentile, 80, 'beats four of five recent solves');
+  eq(st.recent.isBest, false, '305 does not beat the recent 300');
+  eq(st.isBest, false, 'and it is nowhere near the all-time best');
+  // The motivating case: a personal best *for the current form*, without being
+  // an all-time best.
+  const form = getPersonalStats(10, 'hard', 290, { now: NOW });
+  eq(form.recent.isBest, true, 'better than everything inside the window');
+  eq(form.isBest, false, 'but the all-time best from 200 days ago still stands');
+  eq(form.recent.delta, 10, 'distance to the best of the window');
+}
+
+// Too few solves inside the window → no window figures at all.
+localStorage.clear();
+for (const s of [100, 110, 120, 130, 140, 150]) recordSolve(10, 'hard', s, daysAgo(200));
+for (let i = 0; i < MIN_RECENT_SOLVES - 1; i++) recordSolve(10, 'hard', 300 + i, daysAgo(2));
+eq(getPersonalStats(10, 'hard', 305, { now: NOW }).recent, null, 'a near-empty window is dropped');
+
+// A window that covers EVERY solve on record says nothing the all-time line
+// doesn't already say, so it is dropped too — no two lines with one message.
+localStorage.clear();
+for (const s of [300, 310, 320, 330, 340]) recordSolve(10, 'hard', s, daysAgo(5));
+eq(getPersonalStats(10, 'hard', 305, { now: NOW }).recent, null, 'window == whole history → dropped');
+
+// Undated solves never enter a window (they can't be placed on the timeline),
+// but they still count all-time — an undated solve did happen.
+localStorage.clear();
+localStorage.setItem('queens-clone-solves', JSON.stringify({ '10-hard': [100, 110, 120, 130] }));
+for (const s of [300, 310, 320]) recordSolve(10, 'hard', s, daysAgo(4));
+{
+  const st = getPersonalStats(10, 'hard', 305, { now: NOW });
+  eq(st.total, 7, 'undated solves count all-time');
+  eq(st.dated, 3, 'only three of them are dated');
+  eq(st.recent.total, 3, 'the window sees the dated three');
+  eq(st.recent.rank, 2, 'ranked inside the window on its own scores');
+}
+
+// Falling out of the window is what makes it a *rolling* one.
+localStorage.clear();
+for (const s of [100, 110, 120, 130]) recordSolve(11, 'hard', s, daysAgo(200));
+for (const s of [300, 310, 320]) recordSolve(11, 'hard', s, NOW - RECENT_WINDOW_MS + DAY);
+eq(getPersonalStats(11, 'hard', 305, { now: NOW }).recent.total, 3, 'just inside the window');
+eq(
+  getPersonalStats(11, 'hard', 305, { now: NOW + 2 * DAY }).recent,
+  null,
+  'two days later they have rolled out of it'
+);
+
 // --- mergeSolveSamples ------------------------------------------------------
 // The two stores overlap, so the merge must add only what the history is
 // actually missing — never a second copy of a solve both stores recorded.
 {
-  const j = (a) => JSON.stringify(a);
+  const j = (a) => JSON.stringify(scoresOf(a));
   eq(j(mergeSolveSamples([], [30, 20, 10])), '[30,20,10]', 'empty history takes every top score');
   eq(j(mergeSolveSamples([10, 20], [])), '[10,20]', 'no top list → history unchanged');
   eq(j(mergeSolveSamples([20, 10], [10, 20])), '[20,10]', 'fully overlapping stores add nothing');
@@ -182,8 +286,21 @@ for (const s of [300, 310, 320]) recordSolve(6, 'easy', s);
     const full = Array.from({ length: MAX_SOLVE_HISTORY }, (_, i) => 1000 + i);
     const merged = mergeSolveSamples(full, [1, 2, 3]);
     eq(merged.length, MAX_SOLVE_HISTORY, 'merging cannot exceed the cap');
-    eq(merged[merged.length - 1], full[full.length - 1], 'the newest real solve is kept');
-    eq(merged[0], 1000, 'the prepended backfill is what falls off, not a real solve');
+    eq(merged[merged.length - 1].score, full[full.length - 1], 'the newest real solve is kept');
+    eq(merged[0].score, 1000, 'the prepended backfill is what falls off, not a real solve');
+  }
+  // A backfilled entry keeps the date the top list recorded, which is what lets
+  // a seeded device answer "the last 30 days" instead of "unknown, all of them".
+  {
+    const merged = mergeSolveSamples([{ score: 82, at: daysAgo(1) }], [
+      { score: 24, date: new Date(daysAgo(400)).toISOString() },
+      { score: 82, date: new Date(daysAgo(1)).toISOString() },
+    ]);
+    eq(j(merged), '[24,82]', 'only the unmatched entry is added');
+    eq(merged[0].at, daysAgo(400), 'and it carries the top list\'s date');
+    // A top-list entry without a usable date still merges — just undated.
+    const undated = mergeSolveSamples([], [{ score: 30, date: 'irgendwann' }]);
+    eq(undated[0].at, null, 'an unparsable date reads as undated');
   }
 }
 

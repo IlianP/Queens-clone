@@ -6,8 +6,8 @@
 -- Sicherheitsmodell:
 --   * Row Level Security ist an, die Tabelle hat KEINE Schreib-Policy und wird
 --     nicht direkt gelesen. Schreiben und Lesen laufen ausschließlich über die
---     beiden SECURITY-DEFINER-Funktionen unten, die als Eigentümer laufen und
---     nur unbedenkliche Spalten zurückgeben (nie die IP).
+--     SECURITY-DEFINER-Funktionen unten, die als Eigentümer laufen und nur
+--     unbedenkliche Spalten zurückgeben (nie die IP, nie den client_key).
 --   * submit_score() ist der "Missbrauchsschutz": Name säubern, Werte prüfen,
 --     unmögliche Zeiten ablehnen, Best-Effort Rate-Limit pro Client. Der Score
 --     wird serverseitig berechnet (Client-Angaben zählen nur als Rohwerte).
@@ -44,6 +44,10 @@ create index if not exists scores_bucket_idx
   on public.scores (size, difficulty, score, seconds);
 create index if not exists scores_ratelimit_idx
   on public.scores (client_key, created_at);
+-- Für die zeitlich begrenzte Bestenliste ("letzte N Tage"): der Bucket-Index
+-- oben trägt den Zeitfilter nicht, weil created_at dort gar nicht vorkommt.
+create index if not exists scores_recent_idx
+  on public.scores (size, difficulty, created_at);
 
 -- 2) Row Level Security: an, ohne Policy = kein Direktzugriff für anon ---------
 alter table public.scores enable row level security;
@@ -121,19 +125,52 @@ end;
 $$;
 
 -- 5) Bestenliste lesen (nur unbedenkliche Spalten, best-first) -----------------
-create or replace function public.top_scores(p_size int, p_difficulty text, p_limit int default 10)
-  returns table (name text, seconds int, hints int, mistakes int, score int)
+-- created_at wird MITGELIEFERT: die Oberfläche zeigt daneben das Alter des
+-- Eintrags ("vor 3 Tagen"). Das ist unbedenklich – der Zeitpunkt einer Übermittlung
+-- verrät nichts über die Person, und ohne ihn wirkt eine Liste eingefroren.
+--
+-- p_since (optional) begrenzt die Liste auf Einträge ab diesem Zeitpunkt, also
+-- die zeitlich begrenzte Wertung. NULL = alle. Der Client schickt den Parameter
+-- nur, wenn er ihn braucht; ein Aufruf ohne ihn ist exakt der alte.
+--
+-- ACHTUNG beim erneuten Ausführen: die Rückgabespalten haben sich geändert, und
+-- das kann `create or replace` in Postgres nicht – deshalb das `drop` davor.
+-- Zwischen drop und create existiert die Funktion für Sekundenbruchteile nicht;
+-- ein Aufruf genau in dieser Lücke fällt im Spiel auf "nicht erreichbar"
+-- zurück, was folgenlos ist. Daten werden dabei nicht angefasst.
+drop function if exists public.top_scores(int, text, int);
+create or replace function public.top_scores(
+  p_size int, p_difficulty text, p_limit int default 10, p_since timestamptz default null
+) returns table (name text, seconds int, hints int, mistakes int, score int, created_at timestamptz)
   language sql security definer set search_path = public stable as $$
-  select s.name, s.seconds, s.hints, s.mistakes, s.score
+  select s.name, s.seconds, s.hints, s.mistakes, s.score, s.created_at
     from public.scores s
     where s.size = p_size and s.difficulty = p_difficulty
+      and (p_since is null or s.created_at >= p_since)
     order by s.score asc, s.seconds asc, s.created_at asc
     limit least(greatest(coalesce(p_limit, 10), 1), 100);
 $$;
 
--- 6) Ausführrechte nur für die beiden Funktionen ------------------------------
+-- 5b) Wie voll ist ein Bucket – insgesamt und im Zeitfenster? ------------------
+-- Grundlage für die *adaptive* Zeitwertung: die Oberfläche bietet sie nur an,
+-- wo das Fenster wirklich ein Feld enthält (sonst stünde da "Platz 1 von 2").
+-- Zwei Zahlen statt einer, weil auch der umgekehrte Fall zählt: liegt alles
+-- innerhalb des Fensters, ist die Zeitwertung nur eine Kopie der Gesamtliste und
+-- wird ebenfalls weggelassen.
+create or replace function public.score_counts(
+  p_size int, p_difficulty text, p_since timestamptz default null
+) returns table (total bigint, recent bigint)
+  language sql security definer set search_path = public stable as $$
+  select count(*)::bigint,
+         count(*) filter (where p_since is null or s.created_at >= p_since)::bigint
+    from public.scores s
+    where s.size = p_size and s.difficulty = p_difficulty;
+$$;
+
+-- 6) Ausführrechte nur für diese Funktionen ------------------------------------
 grant execute on function public.submit_score(text, int, text, int, int, int) to anon;
-grant execute on function public.top_scores(int, text, int) to anon;
+grant execute on function public.top_scores(int, text, int, timestamptz) to anon;
+grant execute on function public.score_counts(int, text, timestamptz) to anon;
 
 -- MIGRATION für bereits eingerichtete Projekte ---------------------------------
 -- Die ganze Datei erneut auszuführen ist immer sicher (alles ist `if not exists`
@@ -168,3 +205,28 @@ grant execute on function public.top_scores(int, text, int) to anon;
 --
 --     -- optional, nur falls Altbestand vereinheitlicht werden soll:
 --     -- update public.scores set name = '' where name = 'Anonym';
+--
+--   2026-08: Zeitbezug in der Rangliste. top_scores() liefert jetzt created_at
+--   mit (Alter pro Zeile: "vor 3 Tagen") und kennt den optionalen Parameter
+--   p_since für eine Wertung der letzten N Tage; neu dazu kommen score_counts()
+--   und ein Index auf (size, difficulty, created_at). Bestandsdaten reichen
+--   dafür aus: created_at steht seit der Ersteinrichtung auf jeder Zeile, die
+--   Zeitwertung gilt also rückwirkend. Am einfachsten die ganze Datei erneut
+--   ausführen (Abschnitte 1, 5, 5b und 6). Wer nur den Kern will:
+--
+--     create index if not exists scores_recent_idx
+--       on public.scores (size, difficulty, created_at);
+--     drop function if exists public.top_scores(int, text, int);
+--     -- danach top_scores() und score_counts() aus Abschnitt 5/5b anlegen
+--     -- und die grants aus Abschnitt 6 erneut setzen.
+--
+--   Das `drop` ist nötig, weil sich die Rückgabespalten ändern – `create or
+--   replace` allein reicht dafür in Postgres nicht. Die anschließend erzeugte
+--   Funktion hat vier Parameter, der vierte mit Default; ein alter Client, der
+--   nur p_size/p_difficulty/p_limit schickt, wird von PostgREST weiterhin
+--   korrekt aufgelöst und läuft unverändert.
+--
+--   Solange diese Migration NICHT gelaufen ist, verhält sich das Spiel wie
+--   bisher: kein Alter an den Zeilen (created_at fehlt in der Antwort), keine
+--   Zeitwertung (score_counts antwortet 404, und die Oberfläche bietet den
+--   Reiter dann gar nicht erst an). Beides fällt still zurück, nichts bricht.

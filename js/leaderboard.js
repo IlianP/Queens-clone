@@ -199,8 +199,21 @@ export const TOP_SCORES_LIMIT = 50;
 
 // Fetch the best entries for one (size, difficulty) bucket, best-first.
 // Resolves an array (possibly empty) or null when the request fails.
-export async function fetchTopScores(size, difficulty, limit = TOP_SCORES_LIMIT) {
-  const data = await rpc('top_scores', { p_size: size, p_difficulty: difficulty, p_limit: limit });
+//
+// `since` (epoch ms or null) restricts the list to entries submitted after that
+// moment — the time-scoped board. It is only sent when set, and that matters:
+// against a database where docs/leaderboard-setup.sql has NOT been re-run, the
+// four-argument top_scores doesn't exist and PostgREST answers 404. Omitting the
+// parameter keeps the plain all-time call byte-for-byte what it always was, so
+// an un-migrated project keeps working exactly as before (see fetchBucketCounts,
+// which is what gates the time-scoped view in the first place).
+//
+// `at` is the row's submission time in epoch ms, or null — an un-migrated
+// top_scores doesn't return created_at, and the UI then simply shows no age.
+export async function fetchTopScores(size, difficulty, { limit = TOP_SCORES_LIMIT, since = null } = {}) {
+  const body = { p_size: size, p_difficulty: difficulty, p_limit: limit };
+  if (since != null) body.p_since = new Date(since).toISOString();
+  const data = await rpc('top_scores', body);
   if (!Array.isArray(data)) return null;
   return data.map((r) => ({
     name: r.name,
@@ -208,5 +221,26 @@ export async function fetchTopScores(size, difficulty, limit = TOP_SCORES_LIMIT)
     hints: Number(r.hints),
     mistakes: Number(r.mistakes),
     score: Number(r.score),
+    at: r.created_at ? Date.parse(r.created_at) : null,
   }));
+}
+
+// How full a bucket is, all-time and within the last `since` window:
+// { total, recent }. This is what makes the time-scoped view *adaptive* — a
+// month tab over three entries is worse than no tab at all, so the UI asks first
+// and only offers it where the window actually holds a field (see
+// MIN_PERIOD_ENTRIES in main.js).
+//
+// Fails soft to null like every read here, which doubles as the feature gate: a
+// project whose SQL predates score_counts answers 404, the caller sees null and
+// simply never offers the view. No version handshake, no config flag.
+export async function fetchBucketCounts(size, difficulty, since) {
+  const data = await rpc('score_counts', {
+    p_size: size,
+    p_difficulty: difficulty,
+    p_since: new Date(since).toISOString(),
+  });
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || row.total == null) return null;
+  return { total: Number(row.total), recent: Number(row.recent) };
 }

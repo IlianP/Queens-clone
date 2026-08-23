@@ -332,9 +332,13 @@
           >
         </div>
 
+        <!-- The period tab is hidden until the bucket earns it: main.js asks the
+             server how many entries fall inside the window and only reveals it
+             where that is a field worth ranking (see MIN_PERIOD_ENTRIES). -->
         <div class="score-tabs" id="lb-tabs" hidden>
           <button class="score-tab" id="lb-tab-local" type="button" aria-selected="true" data-i18n="win.tab.local">Local</button>
           <button class="score-tab" id="lb-tab-global" type="button" aria-selected="false" data-i18n="win.tab.global">Global 🌐</button>
+          <button class="score-tab" id="lb-tab-period" type="button" aria-selected="false" hidden></button>
         </div>
         <div class="score-list lb-list" id="lb-scores"></div>
 

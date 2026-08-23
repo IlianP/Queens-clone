@@ -29,6 +29,13 @@ const esLocale = 'es-ES';
 const esPercent = (n) =>
   new Intl.NumberFormat(esLocale, { style: 'percent', maximumFractionDigits: 0 }).format(Number(n) / 100);
 
+// Age of a leaderboard entry ("vor 3 Tagen") and its exact date. Intl owns both
+// wordings: relative time has its own irregulars per language ("gestern", not
+// "vor 1 Tag"), and a date format is a locale convention, not a translation.
+// `numeric: 'auto'` is what buys those irregulars; 'short' keeps a row narrow.
+const esRelTime = new Intl.RelativeTimeFormat(esLocale, { numeric: 'auto', style: 'short' });
+const esDateTime = new Intl.DateTimeFormat(esLocale, { dateStyle: 'medium', timeStyle: 'short' });
+
 export const I18N_ES = {
   // ---------- meta ----------
   'lang.htmlLang': 'es',
@@ -69,6 +76,10 @@ export const I18N_ES = {
   'score.empty': 'Aún no hay entradas: ¡estrena tú la clasificación!',
   'score.anonymous': 'Anónimo',
   'score.you': 'Tú',
+  // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —
+  // the fallback only catches a caller passing something else entirely.
+  'score.age': ({ value, unit }) => esRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
+  'score.rowDate': ({ at }) => `Registrado: ${esDateTime.format(new Date(at))}`,
   'score.rowTitle': ({ time, hints, mistakes }) =>
     `Tiempo ${time} · ${esPlural(hints, 'pista', 'pistas')} · ${esPlural(mistakes, 'error', 'errores')}`,
 
@@ -76,6 +87,8 @@ export const I18N_ES = {
   'win.title': '🎉 ¡Resuelto!',
   'win.tab.local': 'Local',
   'win.tab.global': 'Global 🌐',
+  'win.tab.period': ({ days }) => `${days} días`,
+  'win.tab.periodAria': ({ days }) => `Clasificación de los últimos ${days} días`,
   'win.nickname.placeholder': 'Tu nombre',
   'win.nickname.aria': 'Tu nombre para la clasificación',
   'win.submit': 'Publicar',
@@ -98,6 +111,13 @@ export const I18N_ES = {
   'win.personal.detail': ({ bucket, toBest }) => `${bucket} · ${toBest}`,
   'win.personal.detailRank': ({ rank, total, bucket, toBest }) =>
     `Puesto ${rank} de ${total} · ${bucket} · ${toBest}`,
+  // The same comparison over a rolling window: how the solve stacks up against
+  // current form, not against a record that may be a year old.
+  'win.personal.recentBest': ({ days }) => `🔥 Tu mejor tiempo en ${days} días`,
+  'win.personal.recentPercentile': ({ percent, total, days }) =>
+    `Últimos ${days} días: mejor que el ${esPercent(percent)} de ${esPlural(total, 'partida', 'partidas')}`,
+  'win.personal.recentRank': ({ rank, total, days }) =>
+    `Últimos ${days} días: puesto ${rank} de ${total}`,
   'win.personal.toBest.equal': 'igualas tu mejor tiempo',
   'win.personal.toBest.delta': ({ delta }) => `+${delta} respecto a tu mejor tiempo`,
 
