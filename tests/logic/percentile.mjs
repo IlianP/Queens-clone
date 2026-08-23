@@ -28,6 +28,7 @@ const {
   seedSolveHistory,
   mergeSolveSamples,
   matchOwnEntry,
+  previewRank,
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
@@ -365,6 +366,30 @@ for (const s of [82, 68, 280]) recordSolve(12, 'hard', s); // 280 fell off the o
 localStorage.clear();
 eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
 
+// --- previewRank ------------------------------------------------------------
+// The preview has to land the fresh row exactly where saving will put it, or the
+// list re-sorts itself the moment the player presses the button.
+localStorage.clear();
+for (const [sc, sec] of [[40, 40], [55, 55], [55, 55], [90, 90]]) {
+  saveLocalScore(6, 'easy', { name: 'Ich', seconds: sec, hints: 0, mistakes: 0, score: sc });
+}
+{
+  eq(previewRank(6, 'easy', 30, 30), 0, 'a better score goes to the top');
+  eq(previewRank(6, 'easy', 200, 200), 4, 'a worse score goes to the end');
+  // The case this fixes: an exact tie does NOT overtake the entries it matched.
+  eq(previewRank(6, 'easy', 55, 55), 3, 'a tie goes behind both entries it matched');
+  // …and the preview agrees with where saving actually puts it.
+  const { rank } = saveLocalScore(6, 'easy', { name: 'Ich', seconds: 55, hints: 0, mistakes: 0, score: 55 });
+  eq(rank, 3, 'saving puts the tie in the same place the preview showed');
+  // Within an equal score the faster raw time still wins (byScore's tie-break).
+  localStorage.clear();
+  saveLocalScore(6, 'easy', { name: 'Ich', seconds: 60, hints: 0, mistakes: 0, score: 90 });
+  saveLocalScore(6, 'easy', { name: 'Ich', seconds: 30, hints: 2, mistakes: 0, score: 90 });
+  eq(previewRank(6, 'easy', 90, 45), 1, 'ranked behind the faster raw time, ahead of the slower');
+  eq(saveLocalScore(6, 'easy', { name: 'Ich', seconds: 45, hints: 1, mistakes: 0, score: 90 }).rank, 1,
+    'and saving agrees again');
+}
+
 // --- matchOwnEntry ----------------------------------------------------------
 {
   const rows = [
@@ -374,26 +399,32 @@ eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
     { name: 'Gast', seconds: 18, hints: 0, mistakes: 0, score: 18 },
   ];
   const mine = { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18 };
-  eq(matchOwnEntry(rows, mine, 2), 2, 'finds the own row');
-  eq(matchOwnEntry(rows, mine, 3), 2, 'a wrong hint still finds the only match');
-  eq(matchOwnEntry(rows, mine, -1), 2, 'works without a rank hint');
+  eq(matchOwnEntry(rows, mine), 2, 'finds the own row');
   // Same name, different score/penalties → not us.
-  eq(matchOwnEntry(rows, { ...mine, score: 99 }, 2), -1, 'a different score is not our row');
-  eq(matchOwnEntry(rows, { ...mine, hints: 1 }, 2), -1, 'a different hint count is not our row');
-  eq(matchOwnEntry(rows, { ...mine, name: 'Wer' }, 2), -1, 'a different name is not our row');
-  eq(matchOwnEntry(rows, mine, 9), 2, 'a rank beyond the list still matches on values');
-  eq(matchOwnEntry([], mine, 0), -1, 'empty list → no highlight');
-  eq(matchOwnEntry(null, mine, 0), -1, 'no list → no highlight');
+  eq(matchOwnEntry(rows, { ...mine, score: 99 }), -1, 'a different score is not our row');
+  eq(matchOwnEntry(rows, { ...mine, hints: 1 }), -1, 'a different hint count is not our row');
+  eq(matchOwnEntry(rows, { ...mine, name: 'Wer' }), -1, 'a different name is not our row');
+  eq(matchOwnEntry([], mine), -1, 'empty list → no highlight');
+  eq(matchOwnEntry(null, mine), -1, 'no list → no highlight');
 
-  // Two identical entries (the same solve submitted twice): pick the one the
-  // server's rank pointed at.
+  // THE TIE. Several rows carry the same values (the same solve submitted twice,
+  // or two solves that came out identical). top_scores orders ties by created_at
+  // ascending, so ours — the newest — is the LAST of them. Marking the first one
+  // put the green outline one row above the entry just submitted.
+  const older = new Date('2026-08-01T10:00:00Z').getTime();
   const dupes = [
-    { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18 },
-    { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18 },
-    { name: 'IlianP', seconds: 20, hints: 0, mistakes: 0, score: 20 },
+    { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18, at: older },
+    { name: 'IlianP', seconds: 18, hints: 0, mistakes: 0, score: 18, at: older + 86400000 },
+    { name: 'IlianP', seconds: 20, hints: 0, mistakes: 0, score: 20, at: older },
   ];
-  eq(matchOwnEntry(dupes, mine, 1), 1, 'ties resolved towards the reported rank');
-  eq(matchOwnEntry(dupes, mine, 0), 0, 'ties resolved towards the reported rank (first)');
+  eq(matchOwnEntry(dupes, mine), 1, 'the newest of the identical rows is ours');
+  // The timestamp is the evidence, not the position: even out of order it wins.
+  const shuffled = [dupes[1], dupes[0], dupes[2]];
+  eq(matchOwnEntry(shuffled, mine), 0, 'the newest wins wherever it sits in the list');
+  // A server that sends no created_at (SQL not re-run) falls back to the same
+  // rule expressed as a position: the last of the tied run.
+  const undated = dupes.map(({ at, ...r }) => r);
+  eq(matchOwnEntry(undated, mine), 1, 'without timestamps, the last identical row is ours');
 }
 
 if (failed) {

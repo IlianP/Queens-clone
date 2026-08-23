@@ -1049,6 +1049,7 @@ function onWin() {
     hints: hintsUsed,
     mistakes,
     score,
+    at: Date.now(), // when it was solved — the preview row's age comes from this
     saved: false,
     submittedGlobal: false,
   };
@@ -1102,14 +1103,20 @@ function renderWinLocal() {
     return;
   }
   // Not committed yet: preview where this solve would land in the local list.
+  // The preview must land the row exactly where saving will put it (see
+  // previewRank on why a tie goes behind), otherwise the list re-sorts itself
+  // under the player's eyes the moment they press the button.
   const list = getLocalScores(size, difficulty).slice();
-  const rank = previewRank(size, difficulty, pendingWin.score);
+  const rank = previewRank(size, difficulty, pendingWin.score, pendingWin.seconds);
   list.splice(rank, 0, {
     name: sanitizeNickname(dom.winNickname.value) || t('score.you'),
     seconds: pendingWin.seconds,
     hints: pendingWin.hints,
     mistakes: pendingWin.mistakes,
     score: pendingWin.score,
+    // Dated like every other row: the solve happened seconds ago, and a single
+    // row without an age in an otherwise dated list reads as a missing value.
+    date: new Date(pendingWin.at).toISOString(),
   });
   renderScoreList(dom.winScores, list.slice(0, MAX_LOCAL_ENTRIES), rank);
 }
@@ -1131,17 +1138,13 @@ async function renderWinGlobal() {
   // data and the solve simply isn't in it, so nothing is highlighted; the status
   // line says why instead (see noteGlobalNotSubmitted).
   const mine = pendingWin.submittedGlobal
-    ? matchOwnEntry(
-        rows,
-        {
-          name: pendingWin.globalName,
-          score: pendingWin.score,
-          seconds: pendingWin.seconds,
-          hints: pendingWin.hints,
-          mistakes: pendingWin.mistakes,
-        },
-        Number.isFinite(pendingWin.globalRank) ? pendingWin.globalRank - 1 : -1
-      )
+    ? matchOwnEntry(rows, {
+        name: pendingWin.globalName,
+        score: pendingWin.score,
+        seconds: pendingWin.seconds,
+        hints: pendingWin.hints,
+        mistakes: pendingWin.mistakes,
+      })
     : -1;
   renderScoreList(dom.winScores, rows, mine);
   if (!pendingWin.submittedGlobal) noteGlobalNotSubmitted();
@@ -1170,12 +1173,16 @@ function commitPendingWin(name) {
     hints: pendingWin.hints,
     mistakes: pendingWin.mistakes,
     score: pendingWin.score,
+    // Dated when it was SOLVED, not when it was saved: the win card may sit
+    // open for minutes before the button is pressed, and everything time-scoped
+    // (entry age, the 30-day window) should read the moment of the solve.
+    date: new Date(pendingWin.at).toISOString(),
   });
   // Every solve also joins the history behind the percentile feedback — the
   // top list above drops everything past its cap, so it can't carry that.
   // This is the single funnel each finished game passes through (submit or
   // flushPendingWin), and `saved` guards it against counting a solve twice.
-  recordSolve(pendingWin.size, pendingWin.difficulty, pendingWin.score);
+  recordSolve(pendingWin.size, pendingWin.difficulty, pendingWin.score, pendingWin.at);
   pendingWin.saved = true;
   pendingWin.savedRank = rank;
 }

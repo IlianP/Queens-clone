@@ -125,6 +125,11 @@ Beide Listen zeigen etwa sechs bis acht Zeilen und **scrollen** darüber hinaus,
 der Gewinn-Bildschirm nicht wächst; die eigene, frische Zeile wird dabei automatisch in
 den sichtbaren Bereich gescrollt.
 
+Bei **exakt gleichem Ergebnis** behält der ältere Eintrag den besseren Platz: eine
+Zeit einzustellen reicht nicht, man muss sie unterbieten. Das gilt lokal wie global
+und in der Vorschau genauso wie nach dem Speichern – die Liste sortiert sich also
+nicht mehr um, sobald man einträgt.
+
 Jede Zeile zeigt außerdem, **wie alt** der Eintrag ist („vor 3 Tagen"; das genaue Datum
 steht im Tooltip), und alles aus der letzten Woche ist grün hervorgehoben. Ohne diese
 Angabe wirkt eine Rangliste eingefroren – so sieht man auf einen Blick, ob gerade
