@@ -81,6 +81,7 @@ export const I18N_DE = {
 
   // ---------- win card ----------
   'win.title': '🎉 Gelöst!',
+  'win.viewBoard': 'Gelöstes Spielfeld ansehen',
   'win.tab.local': 'Lokal',
   'win.tab.global': 'Global 🌐',
   'win.tab.period': ({ days }) => `${days} Tage`,
