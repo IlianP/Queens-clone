@@ -82,6 +82,8 @@ declare
   v_score  int;
   v_key    text;
   v_recent int;
+  v_id     bigint;
+  v_at     timestamptz;
 begin
   -- Name säubern (Whitespace zusammenfassen, kürzen). Ein leerer Name bleibt
   -- LEER und wird NICHT durch ein Wort ersetzt: die Liste ist mehrsprachig, und
@@ -111,15 +113,26 @@ begin
   v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0));
 
   insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, client_key)
-  values (v_name, p_size, p_difficulty, p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), v_score, v_key);
+  values (v_name, p_size, p_difficulty, p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), v_score, v_key)
+  returning id, created_at into v_id, v_at;
 
+  -- Rang = wie viele Einträge VOR diesem stehen, und zwar in exakt der
+  -- Reihenfolge, die top_scores ausgibt (Score, dann Zeit, dann Alter). Der
+  -- zeilenweise Vergleich unten ist genau diese lexikografische Ordnung.
+  --
+  -- Gleichstand überholt also NICHT: wer dieselbe Zeit noch einmal erreicht,
+  -- steht hinter dem älteren Eintrag. Vorher zählte hier nur `seconds <`, was
+  -- den neuen Eintrag bei Gleichstand VOR den bestehenden setzte – der Rang
+  -- zeigte dann auf die erste Zeile der Gleichstandsgruppe, während er in der
+  -- Liste als letzte steht. Die Oberfläche markierte prompt die falsche Zeile.
   return query
     with bucket as (
-      select s.score, s.seconds from public.scores s
+      select s.id, s.score, s.seconds, s.created_at from public.scores s
         where s.size = p_size and s.difficulty = p_difficulty
     )
     select (select count(*) + 1 from bucket b
-              where b.score < v_score or (b.score = v_score and b.seconds < p_seconds))::bigint,
+              where (b.score, b.seconds, b.created_at, b.id)
+                  < (v_score, p_seconds, v_at, v_id))::bigint,
            (select count(*) from bucket)::bigint;
 end;
 $$;
@@ -147,7 +160,10 @@ create or replace function public.top_scores(
     from public.scores s
     where s.size = p_size and s.difficulty = p_difficulty
       and (p_since is null or s.created_at >= p_since)
-    order by s.score asc, s.seconds asc, s.created_at asc
+    -- `id` als letztes Kriterium macht die Ordnung total: created_at allein
+    -- könnte bei zwei exakt gleichzeitigen Einträgen kippen, und submit_score
+    -- rechnet den Rang in genau dieser Reihenfolge aus.
+    order by s.score asc, s.seconds asc, s.created_at asc, s.id asc
     limit least(greatest(coalesce(p_limit, 10), 1), 100);
 $$;
 
@@ -230,3 +246,13 @@ grant execute on function public.score_counts(int, text, timestamptz) to anon;
 --   bisher: kein Alter an den Zeilen (created_at fehlt in der Antwort), keine
 --   Zeitwertung (score_counts antwortet 404, und die Oberfläche bietet den
 --   Reiter dann gar nicht erst an). Beides fällt still zurück, nichts bricht.
+--
+--   2026-08: Gleichstand überholt nicht mehr. submit_score() zählt den Rang
+--   jetzt in derselben Reihenfolge, die top_scores ausgibt (Score, Zeit, Alter);
+--   vorher landete ein neuer Eintrag bei exaktem Gleichstand VOR dem älteren,
+--   sodass gemeldeter Rang und Listenposition um eine Zeile auseinanderfielen.
+--   Nur die Funktion erneut ausführen (Abschnitt 4) – kein drop nötig, die
+--   Signatur bleibt gleich, Daten werden nicht angefasst. Ohne diese Migration
+--   markiert die Oberfläche trotzdem die richtige Zeile (sie verlässt sich nicht
+--   mehr auf den Rang); nur die Statuszeile kann bei Gleichstand einen Platz zu
+--   gut anzeigen.

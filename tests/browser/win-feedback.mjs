@@ -118,9 +118,18 @@ await page.route('**/rest/v1/rpc/submit_score', async (route) => {
     body: JSON.stringify([{ rank: 3, total: 40 }]),
   });
 });
+// Flipped on for step 3b: the list then also holds an entry with EXACTLY our
+// values, submitted earlier — the tie that used to mis-place the highlight.
+let twinBefore = false;
 await page.route('**/rest/v1/rpc/top_scores', async (route) => {
   const rows = otherRows.slice();
-  if (submitted) rows.splice(2, 0, submitted); // lands third, best-first order
+  if (submitted) {
+    // Ordered the way top_scores does it: equal values, oldest first, so ours
+    // is the LAST of the tied run.
+    const mine = { ...submitted, created_at: new Date().toISOString() };
+    const twin = { ...submitted, created_at: new Date(Date.now() - 2 * 86400000).toISOString() };
+    rows.splice(2, 0, ...(twinBefore ? [twin, mine] : [mine])); // lands third, best-first order
+  }
   await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
 });
 
@@ -252,11 +261,11 @@ try {
       })
     );
     // The 50 seeded entries are from 2026-01-01, so months old; the previewed
-    // fresh row isn't saved yet and has no date at all.
-    const dated = ages.filter((a) => a !== null);
-    check('the local list shows how old its entries are', dated.length >= MAX_LOCAL - 1);
-    check('… as a relative age', dated.every((a) => /vor|gestern|Jahr/.test(a)));
-    check('the not-yet-saved preview row carries no age', ages.some((a) => a === null));
+    // fresh row is dated too (it was solved seconds ago), because a single row
+    // without an age in an otherwise dated list reads as a missing value.
+    check('every row shows how old it is', ages.every((a) => a !== null));
+    check('… as a relative age', ages.every((a) => /vor|gestern|Jahr|jetzt/.test(a)));
+    check('the fresh row is the one that just happened', ages.some((a) => /jetzt|Sek/.test(a)));
   }
 
   // --- 2. global tab before submitting: nothing highlighted, and it says why ---
@@ -297,6 +306,43 @@ try {
     // (Intl/DIN 5008), so a plain space never matches.
     /Platz 3 von 40/.test(s.status) && /besser als \d+\s%/.test(s.status)
   );
+
+  // --- 3b. a tie must not move the highlight to the other row --------------
+  // Someone else (or an earlier run) is on the board with exactly our values.
+  // top_scores puts the older of them first, so ours is the second one — while
+  // submit_score's rank pointed at the first. Marking by that rank outlined the
+  // row ABOVE the entry that had just been submitted, which is the reported bug.
+  {
+    twinBefore = true;
+    await page.click('#win-tab-local');
+    await page.waitForTimeout(100);
+    await page.click('#win-tab-global');
+    await page.waitForFunction(
+      () => document.querySelectorAll('#win-scores .score-row').length === 6,
+      { timeout: 15000 }
+    );
+    const tie = await page.evaluate(() =>
+      [...document.querySelectorAll('#win-scores .score-row')].map((r) => ({
+        val: r.querySelector('.score-val').textContent,
+        age: r.querySelector('.score-age')?.textContent ?? null,
+        me: r.classList.contains('me'),
+      }))
+    );
+    console.log('    tie rows:', JSON.stringify(tie));
+    const marked = tie.filter((r) => r.me);
+    check('exactly one row is highlighted despite the tie', marked.length === 1);
+    check('the two tied rows really are identical', tie[2].val === tie[3].val);
+    check('the highlight is on the NEWER of the two, not the row above it', tie[3].me && !tie[2].me);
+    check('and their ages tell them apart', tie[2].age !== tie[3].age && /jetzt|Sek/.test(tie[3].age));
+    twinBefore = false;
+    await page.click('#win-tab-local');
+    await page.waitForTimeout(100);
+    await page.click('#win-tab-global');
+    await page.waitForFunction(
+      () => document.querySelectorAll('#win-scores .score-row').length === 5,
+      { timeout: 15000 }
+    );
+  }
 
   // Switching away and back keeps the highlight (it must not depend on the
   // submit having just happened).

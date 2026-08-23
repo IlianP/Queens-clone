@@ -5,7 +5,7 @@ nothing runs these automatically, and the project still ships with **no build
 step and no dependencies** (see `../CLAUDE.md`). They're here so a later session
 doesn't have to re-derive how to drive this game from scratch.
 
-Two kinds, split by what they need:
+Three kinds, split by what they need:
 
 ## `logic/` — pure Node, no browser, no dependencies
 
@@ -30,14 +30,25 @@ Supabase leaderboard. It asserts `submitScore` retries transient failures
 up after a bounded number of attempts. It exercises the real backoff schedule,
 so it takes a few seconds.
 
+`leaderboard-period.mjs` covers the read half of `js/leaderboard.js`, also with a
+mocked `fetch`: that a windowed read sends `p_since` while an all-time read sends
+none (an un-migrated database has no such parameter and would 404), that
+`created_at` becomes `at` and its absence reads as undated, and that every
+time-scoped call fails soft to `null` — which is what silently hides the period
+tab rather than breaking the modal.
+
 `percentile.mjs` covers the relative-feedback half of `js/highscores.js` — the
 solve history, `percentileBetter` / `globalPercentile` (ties count half, and the
 rounding never claims a flat 0/100 unless the score really beat none/all),
 `getPersonalStats`, the `seedSolveHistory` backfill with its `mergeSolveSamples`
 multiset union (idempotent; the reason a pre-history device doesn't report "von 0
 Partien", that a partly filled history is topped up rather than skipped, and that
-a solve sitting in *both* stores is still counted once) and `matchOwnEntry`. It
-installs a small in-memory `localStorage` stand-in, so it stays pure Node.
+a solve sitting in *both* stores is still counted once), the dated storage format
+with its rolling window, and the two places that decide where an equal result
+lands: `previewRank` (a tie doesn't overtake, and the preview agrees with what
+saving does) and `matchOwnEntry` (of several identical rows, the newest is ours —
+marking the first one is what outlined the wrong row after a submit). It installs
+a small in-memory `localStorage` stand-in, so it stays pure Node.
 
 `verify-i18n.mjs` is the guard that makes adding a language safe. It can't judge
 a translation, but it checks everything mechanical: that every pack in `js/i18n/`
@@ -66,6 +77,22 @@ alphabet + spoken number words, the cell-action verbs (Dame/Punkt/leeren),
 out-of-range rejection, the global actions, and that `stopp` always wins. Pure
 logic — `voice.js` only touches `window` inside its recogniser wrapper, never at
 import time.
+
+## `sql/` — a throwaway local Postgres
+
+`rank-order.sql` is the only test that touches the *server* half of the
+leaderboard. It applies `docs/leaderboard-setup.sql` to a scratch database and
+checks that `submit_score`'s reported rank equals the row's actual position in
+`top_scores` — for nine submits full of collisions (two players on one score, the
+same solve submitted twice, a tie on the worst score). That agreement is what the
+win screen's `.me` highlight and its status line both depend on, and the one case
+where they used to disagree — an exact tie — put the green outline on the row
+*above* the entry just submitted. It also checks `score_counts` against the
+windowed list and that re-running the setup file leaves existing rows alone.
+
+⚠ It **truncates `public.scores`** — throwaway database only, never the live
+project. The file's header carries the initdb/pg_ctl commands. Nothing runs it
+automatically: there is no Postgres in CI, exactly like there is no Playwright.
 
 ## `browser/` — Playwright, environment-provided
 
@@ -104,7 +131,11 @@ history existed" state (full top list, no history) and checks the boot backfill
 makes the personal line compare against those games; that the global tab
 highlights nothing before a submit but explains the absence in the status line;
 that after a submit the player's own row carries the `.me` highlight (found by
-value, not by rank index) and the status reports the share beaten; and that the
+value, not by rank index) and the status reports the share beaten; that a row
+carrying **exactly our values** but submitted earlier does not steal that
+highlight — the tie case, where marking by the server's rank outlined the row
+above the fresh entry; that every row shows its age and the fresh one reads
+"jetzt"; that the rolling-window line appears on a second solve; and that the
 debug-only copy button on the win card exports the scoring + percentile inputs.
 It also pins the **layout** guarantees around a 50-entry list: the list scrolls
 instead of stretching the card, only a handful of rows show at once, the card stays
@@ -118,6 +149,14 @@ own `hidden` state from the previous hint, so a card that failed to open reads a
 clickable and Playwright then waits out a full 30 s timeout. A JS error inside
 `onWin` looks exactly like that, so the helper throws with the collected page
 errors instead of hanging — which is how an unimported constant was found.
+
+`leaderboard-period.mjs` covers the adaptive period tab in the Bestenliste,
+bucket by bucket, with `score_counts` and `top_scores` both mocked: offered where
+the window holds a field, hidden where it holds almost nothing, hidden where
+*everything* is inside it (the tab would be a copy of the global list), and hidden
+against a server that answers 404 because the SQL was never re-run. It also
+measures the three-tab row at 390/360/320px — three tabs plus "Global 🌐" is the
+tightest label row in the app.
 
 `i18n-layout.mjs` is the layout half of the i18n guard — `logic/verify-i18n.mjs`
 checks that the packs *match*, this one checks that they *fit*. It walks all four

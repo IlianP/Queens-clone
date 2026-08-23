@@ -161,11 +161,24 @@ export function saveLocalScore(size, difficulty, entry) {
 
 // Where a hypothetical entry would rank in a bucket without saving it — used to
 // preview a fresh win's placement in the local list before it's committed.
-export function previewRank(size, difficulty, score) {
+//
+// TIES DO NOT OVERTAKE: an equally good entry that is already on the list keeps
+// its place, and the fresh one goes behind it. That is not a detail — it is what
+// saveLocalScore does (it pushes the new entry and sorts with a *stable* sort,
+// so an exact tie stays last), and a preview that put the row first instead made
+// the list visibly re-sort itself the moment the score was saved. Same rule as
+// the global list, where top_scores orders ties by created_at ascending.
+//
+// `seconds` mirrors byScore's tie-break; leaving it out keeps the old
+// score-only behaviour for callers that don't have it.
+export function previewRank(size, difficulty, score, seconds = null) {
   const list = getLocalScores(size, difficulty);
   let rank = 0;
   for (const e of list) {
-    if (e.score < score) rank++;
+    const better =
+      e.score < score ||
+      (e.score === score && (seconds == null || e.seconds <= seconds));
+    if (better) rank++;
     else break;
   }
   return rank;
@@ -387,7 +400,10 @@ function placeAmong(score, others) {
 // player's own past ones, computed BEFORE the solve is recorded:
 //   total      — previous solves in this bucket (0 on the very first one)
 //   rank       — 1-based placement among total + 1, ties resolved in favour of
-//                the new solve (same convention as previewRank)
+//                the new solve. Deliberately the opposite of previewRank /
+//                matchOwnEntry: those place a row in a list the player is looking
+//                at, so a tie must not jump over the entry it matched, while this
+//                number stands on its own and reads as encouragement
 //   percentile — percentileBetter, or null when there are too few to be honest
 //   isBest     — a new personal best (strictly better than everything before)
 //   bestScore  — the previous best, or null when there wasn't one
@@ -441,17 +457,26 @@ export function getPersonalStats(size, difficulty, score, { now = Date.now(), wi
 }
 
 // Find the player's own row in a fetched global top list, so the UI can mark it
-// the same way the local list marks a fresh entry. Pure.
+// the same way the local list marks a fresh entry. Pure. Returns -1 when the
+// entry isn't in the list (rank beyond the fetched limit), which means "don't
+// highlight anything".
 //
-// The server's rank can't be used as an index directly: submit_score ranks a tie
-// on both score and seconds in the new entry's favour, while top_scores orders
-// ties by created_at, which puts the newest LAST among them. So match on the
-// values instead and, when several rows are identical, take the one closest to
-// where the rank said it would be. Returns -1 when the entry isn't in the list
-// (rank beyond the fetched limit), which means "don't highlight anything".
-export function matchOwnEntry(rows, entry, expectedIndex = -1) {
+// Rows are matched on their values, and when SEVERAL rows carry the same values
+// — a genuine tie with another player, or the same solve submitted twice — the
+// one that was inserted LAST is ours: our row is the newest by definition, and
+// top_scores orders ties by created_at ascending, so it sits at the end of the
+// tied run. The timestamp says so directly; without one (a server that predates
+// created_at in the response) the last matching position says the same thing.
+//
+// The server's rank must NOT be used to pick between them, which is the bug this
+// replaced: submit_score ranked a tie in the new entry's favour, so the rank
+// pointed at the FIRST row of the tied run while the list had ours at the END —
+// the highlight then sat one row above the entry that had just been submitted.
+// (submit_score now ranks by the same rule, but the client can't assume a
+// database has been migrated, and with this rule it doesn't need to.)
+export function matchOwnEntry(rows, entry) {
   if (!Array.isArray(rows) || !entry) return -1;
-  let best = -1;
+  const matches = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (!r) continue;
@@ -463,14 +488,12 @@ export function matchOwnEntry(rows, entry, expectedIndex = -1) {
       Number(r.mistakes) !== Number(entry.mistakes)
     )
       continue;
-    if (best === -1) best = i;
-    else if (
-      expectedIndex >= 0 &&
-      Math.abs(i - expectedIndex) < Math.abs(best - expectedIndex)
-    )
-      best = i;
+    matches.push(i);
   }
-  return best;
+  if (matches.length <= 1) return matches.length ? matches[0] : -1;
+  const dated = matches.filter((i) => Number.isFinite(rows[i].at));
+  if (dated.length) return dated.reduce((a, b) => (rows[b].at >= rows[a].at ? b : a));
+  return matches[matches.length - 1];
 }
 
 // The global counterpart: submit_score reports a 1-based `rank` out of `total`
