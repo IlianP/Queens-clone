@@ -334,14 +334,25 @@ lineCells, excludedCells, applyLabel }`. `kind` is one of `place` /
 at once (e.g. every cell that dead-ends the same unit) — plural copy and the
 apply-label plural are handled in `hint.js`/`elimHint`.
 
-### Sharing (the QR code)
+### Sharing (the QR code) and the project link
 
-The settings card's title row carries a small QR button on the right, level with
-the heading (`.settings-head`), which opens a second overlay on top of the
-settings — `#qr-overlay`, z-index 21, with the settings staying visible behind
-it, so closing the code returns there rather than to the board. That is why
-Escape has to close the QR **first and return**, and why `closeSettings()` also
-hides it: the code is a child dialog, never a sibling.
+The settings card's title row carries a small ⓘ button on the right, level
+with the heading (`.settings-head`, `#open-qr`), which opens a second overlay
+on top of the settings — `#qr-overlay`, z-index 21, with the settings staying
+visible behind it, so closing it returns there rather than to the board. That
+is why Escape has to close it **first and return**, and why `closeSettings()`
+also hides it: it's a child dialog, never a sibling. The button/overlay id
+(`open-qr` / `qr-overlay`) predates the icon swap and still reflects the
+overlay's original, QR-only purpose — left as-is rather than renamed for a
+content addition.
+
+The overlay covers two purposes that share one dialog rather than two: sharing
+the game (QR code + link, unchanged) and, below a divider, a one-line pointer
+to the GitHub repo (`qr.repoHint` + a plain link, both scoped by the `qr.*`
+i18n keys) for players who want to file an issue or open a PR — see
+`CONTRIBUTING.md` at the repo root for what a human contributor needs. The
+button icon is an info circle (ⓘ) rather than a QR glyph now that the overlay
+is about more than sharing; its `qr.button` aria-label/title changed to match.
 
 **The app ships no QR generator.** The address is fixed (GitHub Pages), so the
 code is fixed too: a plain `<svg>` in `index.html`. `tools/generate-qr.mjs` is a

@@ -298,3 +298,14 @@ Because of ES modules the page has to be served over HTTP (not via `file://`):
 python3 -m http.server 8000
 # then open http://localhost:8000
 ```
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome — see
+[CONTRIBUTING.md](./CONTRIBUTING.md) for how to get set up and what to run
+before opening a PR. The in-game settings (⚙ → the ⓘ button) also link to the
+repo.
+
+## License
+
+[MIT](./LICENSE)

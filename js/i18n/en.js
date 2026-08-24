@@ -184,11 +184,13 @@ export const I18N_EN = {
   'settings.close': 'Close',
 
   // ---------- share / QR dialog ----------
-  'qr.button': 'Share game via QR code',
+  'qr.button': 'Share game & project info',
   'qr.title': 'Share game',
   'qr.hint':
     'Point a phone camera at the code – the game opens straight in the browser, nothing to install.',
   'qr.alt': 'QR code for the game’s web address',
+  'qr.repoHint':
+    'Curious how it works, or have an idea? The project is open source on GitHub – issues and pull requests are welcome.',
 
   // ---------- leaderboard modal ----------
   'lb.title': '🏆 Leaderboard',
