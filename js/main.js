@@ -100,6 +100,7 @@ const dom = {
   confetti: el('confetti'),
   partyClose: el('party-close'),
   winOverlay: el('win-overlay'),
+  winClose: el('win-close'),
   winConfetti: el('win-confetti'),
   winTime: el('win-time'),
   winPersonal: el('win-personal'),
@@ -216,6 +217,12 @@ let winHandled = false;
 // global board twice (the manual retry checks it).
 let pendingWin = null;
 let globalSubmitInFlight = false; // a submit (with its retries) is running
+// Set only when opening settings *from* the win card (which hides it first) —
+// closeSettings consumes it to decide whether to bring the card back. Left
+// false when the card was already dismissed (✕ or a board tap) or settings
+// was opened straight from the toolbar, so closing settings doesn't
+// re-cover a board the player asked to see.
+let winCardHiddenForSettings = false;
 
 // ---------- Timer ----------
 // Only counts while the window is focused/visible. Time is accumulated across
@@ -1574,7 +1581,16 @@ function resolveTapCell(x, y, defR, defC) {
 }
 
 dom.board.addEventListener('pointerdown', (e) => {
-  if (!game || hintActive || game.isWon()) return; // solved board is locked
+  if (!game || hintActive) return;
+  if (game.isWon()) {
+    // Solved board is locked to input, but a tap still does something useful:
+    // bring the win card back if it was dismissed to admire the board.
+    if (dom.winOverlay.hidden) {
+      playUi();
+      show(dom.winOverlay);
+    }
+    return;
+  }
 
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   const cell = e.target.closest('.cell');
@@ -2168,9 +2184,18 @@ dom.winNewGame.addEventListener('click', () => {
 });
 dom.winSettings.addEventListener('click', () => {
   playUi();
+  winCardHiddenForSettings = true;
   hide(dom.winOverlay);
   clearWinConfetti();
   openSettings();
+});
+// Dismiss the card without discarding the win: pendingWin is untouched, so the
+// result is still there to submit (or gets flushed to the local list normally)
+// once the player reopens it — see the pointerdown handler on the board below.
+dom.winClose.addEventListener('click', () => {
+  playUi();
+  hide(dom.winOverlay);
+  clearWinConfetti();
 });
 dom.winSubmit.addEventListener('click', onWinSubmit);
 dom.winTabLocal.addEventListener('click', () => selectWinTab('local'));
@@ -2224,7 +2249,8 @@ dom.qrOverlay.addEventListener('click', (e) => {
 function closeSettings() {
   hide(dom.qrOverlay);
   hide(dom.settingsOverlay);
-  if (game && game.isWon()) show(dom.winOverlay);
+  if (winCardHiddenForSettings && game && game.isWon()) show(dom.winOverlay);
+  winCardHiddenForSettings = false;
 }
 
 function openSettings() {

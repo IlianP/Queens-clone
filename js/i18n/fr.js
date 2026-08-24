@@ -87,6 +87,7 @@ export const I18N_FR = {
 
   // ---------- win card ----------
   'win.title': '🎉 Résolu !',
+  'win.viewBoard': 'Voir la grille résolue',
   'win.tab.local': 'Local',
   'win.tab.global': 'Global 🌐',
   'win.tab.period': ({ days }) => `${days} jours`,

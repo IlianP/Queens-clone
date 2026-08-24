@@ -108,7 +108,19 @@
          visible above it so the solved board can be admired, and the action
          buttons sit within thumb reach on mobile). -->
     <div class="hint-card win-card" id="win-overlay" hidden>
-      <div class="hint-card-title" data-i18n="win.title">🎉 Solved!</div>
+      <div class="win-card-head">
+        <div class="hint-card-title" data-i18n="win.title">🎉 Solved!</div>
+        <!-- Dismisses the card so the solved board can be seen underneath;
+             tapping the (otherwise frozen) board brings it back. -->
+        <button
+          class="btn icon win-close-btn"
+          id="win-close"
+          type="button"
+          data-i18n-attr="aria-label:win.viewBoard|title:win.viewBoard"
+          aria-label="View solved board"
+          title="View solved board"
+        >✕</button>
+      </div>
       <p class="hint-card-text win-summary" id="win-time"></p>
       <!-- Relative feedback on the fresh result ("besser als 88 % deiner
            Partien"): available instantly and offline, unlike the global

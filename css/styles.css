@@ -957,6 +957,26 @@ html[data-i18n-ready] .app {
   color: var(--muted);
 }
 
+/* Title row of the win card: heading left, a small close button right — same
+   layout as .settings-head. Closing hides the card so the solved board (which
+   is otherwise frozen and unobstructed above it) can be seen in full; tapping
+   the board again brings the card back. */
+.win-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.win-card-head .hint-card-title {
+  margin-bottom: 0;
+}
+.win-close-btn {
+  flex: none;
+  padding: 6px 10px;
+  font-size: 1rem;
+}
+
 .win-card {
   border: 2px solid rgba(23, 160, 106, 0.5);
   padding: 20px 22px;
