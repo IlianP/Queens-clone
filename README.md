@@ -110,6 +110,11 @@ its own ranking; 🏆 lets you browse all of them.
 Both lists show roughly six to eight rows and **scroll** beyond that so the win
 screen doesn't grow; your own fresh row is scrolled into view automatically.
 
+On an **exact tie** the older entry keeps the better place: matching a time isn't
+enough, you have to beat it. That holds locally and globally, and in the preview
+exactly as after saving – so the list no longer re-sorts itself the moment you
+submit.
+
 Every row also shows **how old** the entry is (“3 days ago”; the exact date is in the
 tooltip), and anything from the last week is highlighted in green. Without that a
 leaderboard reads as frozen – this way you can see at a glance whether anyone is

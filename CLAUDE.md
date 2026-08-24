@@ -51,6 +51,13 @@ before re-deriving how to drive things:
   same value *types*, every template still uses the parameters the fallback uses,
   and every key referenced from `index.html` / `t('…')` exists. Run it after
   touching any UI string.
+- `tests/sql/rank-order.sql` — the server half: applies
+  `docs/leaderboard-setup.sql` to a **throwaway** local Postgres (it truncates
+  `public.scores`, never point it at the live project) and asserts that
+  `submit_score`'s rank equals the row's position in `top_scores` across nine
+  colliding submits, that `score_counts` agrees with the windowed list, and that
+  re-running the file keeps existing rows. The header carries the initdb
+  commands. Run it after any change to that SQL file.
 - `tests/browser/` — Playwright driving the real DOM. Playwright + Chromium are
   **environment-provided** (fixed `/opt` paths, no repo dependency), so these run
   only in that kind of environment. `board-helpers.mjs` encapsulates the fiddly
@@ -458,9 +465,34 @@ list uses, but only **after** a submit — before that the solve genuinely isn't
 the board, so nothing is highlighted and `noteGlobalNotSubmitted` borrows the
 (collapsed-while-empty) submit status line to say so rather than growing the
 card. The row is found by `matchOwnEntry`, **not** by indexing with the server's
-rank: `submit_score` ranks a score/seconds tie in the new entry's favour while
-`top_scores` orders ties by `created_at` (newest last), so the rank is only used
-as a tie-breaker hint between value-identical rows.
+rank — see "One tie rule everywhere" below for why that indexing was wrong.
+
+### One tie rule everywhere: matching doesn't overtake
+
+Four places decide where an equally good result lands, and they must agree —
+they didn't, and the visible symptom was the green "that's you" outline sitting
+one row **above** the entry that had just been submitted:
+
+- `top_scores` orders `score asc, seconds asc, created_at asc`, so among
+  identical values the newest — the one just inserted — is **last**.
+- `saveLocalScore` pushes the new entry and sorts with a *stable* sort, so an
+  exact tie also stays last. `previewRank` now mirrors that (it counts an
+  existing entry as ahead on `e.seconds <= seconds`); before, it put the fresh
+  row *first* among ties and the list visibly re-sorted itself on save.
+- `submit_score` used to count only strictly better rows, ranking a tie in the
+  new entry's favour — the returned rank then pointed at the FIRST row of the
+  tied run while the list had ours at the end. It now counts rows that sort
+  before the new one under the same four-part ordering (`(score, seconds,
+  created_at, id) < …`), so rank and list position agree exactly.
+- `matchOwnEntry` therefore ignores the rank entirely and picks, among
+  value-identical rows, the one with the newest `at` (or the last position when
+  the server sends no `created_at`). That rule holds on an un-migrated database
+  too, which is why the client doesn't depend on the SQL change above.
+
+The one deliberate exception is `getPersonalStats`'s `rank`: it ranks a fresh
+solve among the player's own past ones with no list underneath it to contradict,
+so a tie there stays in the new solve's favour. `percentileBetter` is unrelated
+again — a tie counts as half a win there, the standard percentile convention.
 
 Debug mode adds the whole scoring picture to the debug export
 (`buildResultDebug` → `info.result`): score components and formula, the
