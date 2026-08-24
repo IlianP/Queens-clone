@@ -316,3 +316,14 @@ Wegen ES-Modulen muss die Seite über einen Webserver laufen (nicht per `file://
 python3 -m http.server 8000
 # dann http://localhost:8000 öffnen
 ```
+
+## Mitmachen
+
+Bug-Reports, Ideen und Pull Requests sind willkommen – siehe
+[CONTRIBUTING.md](./CONTRIBUTING.md) (Englisch) für den Einstieg und was vor
+einem PR zu prüfen ist. In den Spiel-Einstellungen (⚙ → der ⓘ-Button) geht es
+ebenfalls zum Repository.
+
+## Lizenz
+
+[MIT](./LICENSE)

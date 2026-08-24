@@ -188,11 +188,13 @@ export const I18N_FR = {
   'settings.close': 'Fermer',
 
   // ---------- share / QR dialog ----------
-  'qr.button': 'Partager le jeu par QR code',
+  'qr.button': 'Partager le jeu & infos du projet',
   'qr.title': 'Partager le jeu',
   'qr.hint':
     'Dirige l’appareil photo d’un téléphone vers le code – le jeu s’ouvre directement dans le navigateur, sans rien installer.',
   'qr.alt': 'QR code de l’adresse web du jeu',
+  'qr.repoHint':
+    'Curieux de savoir comment ça marche, ou une idée à proposer ? Le projet est open source sur GitHub – issues et pull requests sont les bienvenues.',
 
   // ---------- leaderboard modal ----------
   'lb.title': '🏆 Classement',

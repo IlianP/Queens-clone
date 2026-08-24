@@ -1477,6 +1477,19 @@ html[data-i18n-ready] .app {
 .qr-url a {
   color: var(--ink);
 }
+.qr-repo-hint {
+  margin: 14px 0 6px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+}
+.qr-repo-link {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+.qr-repo-link a {
+  color: var(--ink);
+}
 
 /* ---------- Loading ---------- */
 .loading {
