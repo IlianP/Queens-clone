@@ -22,16 +22,19 @@ const fail = (msg) => {
 };
 
 const SUBMIT_URL = '/rest/v1/rpc/submit_score';
-const ENTRY = { name: 'Tester', size: 7, difficulty: 'medium', seconds: 42, hints: 0, mistakes: 0 };
+const ENTRY = {
+  name: 'Tester', size: 7, difficulty: 'medium', seconds: 42, hints: 0, mistakes: 0,
+  submissionId: '2ce3f7d6-5238-44df-a57c-8c3d8c8f7e82',
+};
 const okBody = [{ rank: 3, total: 10 }];
 
 // Install a fetch mock that plays back `steps` in order. Each step is either
 // { throw: true } (network error), or { status, body }. Records every URL hit.
 function installFetch(steps) {
   const calls = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, init) => {
     const i = calls.length;
-    calls.push(String(url));
+    calls.push({ url: String(url), body: JSON.parse((init && init.body) || '{}') });
     const step = steps[Math.min(i, steps.length - 1)];
     if (step.throw) throw new Error('network down');
     return {
@@ -55,7 +58,9 @@ try {
     const res = await submitScore(ENTRY, { onRetry: (a, t) => retries.push([a, t]) });
     if (!res || res.rank !== 3 || res.total !== 10) fail(`transient-then-ok: bad result ${JSON.stringify(res)}`);
     if (calls.length !== 3) fail(`transient-then-ok: expected 3 attempts, got ${calls.length}`);
-    if (!calls.every((u) => u.endsWith(SUBMIT_URL))) fail(`transient-then-ok: wrong URL ${calls[0]}`);
+    if (!calls.every((c) => c.url.endsWith(SUBMIT_URL))) fail('transient-then-ok: wrong URL ' + calls[0].url);
+    if (!calls.every((c) => c.body.p_submission_id === ENTRY.submissionId))
+      fail('transient-then-ok: retries did not reuse the idempotency key');
     // Two failures before success -> two retry notifications, numbered 2 then 3.
     if (retries.length !== 2 || retries[0][0] !== 2 || retries[1][0] !== 3)
       fail(`transient-then-ok: bad onRetry sequence ${JSON.stringify(retries)}`);
