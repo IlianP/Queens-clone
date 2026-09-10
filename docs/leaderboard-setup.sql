@@ -150,7 +150,7 @@ create or replace function public.submit_score(
   p_name text, p_size int, p_difficulty text,
   p_seconds int, p_hints int, p_mistakes int, p_submission_id uuid
 ) returns table (rank bigint, total bigint)
-  language plpgsql security definer set search_path = public as $
+  language plpgsql security definer set search_path = public as $idempotent$
 declare
   v_name text; v_score int; v_key text; v_recent int;
   v_id bigint; v_at timestamptz; v_size int; v_difficulty text; v_seconds int;
@@ -203,7 +203,7 @@ begin
                   < (v_score, v_seconds, v_at, v_id))::bigint,
            (select count(*) from bucket)::bigint;
 end;
-$;
+$idempotent$;
 
 -- 5) Bestenliste lesen (nur unbedenkliche Spalten, best-first) -----------------
 -- created_at wird MITGELIEFERT: die Oberfläche zeigt daneben das Alter des
