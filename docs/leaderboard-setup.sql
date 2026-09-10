@@ -36,14 +36,21 @@ create table if not exists public.scores (
   seconds     int         not null,
   hints       int         not null default 0,
   mistakes    int         not null default 0,
-  score       int         not null,
-  client_key  text
+  score          int         not null,
+  client_key     text,
+  submission_id  uuid
 );
+
+-- Nullable keeps historical rows untouched; new clients provide a UUID.
+alter table public.scores add column if not exists submission_id uuid;
 
 create index if not exists scores_bucket_idx
   on public.scores (size, difficulty, score, seconds);
 create index if not exists scores_ratelimit_idx
   on public.scores (client_key, created_at);
+-- One solved game can own this UUID only once; historical rows have no key.
+create unique index if not exists scores_submission_id_unique
+  on public.scores (submission_id) where submission_id is not null;
 -- Für die zeitlich begrenzte Bestenliste ("letzte N Tage"): der Bucket-Index
 -- oben trägt den Zeitfilter nicht, weil created_at dort gar nicht vorkommt.
 create index if not exists scores_recent_idx
@@ -137,6 +144,67 @@ begin
 end;
 $$;
 
+-- 4b) Idempotent submit for current clients --------------------------------------
+-- The original six-argument function remains for already-cached clients.
+create or replace function public.submit_score(
+  p_name text, p_size int, p_difficulty text,
+  p_seconds int, p_hints int, p_mistakes int, p_submission_id uuid
+) returns table (rank bigint, total bigint)
+  language plpgsql security definer set search_path = public as $
+declare
+  v_name text; v_score int; v_key text; v_recent int;
+  v_id bigint; v_at timestamptz; v_size int; v_difficulty text; v_seconds int;
+begin
+  if p_submission_id is null then raise exception 'missing submission id'; end if;
+  v_name := left(btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')), 20);
+  if p_size < 5 or p_size > 12 then raise exception 'bad size'; end if;
+  if p_difficulty not in ('easy', 'medium', 'hard') then raise exception 'bad difficulty'; end if;
+  if p_seconds is null or p_seconds < queens_min_seconds(p_size) or p_seconds > 86400 then
+    raise exception 'implausible time';
+  end if;
+  if coalesce(p_hints, 0) < 0 or coalesce(p_hints, 0) > 999
+     or coalesce(p_mistakes, 0) < 0 or coalesce(p_mistakes, 0) > 9999 then
+    raise exception 'bad counters';
+  end if;
+
+  -- A previous accepted key bypasses the rate limit and is returned as-is.
+  select id, size, difficulty, score, seconds, created_at
+    into v_id, v_size, v_difficulty, v_score, v_seconds, v_at
+    from public.scores where submission_id = p_submission_id;
+
+  if not found then
+    v_key := md5(coalesce(host(inet_client_addr()), '') || '|' || current_date::text);
+    select count(*) into v_recent from public.scores
+      where client_key = v_key and created_at > now() - interval '1 minute';
+    if v_recent >= 20 then raise exception 'rate limited'; end if;
+
+    v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0));
+    v_size := p_size; v_difficulty := p_difficulty; v_seconds := p_seconds;
+    insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, client_key, submission_id)
+    values (v_name, v_size, v_difficulty, v_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), v_score, v_key, p_submission_id)
+    on conflict (submission_id) where submission_id is not null do nothing
+    returning id, created_at into v_id, v_at;
+
+    -- A concurrent identical request may have won the unique-index race.
+    if not found then
+      select id, size, difficulty, score, seconds, created_at
+        into v_id, v_size, v_difficulty, v_score, v_seconds, v_at
+        from public.scores where submission_id = p_submission_id;
+    end if;
+  end if;
+
+  return query
+    with bucket as (
+      select s.id, s.score, s.seconds, s.created_at from public.scores s
+        where s.size = v_size and s.difficulty = v_difficulty
+    )
+    select (select count(*) + 1 from bucket b
+              where (b.score, b.seconds, b.created_at, b.id)
+                  < (v_score, v_seconds, v_at, v_id))::bigint,
+           (select count(*) from bucket)::bigint;
+end;
+$;
+
 -- 5) Bestenliste lesen (nur unbedenkliche Spalten, best-first) -----------------
 -- created_at wird MITGELIEFERT: die Oberfläche zeigt daneben das Alter des
 -- Eintrags ("vor 3 Tagen"). Das ist unbedenklich – der Zeitpunkt einer Übermittlung
@@ -185,6 +253,7 @@ $$;
 
 -- 6) Ausführrechte nur für diese Funktionen ------------------------------------
 grant execute on function public.submit_score(text, int, text, int, int, int) to anon;
+grant execute on function public.submit_score(text, int, text, int, int, int, uuid) to anon;
 grant execute on function public.top_scores(int, text, int, timestamptz) to anon;
 grant execute on function public.score_counts(int, text, timestamptz) to anon;
 
@@ -256,3 +325,7 @@ grant execute on function public.score_counts(int, text, timestamptz) to anon;
 --   markiert die Oberfläche trotzdem die richtige Zeile (sie verlässt sich nicht
 --   mehr auf den Rang); nur die Statuszeile kann bei Gleichstand einen Platz zu
 --   gut anzeigen.
+
+-- 2026-09: Idempotente Score-Einreichung. Die ganze Datei erneut ausführen,
+-- um submission_id, den Unique-Index, die sichere sieben-Parameter-Funktion
+-- und ihre Berechtigung zu ergänzen. Bestehende Score-Zeilen bleiben unverändert.
