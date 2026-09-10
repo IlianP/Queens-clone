@@ -99,3 +99,18 @@ begin
   if v_rows <> 9 then raise exception 're-running the setup file lost rows: % left', v_rows; end if;
   raise notice 'ok: the setup file is repeatable, all 9 rows survived';
 end $$;
+
+-- The same key represents one solved game, even if its response was lost.
+do $$
+declare v_first record; v_second record; v_rows bigint;
+  v_key uuid := '7a39bfa2-9518-4c87-a861-1fb394b8cf4d';
+begin
+  select rank, total into v_first from submit_score('Einmal', 8, 'easy', 77, 0, 0, v_key);
+  select rank, total into v_second from submit_score('Einmal', 8, 'easy', 77, 0, 0, v_key);
+  select count(*) into v_rows from public.scores where submission_id = v_key;
+  if v_rows <> 1 then raise exception 'idempotency failed: same key created % rows', v_rows; end if;
+  if v_first.rank is distinct from v_second.rank or v_first.total is distinct from v_second.total then
+    raise exception 'idempotency failed: retry returned different rank or total';
+  end if;
+  raise notice 'ok: repeated idempotency key leaves one row and returns its rank';
+end $$;
