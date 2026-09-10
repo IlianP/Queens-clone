@@ -151,13 +151,10 @@ function serverReason(body) {
 // unchanged, since a failure object has no `rank`. The server sanitises the
 // name, validates the values and computes the authoritative score.
 //
-// Transient failures are retried with backoff (see rpcWithRetry) instead of
-// giving up after a single blip. NOTE: because submit_score has no idempotency
-// key server-side, an auto-retry can only be safe when the earlier attempt did
-// not reach the database. A rejected/failed attempt didn't insert, so retrying
-// is not a duplicate. The lone edge case — the insert succeeded but its response
-// was lost — can't be distinguished client-side; the caller (main.js) still
-// guards the *manual* retry against ever submitting the same solve twice.
+// Transient failures are retried with backoff (see rpcWithRetry). Every solved
+// game carries one client-generated UUID (submissionId), and the database treats
+// it as an idempotency key: a response lost after a successful insert can be
+// retried safely without creating a second leaderboard row.
 export async function submitScore(entry, { onRetry } = {}) {
   const result = await rpcWithRetry(
     'submit_score',
@@ -168,6 +165,7 @@ export async function submitScore(entry, { onRetry } = {}) {
       p_seconds: entry.seconds,
       p_hints: entry.hints,
       p_mistakes: entry.mistakes,
+      p_submission_id: entry.submissionId,
     },
     onRetry
   );
