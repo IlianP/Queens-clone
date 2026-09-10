@@ -212,7 +212,7 @@ let seenHints = new Set();
 let mistakes = 0;
 let winHandled = false;
 // pendingWin: { size, difficulty, seconds, hints, mistakes, score, saved,
-//               submittedGlobal }. `submittedGlobal` latches true only after a
+//               submittedGlobal, submissionId }. `submittedGlobal` latches true only after a
 // confirmed online insert and is what stops the same solve being entered on the
 // global board twice (the manual retry checks it).
 let pendingWin = null;
@@ -1041,6 +1041,18 @@ function recentFeedback(stats) {
   });
 }
 
+// One idempotency key belongs to one solved board, not to one network attempt.
+function createSubmissionId() {
+  const bytes = new Uint8Array(16);
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') cryptoApi.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
+}
+
 function onWin() {
   if (winHandled) return; // fire once per solve (updateBoard can re-run while won)
   winHandled = true;
@@ -1057,6 +1069,7 @@ function onWin() {
     mistakes,
     score,
     at: Date.now(), // when it was solved — the preview row's age comes from this
+    submissionId: createSubmissionId(), // reused by every automatic/manual retry
     saved: false,
     submittedGlobal: false,
   };
@@ -1255,6 +1268,7 @@ async function onWinSubmit() {
       seconds: pendingWin.seconds,
       hints: pendingWin.hints,
       mistakes: pendingWin.mistakes,
+      submissionId: pendingWin.submissionId,
     },
     {
       onRetry: (attempt, total) =>
