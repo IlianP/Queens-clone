@@ -150,6 +150,20 @@ clickable and Playwright then waits out a full 30 s timeout. A JS error inside
 `onWin` looks exactly like that, so the helper throws with the collected page
 errors instead of hanging — which is how an unimported constant was found.
 
+`hint-cost.mjs` covers the hint surcharge becoming visible: the price tag baked
+into the hint button's label, the "+30 s" pill that flies off it, the live clock
+taking the 30 s, and the timer pulse that ties the two together. The assertion
+that earns the file is the **negative** one: `hintsUsed` only bumps for a *new*
+deduction (`seenHints`), so re-opening the same hint must move neither the clock
+nor the pill — an animation wired to the click instead of to that branch would
+charge the player for something the score doesn't. It then solves by hints and
+closes the arithmetic on the win card (effective time = playing time + 30 s per
+hint, charged exactly once, and the frozen clock reads exactly the result) —
+which is what would catch the penalty being folded into `currentElapsed()`
+instead of `renderTime()`. Finally it measures the grown label at 320/375/430px
+portrait and in the fixed-width landscape button column, where `.btn` is
+`white-space: nowrap` and an overlong label paints over its neighbour silently.
+
 `leaderboard-period.mjs` covers the adaptive period tab in the Bestenliste,
 bucket by bucket, with `score_counts` and `top_scores` both mocked: offered where
 the window holds a field, hidden where it holds almost nothing, hidden where

@@ -96,7 +96,10 @@ These settings, the last name used and the local best times are kept in
 
 After solving, the win screen shows a **result** and asks whether you want to be
 listed. The result is an “effective time”: the raw solving time plus a penalty
-per **hint** used (+30 s). Lower is better. **Mistakes are counted and shown,
+per **hint** used (+30 s). The hint button says so before you press it, a small
+“+30 s” rises off it whenever a hint is actually charged, and **the clock runs on
+the effective time**, so the number you watch is the number you get. Asking for
+the *same* hint again is free and costs no time. Lower is better. **Mistakes are counted and shown,
 but cost nothing** – a wrong queen already costs time, because you have to spot
 it and take it back, and on a phone a mis-tap is a thumb's width away; charging
 for it a second time punished the input surface rather than the reasoning. Every combination of board size and difficulty has
