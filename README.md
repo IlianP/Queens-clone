@@ -96,8 +96,10 @@ These settings, the last name used and the local best times are kept in
 
 After solving, the win screen shows a **result** and asks whether you want to be
 listed. The result is an “effective time”: the raw solving time plus a penalty
-per **hint** used (+30 s) and per **mistake** (+15 s, a queen off the unique
-solution). Lower is better. Every combination of board size and difficulty has
+per **hint** used (+30 s). Lower is better. **Mistakes are counted and shown,
+but cost nothing** – a wrong queen already costs time, because you have to spot
+it and take it back, and on a phone a mis-tap is a thumb's width away; charging
+for it a second time punished the input surface rather than the reasoning. Every combination of board size and difficulty has
 its own ranking; 🏆 lets you browse all of them.
 
 - **Local:** Best times are always stored on the device (up to **50** per

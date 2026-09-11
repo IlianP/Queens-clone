@@ -109,7 +109,7 @@ await page.route('**/rest/v1/rpc/submit_score', async (route) => {
     seconds: body.p_seconds,
     hints: body.p_hints,
     mistakes: body.p_mistakes,
-    score: body.p_seconds + 30 * body.p_hints + 15 * body.p_mistakes,
+    score: body.p_seconds + 30 * body.p_hints,
   };
   // rank 3 of 40 → percentile shown (40 ≥ MIN_GLOBAL_FOR_PERCENTILE)
   await route.fulfill({

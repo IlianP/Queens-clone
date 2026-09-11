@@ -9,10 +9,19 @@
 // already exposes (sizes 5–11 × easy/medium/hard, plus 12×hard).
 //
 // The "score" is an *effective time in seconds*: the raw solve time plus a
-// penalty per used hint and per mistake, so faster/cleaner solves rank higher.
+// penalty per used hint, so faster solves with fewer hints rank higher.
 // Keeping the raw components lets the penalties be re-tuned without a data
 // migration — and the same formula is mirrored server-side in
 // docs/leaderboard-setup.sql, so keep the two in sync.
+//
+// MISTAKES ARE COUNTED BUT NO LONGER PENALISED. They used to add 15 s each,
+// which punished the game's own input surface rather than the player's
+// reasoning: on a phone a mis-tap is a matter of a thumb's width, and a wrong
+// queen already costs time — you have to notice it and undo it — so the
+// surcharge charged twice for the same slip. The raw count is still stored and
+// shown per row; only its weight is gone. Old entries are not stranded on the
+// old formula: normalizeEntry recomputes every stored score from its raw
+// components on read, which is exactly what keeping those components is for.
 //
 // A SECOND, much smaller store sits next to that top list: the solve
 // history (`queens-clone-solves`), one flat array per bucket. The top list
@@ -38,7 +47,6 @@
 // name collisions with the other js/ modules.
 
 export const HINT_PENALTY = 30; // seconds added per hint used
-export const MISTAKE_PENALTY = 15; // seconds added per mistake made
 // Kept per (size, difficulty) bucket. The list scrolls inside a fixed-height box
 // (see .score-list), so a larger cap costs card height nothing — it was 10 only
 // because that was the obvious round number, and ten is little once a bucket has
@@ -76,9 +84,10 @@ export function bucketKey(size, difficulty) {
 }
 
 // Effective time in whole seconds; lower is better. Mirrors queens_score() in
-// docs/leaderboard-setup.sql.
-export function computeScore(seconds, hints = 0, mistakes = 0) {
-  return Math.round(seconds + HINT_PENALTY * hints + MISTAKE_PENALTY * mistakes);
+// docs/leaderboard-setup.sql. Mistakes are deliberately not an input — see the
+// note at the top of this file.
+export function computeScore(seconds, hints = 0) {
+  return Math.round(seconds + HINT_PENALTY * hints);
 }
 
 export function sanitizeName(name) {
@@ -102,7 +111,12 @@ function normalizeEntry(e) {
   const mistakes = Number.isFinite(Number(e.mistakes))
     ? Math.max(0, Math.floor(Number(e.mistakes)))
     : 0;
-  const score = Number.isFinite(Number(e.score)) ? Math.round(Number(e.score)) : computeScore(seconds, hints, mistakes);
+  // The score is DERIVED, never trusted: the raw components are stored for
+  // exactly this reason, so a retuned penalty applies to the whole list at once
+  // instead of leaving old entries ranked under the old formula next to new
+  // ones ranked under the new. A stored score that already matches recomputes
+  // to itself, so this is a no-op for everything written since the last change.
+  const score = computeScore(seconds, hints);
   return {
     name: sanitizeName(e.name),
     seconds,

@@ -22,7 +22,6 @@ import {
   MIN_RECENT_SOLVES,
   MAX_LOCAL_ENTRIES,
   HINT_PENALTY,
-  MISTAKE_PENALTY,
 } from './highscores.js';
 import { leaderboardConfigured, submitScore, fetchTopScores, fetchBucketCounts } from './leaderboard.js';
 import {
@@ -1060,7 +1059,7 @@ function onWin() {
   stopTimer();
 
   const seconds = currentElapsed();
-  const score = computeScore(seconds, hintsUsed, mistakes);
+  const score = computeScore(seconds, hintsUsed);
   pendingWin = {
     size: game.N,
     difficulty: settings.difficulty,
@@ -2048,7 +2047,7 @@ function buildResultDebug() {
     hints: pendingWin.hints,
     mistakes: pendingWin.mistakes,
     score: pendingWin.score,
-    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints} + ${MISTAKE_PENALTY}·${pendingWin.mistakes}`,
+    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints}`,
     savedLocally: !!pendingWin.saved,
     savedRank: pendingWin.saved ? pendingWin.savedRank : null,
     // What the win card was told, computed before this solve joined the history.
