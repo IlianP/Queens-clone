@@ -276,6 +276,23 @@ grant execute on function public.submit_score(text, int, text, int, int, int, uu
 grant execute on function public.top_scores(int, text, int, timestamptz) to anon;
 grant execute on function public.score_counts(int, text, timestamptz) to anon;
 
+-- 7) Auswertung: Lesen für den Wochenbericht -----------------------------------
+-- .github/workflows/weekly-report.yml wertet einmal pro Woche die Aktivität aus
+-- (tools/weekly-report.mjs) und liest die Tabelle dafür DIREKT, nicht über die
+-- Funktionen oben: top_scores() gibt client_key bewusst nie heraus, und genau
+-- den braucht die Zählung aktiver Geräte. Gelesen wird als service_role, der
+-- RLS umgeht.
+--
+-- Der service_role-Key gehört ausschließlich in das GitHub-Secret
+-- SUPABASE_SERVICE_KEY. Er darf NIE in js/leaderboard.js oder sonst in den
+-- Browser – dort steht der öffentliche anon-Key, und das ist der Unterschied
+-- zwischen "lesbar" und "beschreibbar von jedem".
+--
+-- In Supabase hat service_role diese Rechte meist schon über die
+-- Default-Privileges; das Grant ist idempotent und macht die Abhängigkeit
+-- ausdrücklich, statt sie zu vermuten.
+grant select on public.scores to service_role;
+
 -- MIGRATION für bereits eingerichtete Projekte ---------------------------------
 -- Die ganze Datei erneut auszuführen ist immer sicher (alles ist `if not exists`
 -- bzw. `create or replace`, keine Daten werden angefasst). Wer nur die Änderung
@@ -370,3 +387,12 @@ grant execute on function public.score_counts(int, text, timestamptz) to anon;
 -- 2026-09: Idempotente Score-Einreichung. Die ganze Datei erneut ausführen,
 -- um submission_id, den Unique-Index, die sichere sieben-Parameter-Funktion
 -- und ihre Berechtigung zu ergänzen. Bestehende Score-Zeilen bleiben unverändert.
+--
+-- 2026-09: Lesezugriff für den Wochenbericht. Nur eine Zeile (Abschnitt 7):
+--
+--     grant select on public.scores to service_role;
+--
+-- Ohne sie liest der Berichts-Job je nach Projekt-Default nichts und meldet
+-- HTTP 401/permission denied. Am Spiel selbst ändert sich nichts – die
+-- Rangliste im Browser läuft unverändert über anon und die SECURITY-DEFINER-
+-- Funktionen.

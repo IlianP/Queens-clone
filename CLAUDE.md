@@ -47,6 +47,11 @@ before re-deriving how to drive things:
   `created_at` becomes `at` (and its absence reads as undated), and that every
   time-scoped call fails soft to `null`. Run it after touching `leaderboard.js`
   or `docs/leaderboard-setup.sql`.
+- `tests/logic/weekly-report.mjs` — the weekly activity report: window
+  boundaries, the record comparison, the new/returning name split, the state
+  marker, and the two properties nobody would notice regressing — that the
+  `client_key` hash never reaches the rendered text, and that the output doesn't
+  move with the host time zone. Run it after touching `tools/weekly-report.mjs`.
 - `tests/logic/verify-i18n.mjs` — the i18n guard: identical key sets across packs,
   same value *types*, every template still uses the parameters the fallback uses,
   and every key referenced from `index.html` / `t('…')` exists. Run it after
@@ -685,6 +690,44 @@ tightest label row in the app, which is why `.score-tabs` shrinks below 380px. B
 **no top-level name collisions** (that's why the store key is `SCORES_KEY`, not
 another `KEY`) and **no `import.meta`**.
 
+### The weekly activity report
+
+`tools/weekly-report.mjs` + `.github/workflows/weekly-report.yml` post one GitHub
+issue a week summarising the global leaderboard; GitHub's notification mail *is*
+the weekly mail (no SMTP, no third party, no password to rotate). Setup and the
+full rationale live in `docs/weekly-report.md`.
+
+Four things that are load-bearing:
+
+- **It is deliberately deterministic** — same rows plus same window produce
+  byte-identical text. That rules out `Intl`, `toLocaleString` and local time:
+  everything is UTC by construction with hand-written formatters, because a
+  report that regroups days depending on where the job ran can't be compared to
+  last week's. It also rules out generating it from a model.
+- **The state is the last issue, not a file in the repo.** The window starts
+  where the previous report ended, and that timestamp rides in an HTML comment
+  (`queens-report-state`) at the bottom of each report, found again via the
+  `wochenbericht` label. A committed state file would have to push to `main`,
+  which branch protection rejects and which `deploy.yml` would answer by
+  redeploying the site weekly. The invariant is better too: the window advances
+  only when a report was actually delivered, so a failed run merges into the
+  next one instead of losing a week.
+- **It reads the table directly as `service_role`**, not through `top_scores()` —
+  those functions deliberately never return `client_key`, which is exactly what
+  the device count needs. That key bypasses RLS and belongs only in the
+  `SUPABASE_SERVICE_KEY` repo secret, never in `js/leaderboard.js`.
+  `docs/leaderboard-setup.sql` section 7 grants the read; without it the job
+  gets a 401.
+- **Say what the numbers are.** A row exists only for a solved *and submitted*
+  game, so nothing here measures games played or visitors, and `client_key` is a
+  daily salted IP hash — hence "devices per day" and "device-days", never
+  "users". Every report carries that caveat in a collapsed "Lesehilfe" block;
+  keep it there rather than letting the figures read like analytics.
+
+The report's own text is **German**, like the debug journal and the SQL comments:
+it is operator output read by one person, not a player surface, so it stays out
+of the language packs.
+
 ## Git / workflow
 
 - Default branch is **`main`**. Do feature work on a branch and open a PR;
@@ -693,6 +736,12 @@ another `KEY`) and **no `import.meta`**.
   scoped to one change.
 - Deployment: `.github/workflows/deploy.yml` publishes to GitHub Pages on push
   to `main` (or `master`). It's a static upload of the repo root — no build.
+- `.github/workflows/weekly-report.yml` runs every Monday 06:00 UTC and files
+  the activity report as an issue (see above). It needs the
+  `SUPABASE_SERVICE_KEY` secret; `workflow_dispatch` with `dry_run` renders it
+  into the job summary without posting or advancing the window. GitHub disables
+  scheduled workflows after 60 days without repository activity — if the mail
+  stops, check that first.
 - `main` has a **branch protection rule**: PRs need the `logic-tests` status
   check (`.github/workflows/ci.yml`, runs `tests/logic/`) to pass, and the PR
   branch must be **up to date with `main`** before the merge button unlocks.

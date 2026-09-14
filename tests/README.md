@@ -78,6 +78,16 @@ out-of-range rejection, the global actions, and that `stopp` always wins. Pure
 logic — `voice.js` only touches `window` inside its recogniser wrapper, never at
 import time.
 
+`weekly-report.mjs` covers `tools/weekly-report.mjs`, the deterministic weekly
+activity report (`docs/weekly-report.md`). Plain arrays in, markdown out — no
+network. Besides the arithmetic (window boundaries, the record comparison
+following `top_scores`' ordering, the new/returning name split, device-days) it
+pins the two properties that would rot silently: the `client_key` hash — the
+daily salted IP hash — must never appear in the rendered text, and the output
+must not change when the host time zone does. The second check flips
+`process.env.TZ` to UTC+14 and re-renders; a stray `toLocaleString` or a
+local-time `getDate()` would regroup the days and fail it.
+
 ## `sql/` — a throwaway local Postgres
 
 `rank-order.sql` is the only test that touches the *server* half of the

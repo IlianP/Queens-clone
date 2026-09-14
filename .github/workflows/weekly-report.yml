@@ -1,0 +1,140 @@
+name: Wochenbericht
+
+# Einmal pro Woche einen Aktivitätsbericht über die globale Rangliste als Issue
+# anlegen; die Benachrichtigungsmail von GitHub IST die wöchentliche Mail. Kein
+# SMTP, kein Drittanbieter, kein Passwort, das ablaufen kann.
+#
+# Der Bericht selbst entsteht in tools/weekly-report.mjs und ist deterministisch
+# (gleiche Zeilen + gleiches Fenster = gleicher Text). Dieser Workflow tut nur
+# drei Dinge: den letzten Bericht finden, das Skript laufen lassen, das Ergebnis
+# als Issue schreiben.
+#
+# ZUSTAND: der ausgewertete Zeitraum beginnt dort, wo der letzte Bericht endete.
+# Dieser Zeitpunkt steht als HTML-Kommentar im Text des letzten Bericht-Issues
+# (Schritt "Letzten Bericht suchen" holt ihn, das Skript liest ihn). Absichtlich
+# nicht als Datei im Repo: `main` ist geschützt, ein Bot-Push scheitert dort am
+# Statuscheck, und ein Commit auf `main` würde über deploy.yml jede Woche die
+# Seite neu ausrollen. Der Zeitraum rückt so außerdem genau dann weiter, wenn
+# ein Bericht auch wirklich zugestellt wurde: bricht ein Lauf vorher ab, deckt
+# der nächste beide Wochen ab statt eine zu verlieren.
+#
+# EINRICHTUNG: ein einziges Repository-Secret, SUPABASE_SERVICE_KEY (der
+# service_role-Key des Supabase-Projekts). Er umgeht RLS und darf deshalb NIE
+# in den Browser — nur hier. Details in docs/weekly-report.md.
+
+on:
+  schedule:
+    # Montags 06:00 UTC = 08:00 MESZ / 07:00 MEZ. GitHub-Cron läuft in UTC und
+    # kann sich bei Last um einige Minuten verspäten; für einen Wochenbericht
+    # ist das folgenlos, weil das Fenster am tatsächlichen Laufzeitpunkt endet.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Nur anzeigen (Job-Zusammenfassung), kein Issue anlegen'
+        type: boolean
+        default: false
+      window_days:
+        description: 'Fenster in Tagen, falls kein früherer Bericht existiert'
+        type: string
+        default: '7'
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: weekly-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Secret vorhanden?
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_KEY" ]; then
+            echo "::error::Das Repository-Secret SUPABASE_SERVICE_KEY fehlt. Siehe docs/weekly-report.md."
+            exit 1
+          fi
+
+      - name: Letzten Bericht suchen
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Der jüngste Bericht liefert den Startzeitpunkt des Fensters. Gesucht
+            // wird über das Label, nicht über den Titel: ein Label lässt sich nicht
+            // versehentlich umformulieren. Findet sich keiner (erster Lauf, Issue
+            // gelöscht), bleibt die Datei leer und das Skript fällt auf sein
+            // Standardfenster zurück.
+            const fs = require('fs');
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              labels: 'wochenbericht',
+              sort: 'created',
+              direction: 'desc',
+              per_page: 5,
+            });
+            const last = issues.data.find((i) => !i.pull_request && i.body && i.body.includes('queens-report-state'));
+            fs.writeFileSync('/tmp/last-report.md', last ? last.body : '');
+            core.info(last ? `Letzter Bericht: #${last.number} (${last.title})` : 'Kein früherer Bericht gefunden.');
+
+      - name: Bericht erzeugen
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          node tools/weekly-report.mjs \
+            --state /tmp/last-report.md \
+            --out-body /tmp/report-body.md \
+            --out-title /tmp/report-title.txt \
+            --window-days "${{ inputs.window_days || '7' }}"
+
+      - name: Issue anlegen
+        if: ${{ inputs.dry_run != true }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const title = fs.readFileSync('/tmp/report-title.txt', 'utf8').trim();
+            const body = fs.readFileSync('/tmp/report-body.md', 'utf8');
+            // Das Label trägt den Zustand von Woche zu Woche — es muss existieren,
+            // sonst findet der nächste Lauf seinen Vorgänger nicht mehr.
+            try {
+              await github.rest.issues.getLabel({ ...context.repo, name: 'wochenbericht' });
+            } catch (err) {
+              if (err.status !== 404) throw err;
+              await github.rest.issues.createLabel({
+                ...context.repo,
+                name: 'wochenbericht',
+                color: '0e8a16',
+                description: 'Automatischer Wochenbericht zur Spielaktivität',
+              });
+            }
+            const issue = await github.rest.issues.create({
+              ...context.repo, title, body, labels: ['wochenbericht'],
+            });
+            core.info(`Bericht angelegt: ${issue.data.html_url}`);
+            await core.summary.addHeading(title).addRaw(body).write();
+
+      - name: Nur anzeigen (dry run)
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          {
+            echo "## $(cat /tmp/report-title.txt)"
+            echo
+            echo '> Testlauf — es wurde kein Issue angelegt, der Zeitraum ist nicht weitergerückt.'
+            echo
+            cat /tmp/report-body.md
+          } >> "$GITHUB_STEP_SUMMARY"
