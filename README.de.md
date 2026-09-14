@@ -41,11 +41,11 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
 
 ## Einstellungen (⚙)
 
-- **Sprache:** Deutsch, Englisch, Französisch oder Spanisch; voreingestellt ist
-  *Automatisch (Browser)* – passt die Browsersprache zu keiner vorhandenen
-  Übersetzung, wird **Englisch** genommen. Ein Sprachwechsel lädt die Seite neu (läuft gerade eine Partie, wird
-  vorher gefragt); ein bereits gelöstes, noch nicht eingetragenes Ergebnis geht
-  dabei nicht verloren.
+- **Sprache:** Deutsch, Englisch, Französisch, Spanisch, Portugiesisch oder
+  Russisch; voreingestellt ist *Automatisch (Browser)* – passt die Browsersprache
+  zu keiner vorhandenen Übersetzung, wird **Englisch** genommen. Ein Sprachwechsel
+  lädt die Seite neu (läuft gerade eine Partie, wird vorher gefragt); ein bereits
+  gelöstes, noch nicht eingetragenes Ergebnis geht dabei nicht verloren.
 - **Feldgröße:** 5 bis 12. Bei **12** sind ausschließlich schwere Rätsel möglich –
   ein 12×12-Feld ist von Natur aus schwer, „leichte“/„mittlere“ Rätsel dieser Größe
   existieren praktisch nicht –, deshalb wird die Schwierigkeit dort auf *Schwer*
@@ -279,7 +279,7 @@ js/leaderboard.js         – Optionale globale Online-Rangliste (Supabase, fäl
 js/settings.js            – Einstellungen & letzter Name (localStorage)
 js/i18n.js                – Übersetzungsschicht: t(), Sprachwahl (ohne DOM)
 js/i18n/en.js, de.js,     – Sprachpakete (ein Schlüsselsatz, identisch je Sprache)
-  fr.js, es.js
+  fr.js, es.js, pt.js, ru.js
 js/audio.js               – Minimalistische Soundeffekte (Web Audio API, ohne Asset-Dateien)
 js/voice.js               – Sprachsteuerung: reiner Befehls-Parser + Web-Speech-Wrapper (ohne DOM)
 js/main.js                – DOM-Anbindung, Rendering, Steuerung
@@ -294,18 +294,29 @@ tests/logic/verify-i18n.mjs – Prüft die Sprachpakete auf gleiche Schlüssel (
 
 ## Übersetzen
 
-Die Oberfläche gibt es auf **Deutsch**, **Englisch**, **Französisch** und
-**Spanisch**. Alle Texte liegen in `js/i18n/<sprache>.js`; jede Datei enthält
-exakt denselben Satz Schlüssel. Eine weitere Sprache ist eine Kopie von
-`js/i18n/en.js` plus ein Eintrag in `I18N_PACKS`/`I18N_LANGUAGES` in
-`js/i18n.js` und in der Modulliste in `tools/build-artifact.mjs`.
+Die Oberfläche gibt es auf **Deutsch**, **Englisch**, **Französisch**,
+**Spanisch**, **Portugiesisch** und **Russisch**. Alle Texte liegen in
+`js/i18n/<sprache>.js`; jede Datei enthält exakt denselben Satz Schlüssel. Eine
+weitere Sprache ist eine Kopie von `js/i18n/en.js` plus ein Eintrag in
+`I18N_PACKS`/`I18N_LANGUAGES` in `js/i18n.js` und in der Modulliste in
+`tools/build-artifact.mjs`.
 
 Ein Sprachpaket ist keine Wort-für-Wort-Übersetzung: zusammengesetzte Sätze sind
 **Funktionen**, jede Sprache schreibt also ihren eigenen Satz, statt fremde
-Platzhalter zu füllen, und Plural- bzw. Ordnungszahlregeln liegen in dem Paket,
-das sie braucht (Französisch behandelt 0 als Singular, Spanisch nicht). Auch das
-Layout im Blick behalten – die Beschriftungen sind `white-space: nowrap` und die
-romanischen Sprachen laufen deutlich länger als Englisch.
+Platzhalter zu füllen, und die Grammatikregeln liegen in dem Paket, das sie
+braucht – nichts davon ist geteilt, und `js/i18n.js` weiß von keiner einzelnen
+Sprache. Genau das trägt Russisch mit seinen **drei** Pluralformen
+(1 подсказка · 2 подсказки · 5 подсказок) und der Deklination der Einheitenwörter
+durch vier Fälle, ohne dass ein einziger Aufrufer angefasst werden müsste –
+während Französisch die 0 als Singular behandelt und Portugiesisch nicht. Was
+Locale-*Daten* sind – Prozentschreibweise, Datum, relative Zeit, Pluralklassen –
+übernimmt `Intl`, statt es von Hand zu tippen; eine neue Sprache braucht deshalb
+keine neue Abhängigkeit.
+
+Auch das Layout im Blick behalten: die Beschriftungen sind `white-space: nowrap`,
+und die dreispaltige Tab-Zeile der Bestenliste ist die engste Zeile der App – sie
+hat die russischen Tab-Beschriftungen zur Kürzung gezwungen.
+`node tests/browser/i18n-layout.mjs` misst genau das.
 
 `node tests/logic/verify-i18n.mjs` prüft, dass keine Sprache Schlüssel oder
 Platzhalter verliert – das läuft auch in CI, ein Versehen fällt also beim Build

@@ -8,10 +8,10 @@ current when the architecture or workflow changes.
 A browser clone of the LinkedIn game **Queens**: a static site in plain
 HTML/CSS/JavaScript with **no build step and no dependencies**. It uses native
 ES modules and ships as-is to GitHub Pages. Player-facing text is **localised**
-(English, German, French, Spanish — see "i18n" below) — never hard-code a UI
-string, add a key to
-every language pack instead. Two surfaces stay single-language on purpose: Voice
-Mode (German) and the debug journal (German); both are documented below.
+(English, German, French, Spanish, Portuguese, Russian — see "i18n" below) —
+never hard-code a UI string, add a key to every language pack instead. Two
+surfaces stay single-language on purpose: Voice Mode (German) and the debug
+journal (German); both are documented below.
 `README.md` is English, `README.de.md` the German original — keep them in step.
 
 Live site: https://ilianp.github.io/Queens-clone/
@@ -127,7 +127,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/highscores.js` | Score model (`computeScore` = time + hint penalty; mistakes are counted, not charged) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic. History entries are **dated** (`[score, at]`, or a bare `score` for the undated ones — see "Time in the score data") |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores` — optional `{ since }` window, `created_at` per row — and `fetchBucketCounts`) fail soft to `null` (offline/unconfigured/CSP/SQL-not-re-run) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
 | `js/i18n.js` | Translation layer: `t(key, params)`, `resolveLanguage`, the pack registry. **Pure** — no DOM, no browser globals at import time, so Node can import it (`js/hint.js` depends on it and the logic tests import that). Mirrors the audio/voice/leaderboard layering |
-| `js/i18n/en.js`, `de.js`, `fr.js`, `es.js` | The language packs. Flat `key → string \| (params) => string` maps, one identical key set per language — `tests/logic/verify-i18n.mjs` fails CI otherwise. Each pack owns its own plural/ordinal/percent helpers (`frPlural` treats 0 as singular, `esPlural` doesn't; `enPercent` renders `88%` while `de`/`fr`/`es` render `88 %` with a non-breaking space, delegated to `Intl.NumberFormat` rather than typed by hand) and its own noun choices; fr/es pin the piece to the local name of the *n*-queens problem (`dame` / `reina`), and their three unit words are all feminine, which is what lets the hint sentences interpolate a bare `la ${unit}` |
+| `js/i18n/en.js`, `de.js`, `fr.js`, `es.js`, `pt.js`, `ru.js` | The language packs. Flat `key → string \| (params) => string` maps, one identical key set per language — `tests/logic/verify-i18n.mjs` fails CI otherwise. Each pack owns its own plural/ordinal/percent helpers and its own noun choices; every pack pins the piece to the local name of the *n*-queens problem (`dame` / `reina` / `rainha` / `ферзь`). See "Grammar lives in the pack" below for what that buys |
 | `js/settings.js` | Preferences (language/size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
 | `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. `isRefinaliseExtension(prevText, newText)` is the **pure** detector for the other half of the same problem: Chrome finalising a sentence it cut short ("Punkte Zeile 1" before "… außer Region E1"). A premature **fill** can't be repaired by re-running the narrower one (marking only adds), so `main.js` rolls the earlier fill back — identity-checking its undo snapshot against the stack top — and applies the completed utterance. It is only a *detector*: the full new transcript is re-parsed, never stripped. Mirrors the audio/leaderboard layering |
@@ -189,9 +189,32 @@ only the body slice, so a lost hook would render blank).
   `I18N_LANGUAGES`, add it to `build-artifact.mjs`'s module list (**before**
   `js/i18n.js` — it builds `I18N_PACKS` in a top-level `const`, so a later
   declaration is in the temporal dead zone and the classic-script bundle throws
-  at load). Then run `node tests/logic/verify-i18n.mjs`. Watch the layout: FR/ES
-  run 15–30 % longer than EN/DE and `.btn` is `white-space: nowrap`, while
+  at load), and add its locale to `LOCALES` in `tests/browser/i18n-layout.mjs`.
+  Then run `node tests/logic/verify-i18n.mjs`. Watch the layout: FR/ES/PT run
+  15–30 % longer than EN/DE and `.btn` is `white-space: nowrap`, while
   `.voice-transcript` / `.voice-status` / `.score-name` are single-line ellipsis.
+- **Grammar lives in the pack, and Russian is the proof.** `ru.js` needed two
+  things no other pack does, and neither cost a line outside that one file:
+  **three** plural forms repeating modulo 100 (`ruPlural`: 1/21 → one, 2–4/22 →
+  few, 0/5–20 → many), and **declension** — `hint.js` hands a unit word over as
+  the nominative string in `hint.unit.*`, but the sentences need it in four cases
+  ("в строк**е**", "заблокирует строк**у**", "клетки строк**и**", "строк**е**
+  нужен ферзь"). `ru.js` declines it back through `RU_UNIT_FORMS`, an exact
+  lookup keyed by the nominative (the three unit kinds are a closed set, so a
+  table is honest where a suffix rule would be a guess — keep it in step with the
+  `hint.unit.*` values). This is what "composed sentences are functions, not
+  `%s` templates" was for: do **not** answer the next such language by adding a
+  shared plural engine or a gender/case parameter to `t()`.
+- Locale *data* is `Intl`'s job, not the translator's: plural categories
+  (`Intl.PluralRules`), percent spacing (`en`/`pt` write `88%`, `de`/`fr`/`es`/`ru`
+  write `88 %` with a non-breaking space), dates and relative time. Delegating
+  keeps "no dependencies" true for languages whose rules nobody wants to hand-roll.
+- **The three-tab score row is the tightest line in the app** (`.score-tabs`,
+  three tabs plus "Global 🌐"). Russian's first draft — "Локально" / "Глобально 🌐"
+  — overflowed at 95px and had to become "Моя" / "Общая 🌐". It is only measured
+  when the period tab is actually offered, which needs `score_counts` to answer
+  `recent >= 5 && recent < total`; `tests/browser/i18n-layout.mjs` stubs exactly
+  that, so the row is covered rather than accidentally absent.
 - **A longer label does not report itself as an overflow.** `overflow-x: clip` on
   `<body>` hides page-level overflow, and `.brand` is a column flex with
   `align-items: flex-start`, which sizes children to their own content and lets
