@@ -398,15 +398,22 @@ export function summarize(rawRows, { since, until, stats, statsSince, statsUntil
   const hintFree = window.filter((r) => r.hints === 0).length;
   const cleanRun = window.filter((r) => r.mistakes === 0).length;
 
+  // Die Ping-Auswertung als eigener Block — und dazu die Einreichungen über
+  // GENAU dasselbe Fenster, damit der Trichter im Bericht Stufen vergleicht,
+  // die denselben Zeitraum meinen (siehe renderReport).
+  const play = summarizePlay(stats, {
+    statsSince: Number.isFinite(statsSince) ? statsSince : floorHour(since),
+    statsUntil: Number.isFinite(statsUntil) ? statsUntil : floorHour(until),
+  });
+  play.submitted = rows.filter(
+    (r) => r.t !== null && r.t >= play.statsSince && r.t < play.statsUntil,
+  ).length;
+
   return {
     since,
     until,
-    // Die Ping-Auswertung hängt als eigenes Feld daran, nicht eingemischt in
-    // die Einreichungszahlen darüber.
-    play: summarizePlay(stats, {
-      statsSince: Number.isFinite(statsSince) ? statsSince : floorHour(since),
-      statsUntil: Number.isFinite(statsUntil) ? statsUntil : floorHour(until),
-    }),
+    // Eigenes Feld, nicht eingemischt in die Einreichungszahlen darüber.
+    play,
     total: rows.length,
     lastId: rows.reduce((max, r) => Math.max(max, r.id), 0) || null,
     submissions: window.length,
@@ -455,8 +462,14 @@ export function renderReport(stats, { continued = true } = {}) {
     out.push(`**Zähler-Zeitraum:** ${fmtDateTime(play.statsSince)} → ${fmtDateTime(play.statsUntil)} (auf volle Stunden gerundet)`);
   }
   if (!continued) {
+    // Die Länge wird aus dem Fenster gerechnet, nicht hingeschrieben:
+    // --window-days kann bei einem manuellen Lauf etwas anderes als 7 sein, und
+    // ein Satz, der 7 behauptet, während die Zeitstempel eine Zeile darüber 14
+    // Tage zeigen, ist schlimmer als gar kein Satz.
+    const days = Math.max(1, Math.round((stats.until - stats.since) / DAY_MS));
+    const span = days === 1 ? 'den letzten Tag' : `die letzten ${days} Tage`;
     out.push('');
-    out.push('> Kein vorheriger Bericht gefunden — dieser deckt die letzten 7 Tage ab.');
+    out.push(`> Kein vorheriger Bericht gefunden — dieser deckt ${span} ab.`);
   }
   out.push('');
   out.push('## Aktivität');
@@ -498,8 +511,20 @@ export function renderReport(stats, { continued = true } = {}) {
       (play.opens ? ` (${fmtNum(play.started / play.opens, 1)} je Öffnung)` : ''));
     out.push(`- **Spiele gelöst:** ${play.won}` +
       (play.started ? ` (${fmtPct(play.won, play.started)} der gestarteten)` : ''));
-    out.push(`- **Davon eingereicht:** ${w} aus der Rangliste` +
-      (play.won ? ` (${fmtPct(w, play.won)} der gelösten)` : ''));
+    // Diese Stufe zählt Einreichungen über das ZÄHLER-Fenster, nicht über das
+    // exakte oben. Beide Fenster liegen bis zu eine Stunde auseinander (das
+    // Ping-Fenster ist auf volle Stunden gerundet), und eine Quote aus zwei
+    // verschiedenen Zeiträumen ist bestenfalls schief und kann über 100 %
+    // gehen: eine Einreichung um 06:05 fällt in `w`, ihr Sieg-Ping liegt aber
+    // in der 06:00-Stunde, die erst der nächste Bericht zählt. Weichen die
+    // beiden Zahlen ab, steht das ausdrücklich dabei — sonst wäre es genau die
+    // stille Unstimmigkeit, die einen Bericht unglaubwürdig macht.
+    const submittedInWindow = play.submitted;
+    out.push(`- **Davon eingereicht:** ${submittedInWindow} aus der Rangliste` +
+      (play.won ? ` (${fmtPct(submittedInWindow, play.won)} der gelösten)` : '') +
+      (submittedInWindow === w
+        ? ''
+        : ` — im Zähler-Zeitraum gezählt, damit die Quote auf dieselbe Stunde trifft; oben stehen ${w} für den sekundengenauen Zeitraum`));
     if (play.otherSources.length) {
       const parts = play.otherSources.map(([src, n]) => `${n} aus ${SOURCE_LABEL[src] || src}`);
       out.push('');
@@ -588,7 +613,7 @@ export function renderReport(stats, { continued = true } = {}) {
   out.push('- **„Aktive Geräte" ist eine Untergrenze pro Tag.** Gezählt wird der tägliche IP-Hash aus `submit_score`, den die Rangliste ohnehin fürs Rate-Limit führt. Er wechselt täglich und ist pro Netz grob — zwei Personen im selben WLAN sind ein Gerät, dieselbe Person an zwei Tagen sind zwei Gerätetage. Eine echte Nutzerzahl ist das nicht und kann es ohne Tracking auch nicht werden.');
   out.push('- **Namen sind selbstgewählt und nicht eindeutig.** „Neu dabei" heißt: dieser Name stand vorher nie in der Tabelle.');
   out.push('- **Ergebnis = Spielzeit + 30 s je Tipp** (`queens_score`), Fehler kosten nichts. Die Spalte „Zeit" ist die reine Spielzeit.');
-  out.push('- Der Zeitraum beginnt dort, wo der letzte Bericht endete. Fällt ein Lauf aus, deckt der nächste beide Wochen ab. Die Zähler liegen nur stundenweise vor, ihr Fenster ist deshalb auf volle Stunden gerundet — die angebrochene Stunde gehört dem nächsten Bericht.');
+  out.push('- Der Zeitraum beginnt dort, wo der letzte Bericht endete. Fällt ein Lauf aus, deckt der nächste beide Wochen ab. Die Zähler liegen nur stundenweise vor, ihr Fenster ist deshalb auf volle Stunden gerundet — die angebrochene Stunde gehört dem nächsten Bericht. Die Trichterstufen zählen alle über dieses gerundete Fenster, damit ihre Quoten zueinander passen; weicht die Einreichungszahl dadurch von der oben ab, steht es an der Stelle dabei.');
   out.push('');
   out.push('</details>');
   out.push('');
@@ -601,21 +626,41 @@ export function renderReport(stats, { continued = true } = {}) {
 }
 
 // Namen kommen von außen: submit_score kürzt sie auf 20 Zeichen und faltet
-// Whitespace, prüft aber keine Zeichen. Im Bericht landen sie in einem
-// GitHub-Issue, das Markdown UND rohes HTML rendert — also wird entschärft,
-// was dort Bedeutung hätte: Pipes zerlegen sonst die Tabelle, Zeilenumbrüche
-// die Zeile, und `<` eröffnet sowohl HTML als auch einen Kommentar, mit dem
-// sich der Zustandsmarker am Ende nachahmen ließe. Jede Stelle, an der ein
-// Name gedruckt wird, geht hier durch.
+// Whitespace, prüft aber sonst nichts — jeder kann sich beim Einreichen nennen,
+// wie er will. Im Bericht landen sie in einem GitHub-Issue, und dort hat eine
+// ganze Reihe von Zeichenfolgen Bedeutung. Die unangenehmste ist `@name`:
+// GitHub macht daraus eine echte Erwähnung und benachrichtigt den Account oder
+// das Team — ein beliebiger Name in der Rangliste könnte also jede Woche
+// Unbeteiligte anpingen lassen. Daneben: `#123` verlinkt ein Issue, nackte URLs
+// werden verlinkt, Pipes zerlegen die Tabelle, `<` eröffnet rohes HTML.
+//
+// Statt jede dieser Formen einzeln zu entschärfen, wird der Name als
+// **Code-Span** gesetzt: darin rendert GitHub überhaupt kein Markdown und kein
+// HTML mehr. Das nimmt allen auf einmal die Bedeutung — auch denen, an die
+// heute niemand denkt — und der Name bleibt zeichengetreu lesbar. Jede Stelle,
+// an der ein Name gedruckt wird, geht hier durch.
 export function safeText(text) {
-  return String(text)
-    .replace(/\|/g, '\\|')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/[\r\n]+/g, ' ');
+  const body = String(text)
+    .replace(/[\r\n]+/g, ' ')
+    // Pipes müssen auch INNERHALB eines Code-Spans maskiert werden, sonst
+    // zerlegt GitHub die Tabellenzeile daran. (Außerhalb einer Tabelle bleibt
+    // der Backslash dann sichtbar — ein kosmetischer Rest bei einem Namen, der
+    // ohnehin absichtlich seltsam ist.)
+    .replace(/\|/g, '\\|');
+  if (!body) return '';
+  // Der Zaun muss länger sein als die längste Backtick-Folge im Namen, sonst
+  // bricht der Name aus dem Span aus und alles dahinter wird wieder Markdown.
+  const longest = (body.match(/`+/g) || []).reduce((m, run) => Math.max(m, run.length), 0);
+  const fence = '`'.repeat(longest + 1);
+  // Beginnt oder endet der Inhalt mit einem Backtick, braucht der Span je ein
+  // Leerzeichen Polster; CommonMark entfernt genau dieses eine wieder.
+  const pad = body.startsWith('`') || body.endsWith('`') ? ' ' : '';
+  return `${fence}${pad}${body}${pad}${fence}`;
 }
 
-const playerName = (name) => safeText(name || '(ohne Namen)');
+// „(ohne Namen)" ist unser eigener Text und bleibt deshalb normaler Fließtext —
+// nur was von außen kommt, wird eingezäunt.
+const playerName = (name) => (name ? safeText(name) : '(ohne Namen)');
 
 export function buildReport(rows, { since, until, continued = true, stats: statRows, statsSince, statsUntil }) {
   const stats = summarize(rows, { since, until, stats: statRows, statsSince, statsUntil });

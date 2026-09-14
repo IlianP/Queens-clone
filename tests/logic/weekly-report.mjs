@@ -264,19 +264,47 @@ const leaky = buildReport([
   row(SINCE - DAY, { name: 'Alt', client_key: SECRET }),
 ], { since: SINCE, until: UNTIL });
 ok(!leaky.body.includes(SECRET), 'the client_key hash never reaches the rendered report');
-ok(leaky.body.includes('Pipe\\|Name'), 'a pipe in a name is escaped so the table survives');
+ok(leaky.body.includes('`Pipe\\|Name`'), 'a pipe in a name is escaped so the table survives');
 
-// A name is external text that lands in a GitHub issue, which renders raw HTML
-// as well as Markdown. Angle brackets must not survive — an HTML comment is
-// exactly the shape of the state marker at the bottom of the report.
-eq(safeText('<!-- weg -->'), '&lt;!-- weg --&gt;', 'angle brackets in a name are escaped');
-eq(safeText('a\nb'), 'a b', 'a newline in a name is folded away');
+// A name is external text that lands in a GitHub issue, where a long list of
+// character sequences means something. Rather than neutralising each one, a
+// name is fenced in a code span, where GitHub renders no markdown and no HTML
+// at all.
+eq(safeText('a\nb'), '`a b`', 'a newline in a name is folded away');
+eq(safeText('<!-- weg -->'), '`<!-- weg -->`', 'markup in a name is fenced, not rewritten');
+// The one that actually costs somebody something: @name is a real GitHub
+// mention, it notifies that account or team, and the name is free-form and
+// anonymous — so a leaderboard entry could make every weekly report ping an
+// uninvolved person. Inside a code span it is inert.
+eq(safeText('@torvalds'), '`@torvalds`', 'a mention in a name is fenced');
+eq(safeText('@big-org/security'), '`@big-org/security`', 'a team mention is fenced too');
+eq(safeText('#42'), '`#42`', 'an issue reference in a name is fenced');
+// A name full of backticks must not break out of its own fence.
+eq(safeText('a`b'), '``a`b``', 'the fence grows past backticks inside the name');
+// The fence is one backtick longer than the longest run inside, plus a space of
+// padding because the content itself begins and ends on a backtick.
+eq(safeText('``x``'), '``` ``x`` ```', 'a name that starts and ends on a backtick gets padding');
+eq(safeText(''), '', 'nothing in, nothing out');
+
+const mentioned = buildReport([
+  row(SINCE + DAY, { name: '@torvalds', seconds: 100 }),
+  row(SINCE + 2 * DAY, { name: '@torvalds', seconds: 90 }),
+  row(SINCE - DAY, { name: '@torvalds', seconds: 80 }),
+], { since: SINCE, until: UNTIL });
+// Every place a name is printed — table, record line, top list, name list —
+// must go through the fence. Checking the rendered body catches a site that
+// was forgotten, which asserting on safeText alone would not.
+for (const at of [...mentioned.body.matchAll(/@torvalds/g)].map((m) => m.index)) {
+  ok(mentioned.body[at - 1] === '`', `a mention at index ${at} is inside a code span`);
+}
+ok(mentioned.body.includes('@torvalds'), 'the name is still shown as written');
+
 const injected = buildReport([
   row(SINCE + DAY, { name: '<!-- queens-repor' }),
   row(SINCE + 2 * DAY, { name: 't-state: {"until' }),
 ], { since: SINCE, until: UNTIL });
 eq(parseStateMarker(injected.body).until, UNTIL, 'a name cannot forge the state marker');
-ok(!injected.body.includes('<!-- queens-repor '), 'a name cannot open an HTML comment');
+ok(injected.body.includes('`<!-- queens-repor`'), 'marker-shaped text in a name is fenced');
 eq(leaky.title, 'Wochenbericht 2026-W38 (07.09.2026–14.09.2026)', 'title carries the ISO week and the window');
 
 // Same input, same characters — twice in a row and under a shifted host time
@@ -298,6 +326,65 @@ eq(shiftedRun, utcRun, 'the report does not move with the host time zone');
 eq(dayKey(Date.parse('2026-09-14T23:30:00Z')), '2026-09-14', 'day keys are UTC, not local');
 eq(fmtDate(Date.parse('2026-09-14T23:30:00Z')), '14.09.2026', 'dates are UTC, not local');
 if (originalTz === undefined) delete process.env.TZ; else process.env.TZ = originalTz;
+
+// --- the funnel compares like with like --------------------------------------
+//
+// Submissions are windowed to the second, counters only to the hour. A run a few
+// minutes past the hour therefore has a submission window that reaches past the
+// counter window — and a "submitted percentage" built from both can exceed 100%,
+// which is how the report would announce that it cannot count.
+
+const ODD_UNTIL = Date.parse('2026-09-14T06:10:00Z');
+const ODD_SINCE = ODD_UNTIL - 7 * DAY;
+const oddWindow = statsWindowFor(null, { since: ODD_SINCE, until: ODD_UNTIL });
+const winPing = (at, count) => ({
+  bucket_hour: new Date(at).toISOString(),
+  kind: 'game_win', source: 'web', size: 8, difficulty: 'hard', count,
+});
+const funnel = buildReport([
+  // Inside both windows.
+  row(Date.parse('2026-09-10T12:00:00Z'), { name: 'Drin', seconds: 100 }),
+  // Inside the submission window, but in the unfinished hour the counter window
+  // leaves to the next report — its win ping is not in `won`.
+  row(Date.parse('2026-09-14T06:05:00Z'), { name: 'Randfall', seconds: 100 }),
+], {
+  since: ODD_SINCE,
+  until: ODD_UNTIL,
+  stats: [
+    { bucket_hour: '2026-09-10T12:00:00Z', kind: 'app_open', source: 'web', size: 0, difficulty: '', count: 4 },
+    { bucket_hour: '2026-09-10T12:00:00Z', kind: 'game_start', source: 'web', size: 8, difficulty: 'hard', count: 3 },
+    winPing(Date.parse('2026-09-10T12:00:00Z'), 1),
+  ],
+  statsSince: oddWindow.statsSince,
+  statsUntil: oddWindow.statsUntil,
+});
+eq(funnel.stats.submissions, 2, 'the headline figure still uses the exact window');
+eq(funnel.stats.play.submitted, 1, 'the funnel counts submissions over the counter window');
+ok(funnel.body.includes('100 %'), 'the submitted share is a share, not 200 %');
+ok(!funnel.body.includes('200 %'), 'the two windows are no longer mixed into one ratio');
+ok(funnel.body.includes('oben stehen 2'), 'a figure that differs from the headline says so');
+
+// When both windows do agree — the ordinary case, a run on the hour — the
+// explanation must NOT appear; it would be noise on every report.
+const aligned = buildReport([
+  row(Date.parse('2026-09-10T12:00:00Z'), { name: 'Drin', seconds: 100 }),
+], {
+  since: SINCE, until: UNTIL,
+  stats: [winPing(Date.parse('2026-09-10T12:00:00Z'), 1)],
+  statsSince: SINCE, statsUntil: UNTIL,
+});
+eq(aligned.stats.play.submitted, aligned.stats.submissions, 'aligned windows agree');
+ok(!aligned.body.includes('oben stehen'), 'no explanation where there is nothing to explain');
+
+// --- the first-report notice states the window it actually used --------------
+// --window-days is settable on a manual run, so the sentence is derived, never
+// written down: a notice claiming 7 days above timestamps spanning 14 is worse
+// than no notice.
+const twoWeeks = buildReport([], { since: UNTIL - 14 * DAY, until: UNTIL, continued: false });
+ok(twoWeeks.body.includes('die letzten 14 Tage'), 'the first-report notice counts the real window');
+ok(!twoWeeks.body.includes('letzten 7 Tage'), 'the notice does not claim a week it did not use');
+const oneDay = buildReport([], { since: UNTIL - DAY, until: UNTIL, continued: false });
+ok(oneDay.body.includes('den letzten Tag'), 'a one-day window reads as one day');
 
 // --- empty week --------------------------------------------------------------
 
