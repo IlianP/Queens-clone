@@ -40,7 +40,7 @@
 //   python3 -m http.server 8000 &
 //   node tests/browser/i18n-layout.mjs
 
-import { openGame, boardSettled } from './board-helpers.mjs';
+import { openGame, boardSettled, stubStats } from './board-helpers.mjs';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8000';
 const PLAYWRIGHT = '/opt/node22/lib/node_modules/playwright/index.js';
@@ -236,6 +236,7 @@ try {
     let ok = true;
     for (const width of WIDTHS) {
       const page = await browser.newPage({ viewport: { width, height: 844 }, locale });
+      await stubStats(page); // never let a layout run write to the live project
       await stubLeaderboard(page);
       await page.goto(BASE_URL + '/index.html');
       await page.waitForSelector('html[data-i18n-ready]');

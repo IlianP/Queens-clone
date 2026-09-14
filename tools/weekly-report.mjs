@@ -22,6 +22,12 @@
 // eingereichtes Spiel tut das. Jede Zahl unten ist deshalb eine Aussage über
 // Einreichungen, nie über "Spiele" — siehe den Abschnitt "Lesehilfe" im Bericht.
 //
+// ZEITFENSTER: Einreichungen werden sekundengenau abgegrenzt, Pings liegen nur
+// stundenweise vor. Das Ping-Fenster wird deshalb auf volle Stunden abgeschnitten
+// und sein Ende getrennt im Zustandsmarker geführt (statsUntil), damit zwei
+// aufeinanderfolgende Berichte dieselbe Stunde nicht doppelt zählen und keine
+// auslassen. Beide Fenster stehen in der Kopfzeile des Berichts.
+//
 // client_key wird gelesen, aber NIE gedruckt. Der Wert ist der täglich gesalzene
 // IP-Hash aus submit_score(); er taugt als Zählmerkmal für aktive Geräte und
 // sonst zu nichts. Weil er täglich wechselt, ist "eindeutige Geräte über eine
@@ -41,7 +47,13 @@ const MAX_LISTED = 25;
 // So viele Plätze zeigt die Bestenliste je aktivem Bucket.
 const TOP_PER_BUCKET = 3;
 
+const HOUR_MS = 3600000;
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+// Muss zu js/stats.js und bump_stat() passen. 'web' ist echtes Spiel; alles
+// andere wird getrennt ausgewiesen und fließt in keine Quote ein.
+const REAL_SOURCE = 'web';
+// Dativ, weil die Beschriftung nur hinter "aus …" auftaucht.
+const SOURCE_LABEL = { test: 'automatisierten Testläufen', dev: 'lokaler Entwicklung' };
 const DIFF_LABEL = { easy: 'leicht', medium: 'mittel', hard: 'schwer' };
 
 // --- Formatierer (alle deterministisch, alle UTC) ----------------------------
@@ -140,14 +152,25 @@ export function parseStateMarker(text) {
     const state = JSON.parse(m[1]);
     const at = Date.parse(state.until);
     if (!Number.isFinite(at)) return null;
-    return { until: at, lastId: Number.isFinite(state.lastId) ? state.lastId : null };
+    // statsUntil fehlt in Berichten von vor den Zählern — dann beginnt das
+    // Ping-Fenster einfach bei der angebrochenen Stunde von `since`.
+    const statsAt = Date.parse(state.statsUntil);
+    return {
+      until: at,
+      lastId: Number.isFinite(state.lastId) ? state.lastId : null,
+      statsUntil: Number.isFinite(statsAt) ? statsAt : null,
+    };
   } catch {
     return null;
   }
 }
 
-export function renderStateMarker({ until, lastId }) {
-  const payload = JSON.stringify({ until: new Date(until).toISOString(), lastId: lastId ?? null });
+export function renderStateMarker({ until, lastId, statsUntil }) {
+  const payload = JSON.stringify({
+    until: new Date(until).toISOString(),
+    lastId: lastId ?? null,
+    statsUntil: Number.isFinite(statsUntil) ? new Date(statsUntil).toISOString() : null,
+  });
   return `<!-- ${MARKER_PREFIX} ${payload} -->`;
 }
 
@@ -159,6 +182,20 @@ export function windowFor(state, now, windowDays = DEFAULT_WINDOW_DAYS) {
   const fallback = until - windowDays * DAY_MS;
   const since = state && Number.isFinite(state.until) ? Math.min(state.until, until) : fallback;
   return { since, until, continued: !!(state && Number.isFinite(state.until)) };
+}
+
+export const floorHour = (ms) => Math.floor(ms / HOUR_MS) * HOUR_MS;
+
+// Ping-Fenster: halboffen [statsSince, statsUntil) auf vollen Stunden. Das Ende
+// ist die letzte ABGESCHLOSSENE Stunde vor dem Lauf — die angebrochene Stunde
+// gehört dem nächsten Bericht, sonst würde sie zweimal gezählt (hier anteilig,
+// dort vollständig). Der Anfang ist das Ende des Vorberichts; ohne einen solchen
+// die Stunde, in der das Berichtsfenster beginnt.
+export function statsWindowFor(state, { since, until }) {
+  const statsUntil = floorHour(until);
+  const prev = state && Number.isFinite(state.statsUntil) ? state.statsUntil : null;
+  const statsSince = Math.min(prev !== null ? prev : floorHour(since), statsUntil);
+  return { statsSince, statsUntil };
 }
 
 // --- Auswertung (pur) --------------------------------------------------------
@@ -215,7 +252,79 @@ function bestOf(rows) {
   return best;
 }
 
-export function summarize(rawRows, { since, until }) {
+function normalizeStat(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const t = raw.bucket_hour ? Date.parse(raw.bucket_hour) : NaN;
+  const count = Number(raw.count);
+  if (!Number.isFinite(t) || !Number.isFinite(count)) return null;
+  return {
+    t,
+    kind: String(raw.kind || ''),
+    source: String(raw.source || ''),
+    size: Number(raw.size) || 0,
+    difficulty: String(raw.difficulty || ''),
+    count,
+  };
+}
+
+// Die Ping-Seite. Bewusst eine eigene Funktion mit eigenem Rückgabewert: die
+// Zähler dürfen an keiner Stelle in dieselbe Zahl fließen wie eine Einreichung,
+// und getrennte Auswertungen sind der einfachste Weg, das nicht versehentlich
+// doch zu tun.
+export function summarizePlay(rawStats, { statsSince, statsUntil }) {
+  const rows = (Array.isArray(rawStats) ? rawStats : [])
+    .map(normalizeStat)
+    .filter((r) => r && r.t >= statsSince && r.t < statsUntil);
+
+  const real = rows.filter((r) => r.source === REAL_SOURCE);
+  const sumOf = (list) => list.reduce((a, r) => a + r.count, 0);
+  const kind = (k) => sumOf(real.filter((r) => r.kind === k));
+
+  // Alles, was nicht 'web' ist, wird NUR als Gesamtzahl je Quelle ausgewiesen
+  // und geht in keine Quote ein. Es soll sichtbar sein, dass es existiert (ein
+  // Testlauf, der plötzlich fehlt, ist auch eine Information), aber es darf die
+  // Zahlen daneben nicht anfassen.
+  const others = new Map();
+  for (const r of rows) {
+    if (r.source === REAL_SOURCE) continue;
+    others.set(r.source, (others.get(r.source) || 0) + r.count);
+  }
+
+  // Je Bucket: gestartet und gelöst — was gespielt wird, unabhängig davon, ob
+  // es jemand einreicht.
+  const buckets = new Map();
+  for (const r of real) {
+    if (!r.size || !r.difficulty) continue;
+    if (r.kind !== 'game_start' && r.kind !== 'game_win') continue;
+    const key = `${r.size}|${r.difficulty}`;
+    if (!buckets.has(key)) buckets.set(key, { size: r.size, difficulty: r.difficulty, started: 0, won: 0 });
+    const b = buckets.get(key);
+    if (r.kind === 'game_start') b.started += r.count;
+    else b.won += r.count;
+  }
+
+  const byDay = new Map();
+  for (const r of real.filter((x) => x.kind === 'game_start')) {
+    byDay.set(dayKey(r.t), (byDay.get(dayKey(r.t)) || 0) + r.count);
+  }
+
+  return {
+    statsSince,
+    statsUntil,
+    // Ohne eine einzige Zeile ist die Migration nicht gelaufen (oder es wurde
+    // nichts gespielt) — der Bericht lässt den Abschnitt dann ganz weg, statt
+    // Nullen zu drucken, die wie ein Einbruch aussehen.
+    available: rows.length > 0,
+    opens: kind('app_open'),
+    started: kind('game_start'),
+    won: kind('game_win'),
+    startsByDay: byDay,
+    buckets: [...buckets.values()].sort((a, b) => b.started - a.started || a.size - b.size),
+    otherSources: [...others.entries()].sort((a, b) => b[1] - a[1]),
+  };
+}
+
+export function summarize(rawRows, { since, until, stats, statsSince, statsUntil }) {
   const rows = (Array.isArray(rawRows) ? rawRows : []).map(normalizeRow).filter(Boolean);
   const span = Math.max(1, until - since);
 
@@ -292,6 +401,12 @@ export function summarize(rawRows, { since, until }) {
   return {
     since,
     until,
+    // Die Ping-Auswertung hängt als eigenes Feld daran, nicht eingemischt in
+    // die Einreichungszahlen darüber.
+    play: summarizePlay(stats, {
+      statsSince: Number.isFinite(statsSince) ? statsSince : floorHour(since),
+      statsUntil: Number.isFinite(statsUntil) ? statsUntil : floorHour(until),
+    }),
     total: rows.length,
     lastId: rows.reduce((max, r) => Math.max(max, r.id), 0) || null,
     submissions: window.length,
@@ -334,7 +449,11 @@ export function renderReport(stats, { continued = true } = {}) {
   const out = [];
   const w = stats.submissions;
 
+  const play = stats.play || { available: false };
   out.push(`**Zeitraum:** ${fmtDateTime(stats.since)} → ${fmtDateTime(stats.until)}`);
+  if (play.available) {
+    out.push(`**Zähler-Zeitraum:** ${fmtDateTime(play.statsSince)} → ${fmtDateTime(play.statsUntil)} (auf volle Stunden gerundet)`);
+  }
   if (!continued) {
     out.push('');
     out.push('> Kein vorheriger Bericht gefunden — dieser deckt die letzten 7 Tage ab.');
@@ -347,15 +466,53 @@ export function renderReport(stats, { continued = true } = {}) {
   out.push(`- **Tage mit Aktivität:** ${stats.activeDays} von ${stats.days.length} Kalendertagen`);
   out.push(`- **Aktive Geräte:** bis zu ${stats.peakDevices} an einem Tag, ${stats.deviceDays} Gerätetage im Zeitraum`);
 
-  if (w > 0) {
-    const max = stats.days.reduce((m, d) => Math.max(m, d.count), 0);
+  // Der Balken zeigt gestartete Spiele, wo es sie gibt — das ist das ehrlichere
+  // Aktivitätsmaß —, sonst Einreichungen. Beide Zahlen stehen beschriftet
+  // daneben, aus zwei Quellen, nie addiert.
+  const startsOf = (d) => (play.available ? play.startsByDay.get(d.key) || 0 : null);
+  const chartOn = play.available || w > 0;
+  if (chartOn) {
+    const max = stats.days.reduce((m, d) => Math.max(m, play.available ? startsOf(d) : d.count), 0);
     out.push('');
     out.push('```');
     for (const d of stats.days) {
       const label = `${WEEKDAYS[new Date(d.at).getUTCDay()]} ${fmtDate(d.at).slice(0, 6)}`;
-      out.push(`${label.padEnd(10)}${bar(d.count, max).padEnd(21)}${d.count}`);
+      const value = play.available ? startsOf(d) : d.count;
+      const tail = play.available
+        ? `${startsOf(d)} gestartet · ${d.count} eingereicht`
+        : `${d.count} eingereicht`;
+      out.push(`${label.padEnd(10)}${bar(value, max).padEnd(21)}${tail}`);
     }
     out.push('```');
+  }
+
+  if (play.available) {
+    out.push('');
+    out.push('## Spielverlauf');
+    out.push('');
+    out.push('Aus den anonymen Zählern — sie wissen von jedem Spiel, nicht nur von den');
+    out.push('eingereichten. Die letzte Zeile stammt als einzige aus der Rangliste.');
+    out.push('');
+    out.push(`- **Seite geöffnet:** ${play.opens}`);
+    out.push(`- **Spiele gestartet:** ${play.started}` +
+      (play.opens ? ` (${fmtNum(play.started / play.opens, 1)} je Öffnung)` : ''));
+    out.push(`- **Spiele gelöst:** ${play.won}` +
+      (play.started ? ` (${fmtPct(play.won, play.started)} der gestarteten)` : ''));
+    out.push(`- **Davon eingereicht:** ${w} aus der Rangliste` +
+      (play.won ? ` (${fmtPct(w, play.won)} der gelösten)` : ''));
+    if (play.otherSources.length) {
+      const parts = play.otherSources.map(([src, n]) => `${n} aus ${SOURCE_LABEL[src] || src}`);
+      out.push('');
+      out.push(`> **Nicht mitgezählt:** ${parts.join(', ')}. Diese Pings stehen in keiner Zahl oben.`);
+    }
+    if (play.buckets.length) {
+      out.push('');
+      out.push('| Bucket | Gestartet | Gelöst | Lösungsquote |');
+      out.push('| --- | ---: | ---: | ---: |');
+      for (const b of play.buckets) {
+        out.push(`| ${bucketLabel(b.size, b.difficulty)} | ${b.started} | ${b.won} | ${fmtPct(b.won, b.started)} |`);
+      }
+    }
   }
 
   out.push('');
@@ -424,15 +581,22 @@ export function renderReport(stats, { continued = true } = {}) {
   out.push('');
   out.push('<details><summary>Lesehilfe: was diese Zahlen sind (und was nicht)</summary>');
   out.push('');
-  out.push('- **„Einreichung" ≠ „gespieltes Spiel".** Eine Zeile entsteht nur, wenn ein Spiel gelöst *und* an die globale Rangliste geschickt wurde. Wer lokal spielt, nicht löst oder nicht einreicht, taucht nirgends auf. Seitenaufrufe werden gar nicht erhoben.');
+  out.push('- **Zwei Quellen, nie addiert.** „Einreichungen" kommen aus der Ranglisten-Tabelle (exakt, mit Namen und Zeiten); „geöffnet / gestartet / gelöst" kommen aus anonymen Zählern. Jede Zahl gehört zu genau einer der beiden — deshalb gibt es auch keinen Zähler fürs Einreichen, den gäbe es sonst doppelt.');
+  out.push('- **Die Zähler enthalten keine Kennung.** Kein Cookie, keine IP, keine Sitzung, keine Zeile je Spiel — nur „Stunde X, Art Y, Größe Z: plus eins". Daraus lässt sich niemand wiedererkennen, also auch keine Nutzerzahl ableiten.');
+  out.push('- **Testläufe zählen getrennt.** Ein automatisierter Browsertest fährt dieselbe Oberfläche und würde sonst wie ein Mensch aussehen; er meldet sich selbst als `test` (über `navigator.webdriver`), lokale Entwicklung als `dev`. Beides steht nur in der eigenen Zeile „Nicht mitgezählt".');
+  out.push('- **„Einreichung" ≠ „gespieltes Spiel".** Eine Zeile in der Rangliste entsteht nur, wenn ein Spiel gelöst *und* geschickt wurde. Reine Seitenaufrufe von Leuten, die nie ein Spiel starten, sieht nur der Zähler `app_open`.');
   out.push('- **„Aktive Geräte" ist eine Untergrenze pro Tag.** Gezählt wird der tägliche IP-Hash aus `submit_score`, den die Rangliste ohnehin fürs Rate-Limit führt. Er wechselt täglich und ist pro Netz grob — zwei Personen im selben WLAN sind ein Gerät, dieselbe Person an zwei Tagen sind zwei Gerätetage. Eine echte Nutzerzahl ist das nicht und kann es ohne Tracking auch nicht werden.');
   out.push('- **Namen sind selbstgewählt und nicht eindeutig.** „Neu dabei" heißt: dieser Name stand vorher nie in der Tabelle.');
   out.push('- **Ergebnis = Spielzeit + 30 s je Tipp** (`queens_score`), Fehler kosten nichts. Die Spalte „Zeit" ist die reine Spielzeit.');
-  out.push('- Der Zeitraum beginnt dort, wo der letzte Bericht endete. Fällt ein Lauf aus, deckt der nächste beide Wochen ab.');
+  out.push('- Der Zeitraum beginnt dort, wo der letzte Bericht endete. Fällt ein Lauf aus, deckt der nächste beide Wochen ab. Die Zähler liegen nur stundenweise vor, ihr Fenster ist deshalb auf volle Stunden gerundet — die angebrochene Stunde gehört dem nächsten Bericht.');
   out.push('');
   out.push('</details>');
   out.push('');
-  out.push(renderStateMarker({ until: stats.until, lastId: stats.lastId }));
+  out.push(renderStateMarker({
+    until: stats.until,
+    lastId: stats.lastId,
+    statsUntil: play.statsUntil,
+  }));
   return out.join('\n');
 }
 
@@ -453,8 +617,8 @@ export function safeText(text) {
 
 const playerName = (name) => safeText(name || '(ohne Namen)');
 
-export function buildReport(rows, { since, until, continued = true }) {
-  const stats = summarize(rows, { since, until });
+export function buildReport(rows, { since, until, continued = true, stats: statRows, statsSince, statsUntil }) {
+  const stats = summarize(rows, { since, until, stats: statRows, statsSince, statsUntil });
   return { stats, title: reportTitle(stats), body: renderReport(stats, { continued }) };
 }
 
@@ -497,6 +661,32 @@ async function fetchAllScores(baseUrl, serviceKey) {
   }
 }
 
+// Dieselbe Schleife für die Zählertabelle. Auch hier wird alles geholt und in
+// JS gefiltert: die Tabelle wächst pro Stunde um eine Handvoll Zeilen, und ein
+// Array ist mit Fixtures testbar, ein SQL-Filter nicht.
+async function fetchAllStats(baseUrl, serviceKey) {
+  const rows = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const url = `${baseUrl}/rest/v1/play_stats` +
+      '?select=bucket_hour,kind,source,size,difficulty,count' +
+      `&order=bucket_hour.asc&limit=${PAGE_SIZE}&offset=${offset}`;
+    const res = await fetch(url, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: 'application/json' },
+    });
+    // Ein 404 heißt: die Migration für die Zähler ist nicht gelaufen. Das ist
+    // kein Fehler, sondern der dokumentierte Zustand davor — der Bericht lässt
+    // den Abschnitt dann weg und erscheint trotzdem.
+    if (res.status === 404) return [];
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Supabase antwortete ${res.status} für play_stats: ${body.slice(0, 300)}`);
+    }
+    const page = await res.json();
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return rows;
+  }
+}
+
 // --- CLI ---------------------------------------------------------------------
 
 function parseArgs(argv) {
@@ -508,6 +698,7 @@ function parseArgs(argv) {
     else if (a === '--out-body') args.outBody = next();
     else if (a === '--out-title') args.outTitle = next();
     else if (a === '--fixture') args.fixture = next();
+    else if (a === '--fixture-stats') args.fixtureStats = next();
     else if (a === '--now') args.now = next();
     else if (a === '--window-days') args.windowDays = Number(next());
     else if (a === '--help' || a === '-h') args.help = true;
@@ -519,7 +710,7 @@ function parseArgs(argv) {
 async function main(argv) {
   const args = parseArgs(argv);
   if (args.help) {
-    console.log('node tools/weekly-report.mjs [--state <datei>] [--out-body <datei>] [--out-title <datei>] [--fixture <datei>] [--now <iso>] [--window-days <n>]');
+    console.log('node tools/weekly-report.mjs [--state <datei>] [--out-body <datei>] [--out-title <datei>] [--fixture <datei>] [--fixture-stats <datei>] [--now <iso>] [--window-days <n>]');
     return 0;
   }
 
@@ -536,17 +727,24 @@ async function main(argv) {
     }
   }
   const { since, until, continued } = windowFor(state, now, args.windowDays);
+  const { statsSince, statsUntil } = statsWindowFor(state, { since, until });
 
   let rows;
+  let statRows;
   if (args.fixture) {
     rows = JSON.parse(readFileSync(args.fixture, 'utf8'));
+    statRows = args.fixtureStats ? JSON.parse(readFileSync(args.fixtureStats, 'utf8')) : [];
   } else {
     const key = process.env.SUPABASE_SERVICE_KEY;
     if (!key) throw new Error('SUPABASE_SERVICE_KEY fehlt (GitHub-Secret bzw. Umgebungsvariable).');
-    rows = await fetchAllScores(process.env.SUPABASE_URL?.replace(/\/+$/, '') || readSupabaseUrl(), key);
+    const base = process.env.SUPABASE_URL?.replace(/\/+$/, '') || readSupabaseUrl();
+    rows = await fetchAllScores(base, key);
+    statRows = await fetchAllStats(base, key);
   }
 
-  const { title, body, stats } = buildReport(rows, { since, until, continued });
+  const { title, body, stats } = buildReport(rows, {
+    since, until, continued, stats: statRows, statsSince, statsUntil,
+  });
   if (args.outBody) {
     mkdirSync(dirname(resolve(args.outBody)), { recursive: true });
     writeFileSync(args.outBody, body + '\n');
@@ -556,7 +754,8 @@ async function main(argv) {
     writeFileSync(args.outTitle, title + '\n');
   }
   if (!args.outBody) console.log(body);
-  console.error(`${title}: ${stats.submissions} neue Einreichung(en), ${stats.total} gesamt.`);
+  console.error(`${title}: ${stats.submissions} neue Einreichung(en), ${stats.total} gesamt` +
+    (stats.play.available ? `, ${stats.play.started} Spiel(e) gestartet.` : ' (keine Zähler).'));
   return 0;
 }
 

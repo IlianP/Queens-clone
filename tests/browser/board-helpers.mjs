@@ -42,10 +42,12 @@ const CHROMIUM = '/opt/pw-browsers/chromium';
 // BEFORE the first navigation — the only point at which page.route() stubs can
 // still catch the leaderboard reads the app fires on boot. Use it to keep a test
 // off the live Supabase project (see tests/README.md); leaving it out keeps the
-// original behaviour, so existing callers are unaffected.
+// original behaviour, so existing callers are unaffected. `stats` defaults to
+// 'stub', which answers the play counters locally (see stubStats below); pass
+// 'live' only when the pings themselves are what the test is about.
 export async function openGame(opts = {}) {
-  const { baseUrl = 'http://localhost:8000', locale = 'en-US', storage = null, routes = null } =
-    typeof opts === 'string' ? { baseUrl: opts } : opts;
+  const { baseUrl = 'http://localhost:8000', locale = 'en-US', storage = null, routes = null,
+    stats = 'stub' } = typeof opts === 'string' ? { baseUrl: opts } : opts;
   const pw = (await import(PLAYWRIGHT)).default;
   const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, locale });
@@ -60,6 +62,8 @@ export async function openGame(opts = {}) {
     if (m.type() === 'error') errors.push(m.text());
   });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+
+  if (stats === 'stub') await stubStats(page);
 
   if (routes) await routes(page);
 
@@ -76,6 +80,21 @@ export async function openGame(opts = {}) {
   );
 
   return { browser, page, errors };
+}
+
+// Answer the anonymous play counters (js/stats.js) locally. EVERY test needs
+// this, for the same reason every test stubs the leaderboard: a test must not
+// write to the live project. The pings tag themselves `test` on their own (see
+// js/stats.js — navigator.webdriver), so nothing would land in the real
+// figures either way; what this prevents is the network call itself, and the
+// console noise a 404 leaves in `errors` on a server where the counters aren't
+// set up yet. openGame() calls it for you — call it yourself in a test that
+// builds its own page with browser.newPage(). A route registered afterwards
+// wins over this one, so a test can still observe the pings if that is the
+// point of the test.
+export async function stubStats(page) {
+  await page.route('**/rest/v1/rpc/bump_stat', (r) =>
+    r.fulfill({ status: 204, contentType: 'application/json', body: '' }));
 }
 
 // Board size N (cells form an N x N grid).

@@ -63,6 +63,9 @@ const highscores = strip(read('js/highscores.js'));
 const game = strip(read('js/game.js'));
 const hint = strip(read('js/hint.js'));
 const leaderboard = strip(read('js/leaderboard.js'));
+// After leaderboard.js: stats.js reads its SUPABASE_* constants, and in the
+// concatenated classic script a `const` is only in scope after its own line.
+const stats = strip(read('js/stats.js'));
 let main = strip(read('js/main.js'));
 
 // The Artifact CSP blocks fetch, so the level pools are embedded as the
@@ -128,19 +131,23 @@ const workerSrc =
   '};\n';
 
 // Page bundle: i18n packs -> i18n -> settings -> audio -> voice -> solver ->
-// generator -> levels -> highscores -> game -> hint -> leaderboard -> main
+// generator -> levels -> highscores -> game -> hint -> leaderboard -> stats ->
+// main
 // (boots). The language packs come FIRST because js/i18n.js builds I18N_PACKS
 // from them in a top-level `const`: in one shared scope a later declaration
 // would be in the temporal dead zone and the bundle would throw at load. The online
 // leaderboard's fetch calls are CSP-blocked inside the Artifact, so it stays
 // disabled there and the bundle runs local-only — the same graceful fallback the
-// game uses elsewhere. (The synthesised sounds need no assets, so they work
+// game uses elsewhere. stats.js sits right after it (it reads that file's
+// SUPABASE_* constants, and in one shared scope a `const` is only in scope after
+// its own line); its pings are CSP-blocked in the Artifact too, so a trial
+// bundle counts nothing — which is what you want from a throwaway link. (The synthesised sounds need no assets, so they work
 // under the Artifact CSP unchanged. Voice Mode degrades the same way: the
 // sandboxed Artifact frame can't grant mic access, so voiceSupported() gates it
 // off there and the panel simply doesn't run.)
 const pageBundle = [
   i18nEn, i18nDe, i18nFr, i18nEs, i18nPt, i18nRu, i18n,
-  settings, audio, voice, solver, generator, levels, highscores, game, hint, leaderboard, main,
+  settings, audio, voice, solver, generator, levels, highscores, game, hint, leaderboard, stats, main,
 ].join('\n\n');
 
 // The bundle has no <html> element to carry a lang attribute and no <head> the

@@ -10,6 +10,8 @@ Drittanbieter, kein Passwort, das ablaufen kann.
 | Zeitplan, Zustand, Issue | `.github/workflows/weekly-report.yml` |
 | Test | `tests/logic/weekly-report.mjs` (läuft in CI mit) |
 | Lesezugriff | `docs/leaderboard-setup.sql`, Abschnitt 7 |
+| Anonyme Zähler | `js/stats.js`, `docs/leaderboard-setup.sql` Abschnitt 8 |
+| Test dazu | `tests/logic/stats.mjs`, `tests/sql/play-stats.sql` |
 
 Der Bericht ist **deterministisch**: dieselben Zeilen und dasselbe Zeitfenster
 ergeben zeichengleichen Text. Keine KI im Spiel, keine Modellausgabe, kein
@@ -18,8 +20,10 @@ ergeben zeichengleichen Text. Keine KI im Spiel, keine Modellausgabe, kein
 ## Einrichten (einmalig, ~5 Minuten)
 
 1. **SQL nachziehen.** `docs/leaderboard-setup.sql` im Supabase-SQL-Editor
-   erneut ausführen (die Datei ist wiederholbar). Neu ist nur eine Zeile:
-   `grant select on public.scores to service_role;`.
+   erneut ausführen (die Datei ist wiederholbar). Neu sind Abschnitt 7 (ein
+   `grant select … to service_role`) und Abschnitt 8 (die anonymen Zähler:
+   `play_stats`, `stat_limits`, `bump_stat`). Bestehende Daten bleiben
+   unberührt.
 2. **service_role-Key holen.** Supabase → Project Settings → API →
    `service_role` (der geheime Key, nicht der `anon`-Key).
 3. **Secret setzen.** Im GitHub-Repo → Settings → Secrets and variables →
@@ -72,10 +76,100 @@ Bewusst **kein** Zustand im Repo: `main` ist geschützt (ein Bot-Push scheitert 
 Statuscheck `logic-tests`), und ein Commit auf `main` würde über `deploy.yml`
 jede Woche die Seite neu ausrollen.
 
+## Die anonymen Zähler (Pings)
+
+Die Rangliste weiß nur von Partien, die gelöst **und** eingereicht wurden. Alles
+davor war unsichtbar. `js/stats.js` schließt die Lücke mit drei Zählern:
+
+| Ping | Wann | Was er beantwortet |
+|------|------|--------------------|
+| `app_open` | einmal je Seitenaufruf | Wie oft wird das Spiel überhaupt geöffnet? |
+| `game_start` | sobald ein Brett bespielbar ist | Wie viele Partien werden angefangen? |
+| `game_win` | bei jedem gelösten Brett | Wie viele werden gelöst — auch ohne Einreichung? |
+
+**Es gibt bewusst keinen Ping fürs Einreichen.** Diese Zahl steht exakt in
+`scores`; ein Zähler dafür wäre dieselbe Zahl ein zweites Mal, aus einer zweiten
+Quelle, die abweichen kann. Der Bericht setzt die vier Stufen stattdessen als
+Trichter untereinander und schreibt an die letzte dazu, dass sie aus der
+Rangliste kommt.
+
+### Was gesendet wird — und was nicht
+
+Ein Ping ist ein **Zähler**, kein Ereignis. Der Server addiert eins auf eine
+Zeile `(Stunde, Art, Quelle, Größe, Schwierigkeit)`. Es gibt keine Zeile je
+Spiel, keine IP, keine Kennung, keine Sitzung, kein Cookie, keinen
+`localStorage`-Eintrag. Der vollständige Inhalt einer Anfrage:
+
+```json
+{ "p_kind": "game_start", "p_source": "web", "p_size": 8, "p_difficulty": "hard" }
+```
+
+Daraus lässt sich niemand wiedererkennen — deshalb braucht das keinen
+Einwilligungsbanner, und deshalb bleibt „wie viele eindeutige Nutzer" auch mit
+den Zählern unbeantwortbar. Wer eine echte Nutzerzahl will, müsste eine Kennung
+speichern; genau das tut das hier nicht.
+
+Fehlschläge sind folgenlos: `bumpStat` gibt nichts zurück (man kann einen Zähler
+also gar nicht abwarten), verschluckt jeden Fehler, und wenn der Server mit
+404/401/403 antwortet — etwa weil Abschnitt 8 noch nicht ausgeführt wurde —
+stellt er die Versuche für den Rest des Seitenaufrufs ein.
+
+### Testläufe zählen getrennt
+
+Ein automatisierter Browsertest fährt dieselbe Oberfläche wie ein Mensch. Damit
+er nicht als Spiel zählt, trägt jeder Ping eine **Quelle**:
+
+| Quelle | Woran erkannt | Im Bericht |
+|--------|---------------|------------|
+| `test` | `navigator.webdriver` (setzt jede WebDriver-/CDP-Automatisierung) | eigene Zeile „Nicht mitgezählt" |
+| `dev` | `localhost`, `127.0.0.1`, `*.local`, `file:` | eigene Zeile „Nicht mitgezählt" |
+| `web` | alles andere | die echten Zahlen |
+
+Zwei Eigenschaften machen das verlässlich:
+
+- **Kein Test muss etwas tun.** Die Erkennung passiert im Spielcode, nicht in den
+  Tests — eine vergessene Test-Einstellung kann also keinen Testlauf in die
+  echten Zahlen rutschen lassen. `navigator.webdriver` wird **vor** dem Hostnamen
+  geprüft, weil Browsertests gegen `localhost` laufen und sonst als `dev`
+  gälten.
+- **Im Zweifel nicht `web`.** Eine Umgebung, die sich nicht einordnen lässt,
+  gilt als `dev`. Einen echten Spieler als Entwicklung zu zählen kostet einen
+  Strich; einen Roboter als Spieler zu zählen ist genau das, was die Quelle
+  verhindern soll.
+
+Zusätzlich beantworten die Browsertests den Ping lokal (`stubStats` in
+`tests/browser/board-helpers.mjs`), damit die Testsuite die echte Datenbank gar
+nicht erst anfasst. Die Quelle ist der Gürtel, der Stub die Hosenträger. Wer
+Testverkehr wirklich im Bericht sehen will, öffnet die Seite mit
+`openGame({ stats: 'live' })`.
+
+### Zeitfenster
+
+Einreichungen werden sekundengenau abgegrenzt, Zähler liegen nur stundenweise
+vor. Das Ping-Fenster wird deshalb auf volle Stunden gerundet und endet bei der
+letzten **abgeschlossenen** Stunde; die angebrochene gehört dem nächsten Bericht.
+Sein Ende steht getrennt im Zustandsmarker (`statsUntil`), sodass zwei
+aufeinanderfolgende Berichte dieselbe Stunde weder doppelt zählen noch auslassen.
+Beide Zeiträume stehen in der Kopfzeile des Berichts.
+
+### Missbrauch
+
+`bump_stat` ist für `anon` offen — es muss aus dem Browser aufrufbar sein. Zwei
+Bremsen: die Funktion nimmt nur Werte aus festen Listen an (alles andere wird
+still verworfen, die Tabelle kann also keine erfundenen Zeilen enthalten), und
+sie zählt höchstens 60 Pings pro Minute und Client (`stat_limits`, derselbe
+täglich gesalzene IP-Hash wie beim Rate-Limit der Rangliste). Wie bei der
+Rangliste gilt: das hält groben Unfug ab, mehr nicht. Eine Zahl, die der Browser
+meldet, ist nie fälschungssicher.
+
 ## Was im Bericht steht
 
 - **Aktivität** — neue Einreichungen, Vergleich zum Vorzeitraum, Gesamtzahl,
-  Tage mit Aktivität, aktive Geräte, Balken pro Tag.
+  Tage mit Aktivität, aktive Geräte, Balken pro Tag (gestartete Spiele, sobald
+  Zähler vorliegen, sonst Einreichungen).
+- **Spielverlauf** — der Trichter geöffnet → gestartet → gelöst → eingereicht,
+  Testverkehr getrennt darunter, und eine Tabelle „gestartet / gelöst /
+  Lösungsquote" je Größe. Fehlt die Zähler-Migration, fehlt der ganze Abschnitt.
 - **Spielerinnen und Spieler** — Namen im Zeitraum, neu dabei, wiedergekommen,
   Einreichungen ohne Namen.
 - **🏆 Neue Bestzeiten** — je Bucket, wenn der Altbestand geschlagen wurde, mit
@@ -94,9 +188,10 @@ jede Woche die Seite neu ausrollen.
 Die einzige Datenquelle ist `public.scores`. Eine Zeile entsteht nur, wenn ein
 Spiel **gelöst und global eingereicht** wurde:
 
-- **Gespielte Partien, Seitenaufrufe, Abbrüche** erzeugen keine Zeile. Wer lokal
-  spielt oder nicht einreicht, taucht nirgends auf. Es gibt kein Analytics, kein
-  Cookie, keinen Ping.
+- **Wie viele Menschen das sind, bleibt offen.** Die Zähler sagen, wie oft
+  geöffnet, gestartet und gelöst wurde — nicht, von wie vielen Personen. Ohne
+  gespeicherte Kennung ist das nicht unterscheidbar, und eine solche Kennung
+  einzuführen wäre eine andere Entscheidung als diese hier.
 - **Eindeutige Nutzer gibt es nicht.** `client_key` ist der täglich gesalzene
   IP-Hash, den `submit_score` ohnehin fürs Rate-Limit führt. Er wechselt täglich
   und ist pro Netz grob. Deshalb zählt der Bericht **Geräte pro Tag** und
@@ -105,9 +200,9 @@ Spiel **gelöst und global eingereicht** wurde:
 - **Namen sind selbstgewählt** und nicht eindeutig. „Neu dabei" heißt nur: dieser
   Name stand vorher nie in der Tabelle.
 
-Das ließe sich ändern — mit einem anonymen Zählschritt im Spiel (nur Tageszähler
-je Ereignis, keine Einzelzeile, kein Cookie). Das wäre eine eigene Entscheidung
-mit eigenem Datenschutz-Abwägen und ist hier bewusst **nicht** enthalten.
+Die Zähler holen davon das Messbare herein (geöffnet, gestartet, gelöst). Der
+Rest — wer, wie oft, wiederkehrend — bliebe nur mit einer gespeicherten Kennung
+beantwortbar und ist deshalb bewusst **nicht** enthalten.
 
 ## Lokal ausprobieren
 
@@ -120,6 +215,13 @@ cat > /tmp/rows.json <<'JSON'
   "client_key":"abc"}]
 JSON
 node tools/weekly-report.mjs --fixture /tmp/rows.json --now 2026-09-14T06:00:00Z
+```
+
+Mit Zähler-Zeilen dazu (`--fixture-stats` erwartet Zeilen aus `play_stats`):
+
+```bash
+node tools/weekly-report.mjs --fixture /tmp/rows.json \
+  --fixture-stats /tmp/stats.json --now 2026-09-14T06:00:00Z
 ```
 
 Gegen die echte Datenbank (nur lesend):
@@ -142,3 +244,7 @@ Fortsetzung), `--out-body` / `--out-title` (Dateien statt stdout),
   mit einer ausdrücklichen Fehlermeldung ab.
 - **HTTP 401 / „permission denied for table scores"** heißt, dass Abschnitt 7
   von `docs/leaderboard-setup.sql` noch nicht gelaufen ist.
+- **Der Abschnitt „Spielverlauf" fehlt** heißt, dass keine Zähler-Zeilen im
+  Zeitraum liegen: entweder ist Abschnitt 8 noch nicht ausgeführt (dann
+  antwortet `play_stats` mit 404 und der Bericht erscheint trotzdem), oder es
+  wurde tatsächlich nicht gespielt.

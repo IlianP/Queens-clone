@@ -21,7 +21,7 @@
 
 import {
   summarize, renderReport, buildReport, reportTitle,
-  windowFor, parseStateMarker, renderStateMarker,
+  windowFor, parseStateMarker, renderStateMarker, statsWindowFor, summarizePlay, floorHour,
   fmtDuration, fmtNum, fmtPct, fmtDelta, fmtDate, dayKey, isoWeek,
   readSupabaseUrl, safeText,
 } from '../../tools/weekly-report.mjs';
@@ -39,6 +39,7 @@ const ok = (cond, msg) => {
 };
 
 const DAY = 86400000;
+const HOUR = 3600000;
 const UNTIL = Date.parse('2026-09-14T06:00:00Z');
 const SINCE = UNTIL - 7 * DAY;
 
@@ -87,16 +88,21 @@ eq(`${isoWeek(Date.parse('2026-01-01T12:00:00Z')).year}-W${isoWeek(Date.parse('2
 
 // --- state marker ------------------------------------------------------------
 
-const marker = renderStateMarker({ until: UNTIL, lastId: 42 });
+const marker = renderStateMarker({ until: UNTIL, lastId: 42, statsUntil: UNTIL });
 const roundTrip = parseStateMarker(`Bericht-Text\n\n${marker}\n`);
 eq(roundTrip.until, UNTIL, 'marker round-trips the window end');
 eq(roundTrip.lastId, 42, 'marker round-trips the last id');
+eq(roundTrip.statsUntil, UNTIL, 'marker round-trips the counter window end');
+// A report written before the counters existed carries no statsUntil; reading
+// it must still work and simply leave the counter window unanchored.
+eq(parseStateMarker('<!-- queens-report-state: {"until":"2026-09-14T06:00:00.000Z"} -->').statsUntil,
+  null, 'a pre-counter marker reads as no counter state');
 eq(parseStateMarker('kein Marker hier'), null, 'missing marker reads as no state');
 eq(parseStateMarker('<!-- queens-report-state: {kaputt} -->'), null, 'broken marker reads as no state');
 eq(parseStateMarker('<!-- queens-report-state: {"until":"morgen"} -->'), null, 'unparsable date reads as no state');
 // The real marker is the last line of a report; everything above it is text
 // that contains player-supplied names. A forged marker further up must lose.
-const forged = renderStateMarker({ until: UNTIL - 30 * DAY, lastId: 1 });
+const forged = renderStateMarker({ until: UNTIL - 30 * DAY, lastId: 1, statsUntil: UNTIL - 30 * DAY });
 eq(parseStateMarker(`${forged}\n\nBericht\n\n${marker}`).until, UNTIL, 'the last marker wins, not the first');
 
 // --- window ------------------------------------------------------------------
@@ -110,6 +116,67 @@ eq(continued.continued, true, 'continued report is flagged');
 // A state from the future (clock skew, a manual re-run) must not invert the
 // window into a negative span.
 eq(windowFor({ until: UNTIL + DAY }, UNTIL).since, UNTIL, 'future state is clamped to now');
+
+// --- the counter window ------------------------------------------------------
+//
+// Submissions are timestamped to the second; counters exist only per hour. The
+// counter window is therefore snapped to whole hours and chained through its own
+// marker field, so two consecutive reports never count one hour twice and never
+// skip one.
+
+const oddNow = Date.parse('2026-09-14T06:07:43Z');
+const snapped = statsWindowFor(null, { since: oddNow - 7 * DAY, until: oddNow });
+eq(snapped.statsUntil, Date.parse('2026-09-14T06:00:00Z'), 'the counter window ends at the last whole hour');
+eq(snapped.statsSince % HOUR, 0, 'the counter window starts on a whole hour');
+// The unfinished hour belongs to the NEXT report: its start is this one's end.
+const nextRun = statsWindowFor(
+  { until: oddNow, statsUntil: snapped.statsUntil },
+  { since: oddNow, until: oddNow + 7 * DAY + 11 * 60000 },
+);
+eq(nextRun.statsSince, snapped.statsUntil, 'the next counter window starts where this one ended');
+ok(nextRun.statsUntil > nextRun.statsSince, 'the next counter window is not empty');
+eq(floorHour(Date.parse('2026-09-14T06:59:59Z')), Date.parse('2026-09-14T06:00:00Z'), 'floorHour truncates');
+
+// --- counters: sources stay apart --------------------------------------------
+
+const statRow = (hoursBeforeUntil, kind, source, over = {}) => ({
+  bucket_hour: new Date(UNTIL - hoursBeforeUntil * HOUR).toISOString(),
+  kind,
+  source,
+  size: over.size ?? 0,
+  difficulty: over.difficulty ?? '',
+  count: over.count ?? 1,
+});
+
+const counters = summarizePlay([
+  statRow(5, 'app_open', 'web', { count: 10 }),
+  statRow(5, 'game_start', 'web', { size: 8, difficulty: 'hard', count: 8 }),
+  statRow(4, 'game_win', 'web', { size: 8, difficulty: 'hard', count: 3 }),
+  // Test and dev traffic: counted, reported separately, part of no ratio.
+  statRow(5, 'game_start', 'test', { size: 8, difficulty: 'hard', count: 99 }),
+  statRow(5, 'game_start', 'dev', { size: 8, difficulty: 'hard', count: 7 }),
+  // Outside the window on both ends.
+  statRow(-1, 'game_start', 'web', { size: 8, difficulty: 'hard', count: 500 }),
+  statRow(8 * 24, 'game_start', 'web', { size: 8, difficulty: 'hard', count: 500 }),
+], { statsSince: UNTIL - 7 * DAY, statsUntil: UNTIL });
+
+eq(counters.opens, 10, 'opens count only real traffic');
+eq(counters.started, 8, 'test and dev starts are not added to the real figure');
+eq(counters.won, 3, 'wins count only real traffic');
+eq(counters.buckets.length, 1, 'only real traffic shapes the bucket table');
+eq(counters.buckets[0].started, 8, 'the bucket table counts real starts');
+eq(counters.buckets[0].won, 3, 'the bucket table counts real wins');
+eq(JSON.stringify(counters.otherSources), '[["test",99],["dev",7]]', 'other sources are reported on their own, biggest first');
+eq(summarizePlay([], { statsSince: SINCE, statsUntil: UNTIL }).available, false,
+  'a database without the counter migration simply has no counter section');
+
+// The counter window is half-open: a row exactly at statsUntil belongs to the
+// next report, one exactly at statsSince to this one.
+const edge = summarizePlay([
+  { bucket_hour: new Date(SINCE).toISOString(), kind: 'game_start', source: 'web', size: 8, difficulty: 'hard', count: 1 },
+  { bucket_hour: new Date(UNTIL).toISOString(), kind: 'game_start', source: 'web', size: 8, difficulty: 'hard', count: 1 },
+], { statsSince: SINCE, statsUntil: UNTIL });
+eq(edge.started, 1, 'the counter window is inclusive at the start and exclusive at the end');
 
 // --- window boundaries -------------------------------------------------------
 

@@ -10,6 +10,7 @@
 // tests/README.md); this only runs in that kind of environment. Start a static
 // server first: `python3 -m http.server 8000`.
 
+import { stubStats } from './board-helpers.mjs';
 const PLAYWRIGHT = '/opt/node22/lib/node_modules/playwright/index.js';
 const CHROMIUM = '/opt/pw-browsers/chromium';
 const BASE = process.env.BASE_URL || 'http://localhost:8000';
@@ -70,6 +71,7 @@ async function run() {
   // see applyVoiceSetting in js/main.js), so the locale has to be pinned here or
   // the switch is disabled and nothing below can run.
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
+  await stubStats(page); // the play counters are stubbed like every other RPC
 
   const errors = [];
   page.on('console', (m) => {
@@ -469,6 +471,7 @@ async function run() {
   // --- Unsupported browser (no Web Speech API, e.g. Safari/Firefox): the
   //     feature must gate itself off cleanly. ---
   const page2 = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
+  await stubStats(page2); // the play counters are stubbed like every other RPC
   await page2.addInitScript(`delete window.SpeechRecognition; delete window.webkitSpeechRecognition;`);
   await page2.goto(BASE + '/index.html');
   await page2.waitForSelector('.cell');
