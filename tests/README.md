@@ -170,9 +170,24 @@ and the hint/mistake counters — so a player could solve a board almost to the
 end, memorise the queens, reset, and replay the solution against a clock at 0:00
 for an unbeatable score. The test measures the clock across a reset (it must not
 rewind, and must keep ticking), that the board is still actually cleared and the
-reset still undoable, and that the hint surcharge on the clock survives too. The
-fix was a subtraction, so nothing else in the app notices if a refactor routes
-reset back through `startTimer()`.
+reset still undoable, that the hint surcharge survives on the clock, and that a
+repeat of the same hint after a reset is still *free* (`seenHints` has to survive
+as well, or the reset overcharges instead of undercharging). It then closes the
+loop on the figure that actually matters — the **recorded score**: it solves the
+board from the solution (read out of the debug export, so the solve itself spends
+no hints) and checks the win card's playing time and score against readings taken
+*before* the first reset.
+
+That last anchor is the point of the file, and it is deliberately a **time**, not
+a count: with the bug back the reset clears `seenHints` too, the repeat hint is
+charged afresh, and the card still reports "1 Tipp" — the right number for the
+wrong reason. Only the clock discriminates, and only a reading from before the
+first reset can, since a later one is already zeroed on a broken build. The
+mistake counter (no penalty, but it is displayed) is pinned the same way, with a
+queen placed deliberately off the solution.
+
+The fix was a subtraction, so nothing else in the app notices if a refactor
+routes reset back through `startTimer()`.
 
 `leaderboard-period.mjs` covers the adaptive period tab in the Bestenliste,
 bucket by bucket, with `score_counts` and `top_scores` both mocked: offered where
