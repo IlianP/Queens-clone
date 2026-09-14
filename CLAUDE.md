@@ -462,6 +462,20 @@ stores that hold them re-derive rather than trust:
   Two consequences, both accepted: a fresh solve compares slightly favourably
   against those old ones, and `mergeSolveSamples` can double-count a solve whose
   top-list copy recomputed to a different value than its history copy.
+**Clearing the board does not start a new attempt.** `startTimer()` is the
+*new board* entry point — it zeroes the clock, `hintsUsed`, `seenHints` and
+`mistakes` — and **Zurücksetzen must not call it** (`doResetBoard` in `main.js`,
+shared by the button and the voice command). It used to, which made the button a
+highscore cheat: play a board almost to the end, memorise where the queens sit,
+reset, and replay the solution against a clock starting at 0:00 (it laundered the
+hint surcharge the same way). The LinkedIn original keeps its clock running too;
+budgeting your own time is part of the game. A reset therefore clears only the
+board — same puzzle, same attempt, running clock, and the journal stays (the
+regions didn't change, so its coordinates still refer to this board).
+`tests/browser/reset-timer.mjs` guards it, because the fix is a *subtraction*
+and nothing else would notice a refactor routing reset back through
+`startTimer()`.
+
 Counters live in `main.js`: `hintsUsed` bumps in `showHint` but only for
 **unique** deductions — a `seenHints` set of hint signatures (`hintSignature`)
 dedupes, so re-requesting the same hint (shown, dismissed unapplied, asked

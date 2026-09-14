@@ -285,8 +285,10 @@ function untick() {
   timerId = null;
 }
 function startTimer() {
-  // Fresh clock for a new/reset board — also resets the score counters and the
-  // win guard so the next solve is scored from scratch.
+  // Fresh clock for a NEW board — also resets the score counters and the win
+  // guard so the next solve is scored from scratch. Clearing the board
+  // (Zurücksetzen) deliberately does not come through here: same puzzle, same
+  // attempt, running clock — see doResetBoard().
   untick();
   timerAccumMs = 0;
   timerRunStart = isWindowActive() ? Date.now() : 0;
@@ -1504,6 +1506,28 @@ function doUndo(src, heard) {
   }
 }
 
+// Clearing the board is NOT a fresh start: the clock keeps running and the
+// hint/mistake counters stay where they are. Resetting them handed out a free
+// run — play a board almost to the end, memorise where the queens sit, hit
+// Zurücksetzen and replay the solution against a zeroed clock for a score no
+// honest solve can reach. (The LinkedIn original keeps its clock running too.)
+// Dividing up your own time is part of the game, so a reset costs what it costs.
+// That is also why the hint surcharge must survive: the clock shows the
+// effective time, so zeroing hintsUsed alone would visibly rewind it.
+// startTimer() is therefore deliberately NOT called here — it is the "new
+// board" entry point (see its own comment), and reset keeps the same puzzle.
+function doResetBoard(src, heard) {
+  if (!game || game.isWon()) return; // a solved board is frozen — start a new game
+  clearHint();
+  pushUndo();
+  game.reset();
+  stickyForced = null; // the dotted forced cell it tracked went with the board
+  updateBoard();
+  // The journal survives too — the regions are unchanged, so its coordinates
+  // still refer to this board, and the reset itself is the entry worth keeping.
+  if (journalEnabled()) journalPush({ src: src || 'button', op: 'reset', heard, queens: [] });
+}
+
 // ---------- Interaction (tap + swipe) ----------
 // A tap cycles a single cell. Press-and-drag paints: the first cell decides
 // whether the stroke adds dots (started on an empty cell) or erases them
@@ -2312,12 +2336,7 @@ dom.undo.addEventListener('click', () => {
 dom.resetBoard.addEventListener('click', () => {
   if (!game || game.isWon()) return; // a solved board is frozen — start a new game
   playUi();
-  clearHint();
-  pushUndo();
-  game.reset();
-  startTimer(); // clear the board -> clean clock (clears the journal too)
-  updateBoard();
-  if (journalEnabled()) journalPush({ src: 'button', op: 'reset', queens: [] });
+  doResetBoard('button');
 });
 
 // ---------- Settings modal ----------
@@ -3035,12 +3054,7 @@ function handleVoiceCommand(cmd, heard) {
         break;
       case 'reset':
         if (game && !game.isWon()) {
-          clearHint();
-          pushUndo();
-          game.reset();
-          startTimer(); // clears the journal too
-          updateBoard();
-          if (journalEnabled()) journalPush({ src: 'voice', op: 'reset', heard, queens: [] });
+          doResetBoard('voice', heard);
           setVoiceStatus('Zurückgesetzt', 'ok');
         }
         break;
