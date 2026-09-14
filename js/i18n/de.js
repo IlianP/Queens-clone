@@ -43,6 +43,14 @@ export const I18N_DE = {
   'ui.board': 'Spielfeld',
   'ui.check': '🔎 Prüfen',
   'ui.hint': '💡 Hinweis',
+  // The price tag on the hint button (bracketed, it trails a label) and the
+  // pill that flies off it when a hint is actually charged (bare, it stands
+  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // the label, the animation and the score cannot quote different figures.
+  'ui.hint.cost': ({ seconds }) => `+${seconds}\u00a0s`,
+  'ui.hint.costLabel': ({ seconds }) => `(+${seconds}\u00a0s)`,
+  'ui.hint.title': ({ seconds }) =>
+    `Ein neuer Hinweis zählt ${seconds}\u00a0Sekunden auf deine Zeit. Denselben Hinweis erneut zu öffnen ist frei.`,
   'ui.undo': '↶ Rückgängig',
   'ui.reset': '🔄 Zurücksetzen',
   'ui.debugCopy': '🐞 Debug kopieren',
@@ -72,8 +80,8 @@ export const I18N_DE = {
   'score.empty': 'Noch keine Einträge – sei die/der Erste!',
   'score.anonymous': 'Anonym',
   'score.you': 'Du',
-  'score.rowTitle': ({ time, hints, mistakes }) =>
-    `Zeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
+    `Spielzeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')}${hints ? ` (+${penalty})` : ''} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
   // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => deRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
@@ -94,8 +102,8 @@ export const I18N_DE = {
   'win.newGame': 'Neues Spiel',
   'win.settings': '⚙ Einstellungen',
   'win.debugCopy': '📋 Debug-Status kopieren',
-  'win.breakdown': ({ time, hints, mistakes }) =>
-    `Zeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
+    `Spielzeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')}${hints ? ` (+${penalty})` : ''} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) => `Deine erste Partie in ${bucket} – ab jetzt gibt es etwas zu schlagen.`,

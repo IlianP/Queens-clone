@@ -114,3 +114,42 @@ begin
   end if;
   raise notice 'ok: repeated idempotency key leaves one row and returns its rank';
 end $$;
+
+-- Fehler kosten keine Zeit mehr, und Bestandszeilen werden mitgezogen.
+-- Der zweite Teil ist der eigentliche Punkt: die Rohwerte liegen einzeln in der
+-- Tabelle, also lässt sich eine unter der alten Formel eingetragene Zeile exakt
+-- zurückrechnen — hier simuliert durch eine von Hand auf den alten Wert
+-- gesetzte Zeile, die das erneute Ausführen der Datei reparieren muss.
+do $$
+declare v_clean int; v_sloppy int; v_id bigint; v_score int;
+begin
+  perform submit_score('Sauber', 10, 'hard', 120, 1, 0);
+  perform submit_score('Patzer', 10, 'hard', 120, 1, 7);
+  select score into v_clean  from public.scores where name = 'Sauber' and size = 10;
+  select score into v_sloppy from public.scores where name = 'Patzer' and size = 10;
+  if v_clean <> 150 then raise exception 'hint penalty changed: expected 150, got %', v_clean; end if;
+  if v_sloppy <> v_clean then
+    raise exception 'mistakes still cost time: % vs %', v_sloppy, v_clean;
+  end if;
+
+  select id into v_id from public.scores where name = 'Patzer' and size = 10;
+  update public.scores set score = 255 where id = v_id; -- 120 + 30 + 15*7, die alte Formel
+end $$;
+
+\i docs/leaderboard-setup.sql
+
+do $$
+declare v_score int; v_mistakes int; v_rows bigint;
+begin
+  select score, mistakes into v_score, v_mistakes
+    from public.scores where name = 'Patzer' and size = 10;
+  if v_score <> 150 then
+    raise exception 'backfill did not recompute the old row: got %', v_score;
+  end if;
+  if v_mistakes <> 7 then
+    raise exception 'backfill lost the raw mistake count: got %', v_mistakes;
+  end if;
+  select count(*) into v_rows from public.scores;
+  if v_rows <> 12 then raise exception 'backfill changed the row count: % left', v_rows; end if;
+  raise notice 'ok: mistakes are counted but unpenalised, and old rows are recomputed';
+end $$;

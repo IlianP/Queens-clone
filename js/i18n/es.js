@@ -47,6 +47,14 @@ export const I18N_ES = {
   'ui.board': 'Tablero de juego',
   'ui.check': '🔎 Comprobar',
   'ui.hint': '💡 Pista',
+  // The price tag on the hint button (bracketed, it trails a label) and the
+  // pill that flies off it when a hint is actually charged (bare, it stands
+  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // the label, the animation and the score cannot quote different figures.
+  'ui.hint.cost': ({ seconds }) => `+${seconds}\u00a0s`,
+  'ui.hint.costLabel': ({ seconds }) => `(+${seconds}\u00a0s)`,
+  'ui.hint.title': ({ seconds }) =>
+    `Una pista nueva suma ${seconds}\u00a0segundos a tu tiempo. Volver a abrir la misma pista es gratis.`,
   'ui.undo': '↶ Deshacer',
   'ui.reset': '🔄 Reiniciar',
   'ui.debugCopy': '🐞 Copiar depuración',
@@ -80,8 +88,8 @@ export const I18N_ES = {
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => esRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
   'score.rowDate': ({ at }) => `Registrado: ${esDateTime.format(new Date(at))}`,
-  'score.rowTitle': ({ time, hints, mistakes }) =>
-    `Tiempo ${time} · ${esPlural(hints, 'pista', 'pistas')} · ${esPlural(mistakes, 'error', 'errores')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
+    `Tiempo de juego ${time} · ${esPlural(hints, 'pista', 'pistas')}${hints ? ` (+${penalty})` : ''} · ${esPlural(mistakes, 'error', 'errores')}`,
 
   // ---------- win card ----------
   'win.title': '🎉 ¡Resuelto!',
@@ -98,8 +106,8 @@ export const I18N_ES = {
   'win.newGame': 'Partida nueva',
   'win.settings': '⚙ Ajustes',
   'win.debugCopy': '📋 Copiar estado de depuración',
-  'win.breakdown': ({ time, hints, mistakes }) =>
-    `Tiempo ${time} · ${esPlural(hints, 'pista', 'pistas')} · ${esPlural(mistakes, 'error', 'errores')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
+    `Tiempo de juego ${time} · ${esPlural(hints, 'pista', 'pistas')}${hints ? ` (+${penalty})` : ''} · ${esPlural(mistakes, 'error', 'errores')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) =>

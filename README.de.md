@@ -110,8 +110,14 @@ wird dagegen **nicht** gespeichert – ein Seiten-Reload startet ein frisches R�
 
 Nach dem Lösen zeigt der Gewinn-Bildschirm ein **Ergebnis** und fragt, ob du dich
 eintragen möchtest. Das Ergebnis ist eine „effektive Zeit": die reine Lösezeit plus
-ein Aufschlag pro genutztem **Tipp** (+30 s) und pro **Fehler** (+15 s, eine Dame
-abseits der eindeutigen Lösung). Kleiner ist besser. Jede Kombination aus Feldgröße
+ein Aufschlag pro genutztem **Tipp** (+30 s). Der Tipp-Button sagt das schon
+vorher, beim tatsächlich berechneten Tipp steigt ein kleines „+30 s" darüber auf,
+und **die Uhr läuft auf der effektiven Zeit** – die Zahl, die man sieht, ist also
+die Zahl, die zählt. Denselben Tipp erneut zu öffnen ist frei. Kleiner ist besser. **Fehler werden
+gezählt und angezeigt, kosten aber nichts** – eine falsche Dame kostet ohnehin
+Zeit, weil sie bemerkt und zurückgenommen werden muss, und auf dem Handy liegt
+ein Fehltipp eine Daumenbreite daneben; ein zusätzlicher Aufschlag bestrafte die
+Eingabe statt des Denkens. Jede Kombination aus Feldgröße
 und Schwierigkeit hat eine eigene Rangliste; über 🏆 lässt sich jede davon durchblättern.
 
 - **Lokal:** Bestzeiten werden immer auf dem Gerät gespeichert (bis zu **50** je

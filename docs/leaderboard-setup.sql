@@ -61,10 +61,29 @@ alter table public.scores enable row level security;
 revoke all on public.scores from anon, authenticated;
 
 -- 3) Score-Formel – muss zu js/highscores.js passen ---------------------------
+-- FEHLER WERDEN GEZÄHLT, ABER NICHT MEHR BESTRAFT. Der Aufschlag von 15 s je
+-- Fehler bestrafte die Eingabe statt des Denkens: auf dem Handy ist ein Fehltipp
+-- eine Daumenbreite weit weg, und eine falsche Dame kostet ohnehin Zeit (sie
+-- muss bemerkt und zurückgenommen werden) – der Aufschlag kassierte also zweimal
+-- für denselben Patzer. p_mistakes bleibt in der Signatur (und die Spalte
+-- `mistakes` in der Tabelle): die Rohwerte werden weiter gespeichert und
+-- angezeigt, nur ihr Gewicht ist 0. Die Signatur zu behalten heißt auch, dass
+-- submit_score() unverändert aufgerufen werden kann.
 create or replace function public.queens_score(p_seconds int, p_hints int, p_mistakes int)
   returns int language sql immutable as $$
-  select p_seconds + 30 * p_hints + 15 * p_mistakes;
+  select p_seconds + 30 * p_hints;
 $$;
+
+-- Bestandsdaten auf die aktuelle Formel ziehen. Genau dafür liegen seconds,
+-- hints und mistakes einzeln in der Tabelle: ein früher eingetragener Lauf mit
+-- Fehlern war nie wirklich langsamer, er wurde nur schlechter gerechnet – und
+-- das lässt sich exakt zurückrechnen, ohne dass jemand etwas neu spielen muss.
+-- Idempotent (`is distinct from` schreibt nur, was abweicht), also bei jedem
+-- erneuten Ausführen der Datei ein No-Op; created_at bleibt unberührt, die
+-- Reihenfolge der Bestenliste ergibt sich danach aus den neuen Werten.
+update public.scores
+   set score = public.queens_score(seconds, hints, mistakes)
+ where score is distinct from public.queens_score(seconds, hints, mistakes);
 
 -- Untergrenze für die gemeldete Zeit. ABSICHTLICH sehr niedrig: sie war früher
 -- `greatest(3, p_size)` – also z. B. 6 Sekunden bei 6×6 – und hat damit echte,
@@ -326,6 +345,28 @@ grant execute on function public.score_counts(int, text, timestamptz) to anon;
 --   mehr auf den Rang); nur die Statuszeile kann bei Gleichstand einen Platz zu
 --   gut anzeigen.
 
+-- 2026-09: Fehler kosten keine Zeit mehr. queens_score() rechnet nur noch
+-- `seconds + 30 * hints`; der Aufschlag von 15 s je Fehler entfällt (Begründung
+-- in Abschnitt 3). Die ganze Datei erneut ausführen – das ersetzt die Funktion
+-- UND rechnet die Bestandszeilen um (das `update` in Abschnitt 3). Wer nur den
+-- Kern will:
+--
+--     create or replace function public.queens_score(p_seconds int, p_hints int, p_mistakes int)
+--       returns int language sql immutable as $$
+--       select p_seconds + 30 * p_hints;
+--     $$;
+--     update public.scores
+--        set score = public.queens_score(seconds, hints, mistakes)
+--      where score is distinct from public.queens_score(seconds, hints, mistakes);
+--
+-- Die Rückrechnung ist verlustfrei: seconds/hints/mistakes stehen seit der
+-- Ersteinrichtung einzeln auf jeder Zeile, der gespeicherte score war immer nur
+-- deren abgeleitete Summe. Alte Einträge stehen danach also mit der Zeit da, die
+-- sie ohne Fehlerstrafe gehabt hätten, und Alt und Neu sind wieder vergleichbar.
+-- Ohne diese Migration läuft alles weiter, nur rechnet der Server dann noch mit
+-- der alten Formel – die globale Liste wäre gegenüber der lokalen um 15 s je
+-- Fehler verschoben.
+--
 -- 2026-09: Idempotente Score-Einreichung. Die ganze Datei erneut ausführen,
 -- um submission_id, den Unique-Index, die sichere sieben-Parameter-Funktion
 -- und ihre Berechtigung zu ergänzen. Bestehende Score-Zeilen bleiben unverändert.

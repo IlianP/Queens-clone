@@ -196,6 +196,77 @@ html[data-i18n-ready] .app {
   }
 }
 
+/* ---------- Hint cost: the price tag and the pill that flies off ----------
+   A hint costs HINT_PENALTY seconds, and until now nothing said so before the
+   win screen. Two surfaces answer that, and they must agree: the suffix baked
+   into the hint button's label (the standing price) and the pill that rises off
+   it the moment a hint is really charged (the receipt). Both read the same
+   i18n key — see decorateHintButton()/flyHintCost() in js/main.js. */
+
+/* Dimmer and smaller than the label it trails, so the button still reads as
+   "Hinweis" at a glance and the price is a footnote, not a second word. The
+   button is white-space: nowrap and sits in a fixed-width column in landscape,
+   so this deliberately buys its width back with font-size rather than adding
+   a line. */
+.btn-cost {
+  margin-left: 2px;
+  font-size: 0.82em;
+  font-weight: 600;
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fixed, not absolute: positioned from the button's bounding rect at fire time,
+   which keeps it out of the .actions flex row entirely (portrait wraps that row,
+   landscape turns it into a fixed-width column — neither may be disturbed by an
+   element that only exists for 900 ms). pointer-events: none so it can never
+   swallow the tap that spawned it. */
+.cost-fly {
+  position: fixed;
+  z-index: 15;
+  pointer-events: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: var(--shadow);
+  will-change: transform, opacity;
+}
+
+/* The other half of the causal link: the clock jumps by the same amount at the
+   same moment, so it pulses once instead of silently changing under the eye.
+   Kept to a tint + a hair of scale — the timer must not become the loudest
+   thing on the screen for a penalty the player chose to pay. */
+@keyframes timer-bump {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.12);
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    color: var(--ink);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.status.bumped {
+  animation: timer-bump 0.55s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The information still has to arrive, so the pill is not suppressed — it is
+     shown in place and faded out without travel (flyHintCost reads this same
+     query), and the clock takes its jump with no pulse. */
+  .status.bumped {
+    animation: none;
+  }
+}
+
 /* ---------- Buttons ---------- */
 .btn {
   appearance: none;

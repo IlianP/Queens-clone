@@ -48,6 +48,14 @@ export const I18N_EN = {
   'ui.board': 'Game board',
   'ui.check': '🔎 Check',
   'ui.hint': '💡 Hint',
+  // The price tag on the hint button (bracketed, it trails a label) and the
+  // pill that flies off it when a hint is actually charged (bare, it stands
+  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // the label, the animation and the score cannot quote different figures.
+  'ui.hint.cost': ({ seconds }) => `+${seconds}s`,
+  'ui.hint.costLabel': ({ seconds }) => `(+${seconds}s)`,
+  'ui.hint.title': ({ seconds }) =>
+    `A new hint adds ${seconds} seconds to your time. Reopening the same hint is free.`,
   'ui.undo': '↶ Undo',
   'ui.reset': '🔄 Reset',
   'ui.debugCopy': '🐞 Copy debug',
@@ -81,8 +89,8 @@ export const I18N_EN = {
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => enRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
   'score.rowDate': ({ at }) => `Submitted: ${enDateTime.format(new Date(at))}`,
-  'score.rowTitle': ({ time, hints, mistakes }) =>
-    `Time ${time} · ${enPlural(hints, 'hint', 'hints')} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
+    `Playing time ${time} · ${enPlural(hints, 'hint', 'hints')}${hints ? ` (+${penalty})` : ''} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
 
   // ---------- win card ----------
   'win.title': '🎉 Solved!',
@@ -99,8 +107,8 @@ export const I18N_EN = {
   'win.newGame': 'New game',
   'win.settings': '⚙ Settings',
   'win.debugCopy': '📋 Copy debug state',
-  'win.breakdown': ({ time, hints, mistakes }) =>
-    `Time ${time} · ${enPlural(hints, 'hint', 'hints')} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
+    `Playing time ${time} · ${enPlural(hints, 'hint', 'hints')}${hints ? ` (+${penalty})` : ''} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) => `Your first game at ${bucket} – from now on there's something to beat.`,

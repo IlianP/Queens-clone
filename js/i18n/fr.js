@@ -49,6 +49,14 @@ export const I18N_FR = {
   'ui.board': 'Grille de jeu',
   'ui.check': '🔎 Vérifier',
   'ui.hint': '💡 Indice',
+  // The price tag on the hint button (bracketed, it trails a label) and the
+  // pill that flies off it when a hint is actually charged (bare, it stands
+  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // the label, the animation and the score cannot quote different figures.
+  'ui.hint.cost': ({ seconds }) => `+${seconds}\u00a0s`,
+  'ui.hint.costLabel': ({ seconds }) => `(+${seconds}\u00a0s)`,
+  'ui.hint.title': ({ seconds }) =>
+    `Un nouvel indice ajoute ${seconds}\u00a0secondes à ton temps. Rouvrir le même indice est gratuit.`,
   'ui.undo': '↶ Annuler',
   'ui.reset': '🔄 Réinitialiser',
   'ui.debugCopy': '🐞 Copier le débogage',
@@ -82,8 +90,8 @@ export const I18N_FR = {
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => frRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
   'score.rowDate': ({ at }) => `Enregistré : ${frDateTime.format(new Date(at))}`,
-  'score.rowTitle': ({ time, hints, mistakes }) =>
-    `Temps ${time} · ${frPlural(hints, 'indice', 'indices')} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
+    `Temps de jeu ${time} · ${frPlural(hints, 'indice', 'indices')}${hints ? ` (+${penalty})` : ''} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
 
   // ---------- win card ----------
   'win.title': '🎉 Résolu !',
@@ -100,8 +108,8 @@ export const I18N_FR = {
   'win.newGame': 'Nouvelle partie',
   'win.settings': '⚙ Réglages',
   'win.debugCopy': '📋 Copier l’état de débogage',
-  'win.breakdown': ({ time, hints, mistakes }) =>
-    `Temps ${time} · ${frPlural(hints, 'indice', 'indices')} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
+    `Temps de jeu ${time} · ${frPlural(hints, 'indice', 'indices')}${hints ? ` (+${penalty})` : ''} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) =>

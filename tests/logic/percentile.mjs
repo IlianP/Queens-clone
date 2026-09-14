@@ -29,6 +29,9 @@ const {
   mergeSolveSamples,
   matchOwnEntry,
   previewRank,
+  computeScore,
+  getLocalScores,
+  HINT_PENALTY,
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
@@ -366,6 +369,24 @@ for (const s of [82, 68, 280]) recordSolve(12, 'hard', s); // 280 fell off the o
 localStorage.clear();
 eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
 
+// --- computeScore: hints cost time, mistakes don't ---------------------------
+{
+  eq(computeScore(100, 0), 100, 'a clean solve scores its raw time');
+  eq(computeScore(100, 2), 100 + 2 * HINT_PENALTY, 'each hint still costs HINT_PENALTY');
+  // The point of the change: a mis-tap must not be charged for twice. Anything
+  // past the two real inputs is ignored, so an old three-argument call site
+  // can't quietly reintroduce the surcharge.
+  eq(computeScore(100, 0, 4), 100, 'mistakes add nothing to the score');
+
+  // Entries written under the old formula are recomputed from their raw
+  // components on read, so an old solve with mistakes is ranked on the same
+  // terms as a new one instead of sitting 15 s per mistake too low.
+  localStorage.clear();
+  saveLocalScore(7, 'hard', { name: 'Alt', seconds: 60, hints: 0, mistakes: 3, score: 105 });
+  eq(getLocalScores(7, 'hard')[0].score, 60, 'a stored score is re-derived, not trusted');
+  eq(getLocalScores(7, 'hard')[0].mistakes, 3, 'the raw mistake count is still kept');
+}
+
 // --- previewRank ------------------------------------------------------------
 // The preview has to land the fresh row exactly where saving will put it, or the
 // list re-sorts itself the moment the player presses the button.
@@ -382,11 +403,14 @@ for (const [sc, sec] of [[40, 40], [55, 55], [55, 55], [90, 90]]) {
   const { rank } = saveLocalScore(6, 'easy', { name: 'Ich', seconds: 55, hints: 0, mistakes: 0, score: 55 });
   eq(rank, 3, 'saving puts the tie in the same place the preview showed');
   // Within an equal score the faster raw time still wins (byScore's tie-break).
+  // The three scores are equal by construction (seconds + 30·hints = 90 each) —
+  // a stored score is recomputed from its components on read, so it can't be
+  // stated independently of them.
   localStorage.clear();
-  saveLocalScore(6, 'easy', { name: 'Ich', seconds: 60, hints: 0, mistakes: 0, score: 90 });
+  saveLocalScore(6, 'easy', { name: 'Ich', seconds: 90, hints: 0, mistakes: 0, score: 90 });
   saveLocalScore(6, 'easy', { name: 'Ich', seconds: 30, hints: 2, mistakes: 0, score: 90 });
-  eq(previewRank(6, 'easy', 90, 45), 1, 'ranked behind the faster raw time, ahead of the slower');
-  eq(saveLocalScore(6, 'easy', { name: 'Ich', seconds: 45, hints: 1, mistakes: 0, score: 90 }).rank, 1,
+  eq(previewRank(6, 'easy', 90, 60), 1, 'ranked behind the faster raw time, ahead of the slower');
+  eq(saveLocalScore(6, 'easy', { name: 'Ich', seconds: 60, hints: 1, mistakes: 0, score: 90 }).rank, 1,
     'and saving agrees again');
 }
 

@@ -22,7 +22,6 @@ import {
   MIN_RECENT_SOLVES,
   MAX_LOCAL_ENTRIES,
   HINT_PENALTY,
-  MISTAKE_PENALTY,
 } from './highscores.js';
 import { leaderboardConfigured, submitScore, fetchTopScores, fetchBucketCounts } from './leaderboard.js';
 import {
@@ -75,6 +74,8 @@ const dom = {
   coordCols: el('coord-cols'),
   coordRows: el('coord-rows'),
   timer: el('timer'),
+  status: el('status'), // the timer chip — pulses when a hint pushes the clock
+  costFly: el('cost-fly'),
   message: el('message'),
   newGame: el('new-game'),
   openSettings: el('open-settings'),
@@ -183,8 +184,28 @@ function applyTranslations(root = document) {
       node.setAttribute(pair.slice(0, sep).trim(), t(pair.slice(sep + 1).trim()));
     }
   }
+  decorateHintButton(); // data-i18n just wiped the button's children — see below
   document.documentElement.lang = t('lang.htmlLang');
   document.documentElement.setAttribute('data-i18n-ready', '');
+}
+
+// The hint button carries its own price: "💡 Hinweis (+30 s)". Announcing the
+// cost before the click is the point — the surcharge used to surface only on the
+// win screen, which is too late to be a decision.
+//
+// It is appended here rather than written into index.html because data-i18n sets
+// textContent, which would delete any child element at boot. The number comes
+// from HINT_PENALTY, never a literal, so the label, the flying pill and the
+// score can't drift apart.
+function decorateHintButton() {
+  if (!dom.hint) return;
+  const cost = document.createElement('span');
+  cost.className = 'btn-cost';
+  cost.textContent = t('ui.hint.costLabel', { seconds: HINT_PENALTY });
+  // A real space, not just the margin: without it a screen reader runs the
+  // label straight into the price ("Hinweis+30 s").
+  dom.hint.append(document.createTextNode(' '), cost);
+  dom.hint.title = t('ui.hint.title', { seconds: HINT_PENALTY });
 }
 
 // Size 12 is hard-only (see applyDifficultyConstraint) — normalise a persisted
@@ -239,8 +260,21 @@ function currentElapsed() {
   const ms = timerAccumMs + (timerRunStart ? Date.now() - timerRunStart : 0);
   return Math.floor(ms / 1000);
 }
+// The clock shows the EFFECTIVE time — the raw elapsed seconds plus the hint
+// surcharge — because that is the number the solve is ranked on. A clock that
+// ticks away one figure and then reports another at the win screen is quietly
+// wrong, and the jump is exactly the feedback the surcharge was missing.
+//
+// The penalty is added HERE, at the display layer, and nowhere else.
+// currentElapsed() must keep returning the raw time: it feeds the stored
+// `seconds` and the debug journal, and score = seconds + 30·hints would charge
+// the surcharge a second time if it were folded in upstream. (Same trap one
+// level down as the mistake penalty, see js/highscores.js.)
+function displayedTime() {
+  return currentElapsed() + HINT_PENALTY * hintsUsed;
+}
 function renderTime() {
-  const s = currentElapsed();
+  const s = displayedTime();
   dom.timer.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 function tick() {
@@ -904,6 +938,7 @@ function renderScoreList(container, entries, highlightIdx = -1) {
       time: fmtTime(e.seconds),
       hints: e.hints,
       mistakes: e.mistakes,
+      penalty: fmtTime(HINT_PENALTY * e.hints),
     });
     const at = entryTime(e);
     // The exact date goes in the tooltip, the rough age in the row: "vor 3
@@ -1060,7 +1095,7 @@ function onWin() {
   stopTimer();
 
   const seconds = currentElapsed();
-  const score = computeScore(seconds, hintsUsed, mistakes);
+  const score = computeScore(seconds, hintsUsed);
   pendingWin = {
     size: game.N,
     difficulty: settings.difficulty,
@@ -1081,10 +1116,15 @@ function onWin() {
   scoreEl.textContent = fmtTime(score);
   const breakdownEl = document.createElement('span');
   breakdownEl.className = 'win-breakdown';
+  // `time` is the RAW playing time, which is why the label says so: the clock
+  // the player just watched showed the effective time, so an unqualified "Zeit"
+  // here would look like the game had quietly given 30 s back per hint. The
+  // surcharge is spelled out next to the hint count instead.
   breakdownEl.textContent = t('win.breakdown', {
     time: fmtTime(seconds),
     hints: hintsUsed,
     mistakes,
+    penalty: fmtTime(HINT_PENALTY * hintsUsed),
   });
   dom.winTime.append(scoreEl, breakdownEl);
 
@@ -1761,6 +1801,51 @@ function hintSignature(h) {
   ].join('|');
 }
 
+// The "+30 s" receipt: a small pill rising off the hint button, the way a tap on
+// a till flashes the amount. Fired ONLY from the branch that actually bumps
+// hintsUsed — a re-opened hint costs nothing, and an animation that showed a
+// charge there would be a lie the score then contradicts.
+//
+// Positioned from the button's live bounding rect and animated with the Web
+// Animations API, so nothing about the .actions row (which wraps in portrait and
+// becomes a fixed-width column in landscape) has to accommodate it.
+function flyHintCost() {
+  const pill = dom.costFly;
+  if (!pill || !dom.hint) return;
+  const btn = dom.hint.getBoundingClientRect();
+  if (!btn.width) return; // button not laid out (hidden/landscape reflow) — skip
+
+  pill.textContent = t('ui.hint.cost', { seconds: HINT_PENALTY });
+  pill.hidden = false;
+  // Measure after the text lands so the pill is centred on its own width.
+  const self = pill.getBoundingClientRect();
+  pill.style.left = `${Math.round(btn.left + btn.width / 2 - self.width / 2)}px`;
+  pill.style.top = `${Math.round(btn.top - self.height - 6)}px`;
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Reduced motion still gets the information, just without the travel.
+  const frames = reduced
+    ? [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }]
+    : [
+        { transform: 'translateY(6px) scale(0.9)', opacity: 0 },
+        { transform: 'translateY(0) scale(1)', opacity: 1, offset: 0.18 },
+        { transform: 'translateY(-18px) scale(1)', opacity: 1, offset: 0.6 },
+        { transform: 'translateY(-34px) scale(0.96)', opacity: 0 },
+      ];
+  const anim = pill.animate(frames, { duration: reduced ? 1100 : 900, easing: 'ease-out' });
+  anim.onfinish = () => {
+    pill.hidden = true;
+  };
+
+  // The clock takes the same 30 s at the same moment; pulsing it is what makes
+  // the jump read as a consequence rather than a glitch.
+  if (dom.status) {
+    dom.status.classList.remove('bumped');
+    void dom.status.offsetWidth; // restart the animation on a repeat hint
+    dom.status.classList.add('bumped');
+  }
+}
+
 function showHint() {
   if (!game || hintActive || game.isWon()) return;
   playHint();
@@ -1771,6 +1856,8 @@ function showHint() {
   if (sig && !seenHints.has(sig)) {
     seenHints.add(sig);
     hintsUsed++; // asking for a new deduction counts, even if not applied
+    renderTime(); // the clock owes 30 s as of now, not at the next tick
+    flyHintCost();
   }
   renderHint(hint);
 }
@@ -2048,7 +2135,7 @@ function buildResultDebug() {
     hints: pendingWin.hints,
     mistakes: pendingWin.mistakes,
     score: pendingWin.score,
-    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints} + ${MISTAKE_PENALTY}·${pendingWin.mistakes}`,
+    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints}`,
     savedLocally: !!pendingWin.saved,
     savedRank: pendingWin.saved ? pendingWin.savedRank : null,
     // What the win card was told, computed before this solve joined the history.

@@ -87,6 +87,9 @@
              landscape these move into a side column (see CSS). -->
         <div class="actions">
           <button class="btn subtle" id="check" type="button" data-i18n="ui.check">🔎 Check</button>
+          <!-- The "(+30s)" price tag is appended by decorateHintButton() rather
+               than written here: data-i18n replaces textContent wholesale, so a
+               child element in the markup would be wiped at boot. -->
           <button class="btn subtle" id="hint" type="button" data-i18n="ui.hint">💡 Hint</button>
           <button class="btn subtle" id="undo" type="button" disabled data-i18n="ui.undo">↶ Undo</button>
           <button class="btn subtle" id="reset-board" type="button" data-i18n="ui.reset">🔄 Reset</button>
@@ -434,6 +437,11 @@
     </div>
 
     <!-- Hint explanation card (non-modal; the board stays visible & dimmed) -->
+    <!-- Flies off the hint button when a hint is actually charged. Fixed and
+         out of flow so it costs the button layout nothing; aria-hidden because
+         the timer's own aria-live already announces the new time. -->
+    <div class="cost-fly" id="cost-fly" aria-hidden="true" hidden></div>
+
     <div class="hint-card" id="hint-card" hidden>
       <div class="hint-card-title" id="hint-title"></div>
       <p class="hint-card-text" id="hint-text"></p>
