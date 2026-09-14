@@ -20,6 +20,8 @@ import { I18N_EN } from './i18n/en.js';
 import { I18N_DE } from './i18n/de.js';
 import { I18N_FR } from './i18n/fr.js';
 import { I18N_ES } from './i18n/es.js';
+import { I18N_PT } from './i18n/pt.js';
+import { I18N_RU } from './i18n/ru.js';
 
 // Every pack is measured against this one: it is the default language, the
 // baseline text `index.html` ships with, and the fallback for a missing key.
@@ -30,6 +32,8 @@ export const I18N_PACKS = {
   de: I18N_DE,
   fr: I18N_FR,
   es: I18N_ES,
+  pt: I18N_PT,
+  ru: I18N_RU,
 };
 
 // Selectable languages, in menu order. Names are endonyms — a language is
@@ -39,6 +43,8 @@ export const I18N_LANGUAGES = [
   { code: 'de', name: 'Deutsch' },
   { code: 'fr', name: 'Français' },
   { code: 'es', name: 'Español' },
+  { code: 'pt', name: 'Português' },
+  { code: 'ru', name: 'Русский' },
 ];
 
 export function i18nSupported(lang) {

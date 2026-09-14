@@ -39,9 +39,9 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
 
 ## Settings (⚙)
 
-- **Language:** English, German, French or Spanish; the default is *Automatic
-  (browser)* – if the browser language matches no available translation,
-  **English** is used.
+- **Language:** English, German, French, Spanish, Portuguese or Russian; the
+  default is *Automatic (browser)* – if the browser language matches no
+  available translation, **English** is used.
   Switching the language reloads the page (you are asked first if a game is in
   progress); a solved but not-yet-submitted result is not lost in the process.
 - **Board size:** 5 to 12. At **12** only hard puzzles are possible – a 12×12
@@ -261,7 +261,7 @@ js/leaderboard.js         – Optional global online ranking (Supabase, falls ba
 js/settings.js            – Preferences & last name (localStorage)
 js/i18n.js                – Translation layer: t(), language resolution (no DOM)
 js/i18n/en.js, de.js,     – Language packs (one key set, identical per language)
-  fr.js, es.js
+  fr.js, es.js, pt.js, ru.js
 js/audio.js               – Minimalist sound effects (Web Audio API, no asset files)
 js/voice.js               – Voice control: pure command parser + Web Speech wrapper (no DOM)
 js/main.js                – DOM wiring, rendering, controls
@@ -276,18 +276,26 @@ tests/logic/verify-i18n.mjs – Checks the language packs for matching keys (run
 
 ## Translating
 
-The interface is available in **English**, **German**, **French** and
-**Spanish**. All text lives in `js/i18n/<language>.js`; every file carries
-exactly the same set of keys. Another language is a copy of `js/i18n/en.js` plus
-an entry in `I18N_PACKS` / `I18N_LANGUAGES` in `js/i18n.js` and in the module
-list in `tools/build-artifact.mjs`.
+The interface is available in **English**, **German**, **French**, **Spanish**,
+**Portuguese** and **Russian**. All text lives in `js/i18n/<language>.js`; every
+file carries exactly the same set of keys. Another language is a copy of
+`js/i18n/en.js` plus an entry in `I18N_PACKS` / `I18N_LANGUAGES` in `js/i18n.js`
+and in the module list in `tools/build-artifact.mjs`.
 
 A pack is not a word-for-word translation: composed sentences are **functions**,
 so each language writes its own sentence rather than filling slots someone else
-laid out, and plural/ordinal rules live in the pack that needs them (French
-treats 0 as singular; Spanish does not). Watch the layout too – the labels are
-`white-space: nowrap` and the romance languages run noticeably longer than
-English.
+laid out, and its grammar rules live in the pack that needs them — nothing is
+shared, and nothing in `js/i18n.js` knows a language exists. That is what lets
+Russian carry three plural forms (1 подсказка · 2 подсказки · 5 подсказок) and
+decline its unit nouns through four cases, while French treats 0 as singular and
+Portuguese does not, all without touching a single caller. Locale *data* —
+percent spacing, dates, relative time, plural categories — is delegated to
+`Intl` rather than typed by hand, so a new language needs no new dependency.
+
+Watch the layout too: the labels are `white-space: nowrap`, and the three-tab
+score row is the tightest line in the app — it is what forced Russian's
+leaderboard tabs to be shortened. `node tests/browser/i18n-layout.mjs` measures
+exactly that.
 
 `node tests/logic/verify-i18n.mjs` checks that no language loses a key or a
 placeholder – it runs in CI too, so a slip shows up at build time rather than on

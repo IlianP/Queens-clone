@@ -38,9 +38,13 @@ const CHROMIUM = '/opt/pw-browsers/chromium';
 // a first visit (see resolveLanguage in js/i18n.js) — so a test that asserts on
 // visible text should pin it rather than inherit the host's. `storage` is a
 // plain object written into localStorage before the app boots, for starting a
-// test from a chosen preference.
+// test from a chosen preference. `routes` is an async hook handed the page
+// BEFORE the first navigation — the only point at which page.route() stubs can
+// still catch the leaderboard reads the app fires on boot. Use it to keep a test
+// off the live Supabase project (see tests/README.md); leaving it out keeps the
+// original behaviour, so existing callers are unaffected.
 export async function openGame(opts = {}) {
-  const { baseUrl = 'http://localhost:8000', locale = 'en-US', storage = null } =
+  const { baseUrl = 'http://localhost:8000', locale = 'en-US', storage = null, routes = null } =
     typeof opts === 'string' ? { baseUrl: opts } : opts;
   const pw = (await import(PLAYWRIGHT)).default;
   const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
@@ -56,6 +60,8 @@ export async function openGame(opts = {}) {
     if (m.type() === 'error') errors.push(m.text());
   });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+
+  if (routes) await routes(page);
 
   await page.goto(baseUrl + '/index.html');
   await page.waitForSelector('.cell', { timeout: 15000 });

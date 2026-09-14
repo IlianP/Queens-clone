@@ -173,11 +173,23 @@ measures the three-tab row at 390/360/320px — three tabs plus "Global 🌐" is
 tightest label row in the app.
 
 `i18n-layout.mjs` is the layout half of the i18n guard — `logic/verify-i18n.mjs`
-checks that the packs *match*, this one checks that they *fit*. It walks all four
-languages: the top bar at seven widths (320–640), then every pack value rendered
+checks that the packs *match*, this one checks that they *fit*. It walks every
+language: the top bar at seven widths (320–640), then every pack value rendered
 with realistic parameters into the real element it appears in (hint card, win
 card, party overlay, status line), plus the live board/settings/leaderboard/QR-share
 surfaces and `<html lang>`.
+
+Every Supabase RPC is answered locally via `page.route` (through `openGame`'s
+`routes` hook — the app fires its leaderboard reads on boot, before a test could
+attach one afterwards), so the run never touches the live project. The stub also
+pins `score_counts` to a bucket that is busy all-time but only partly recent,
+which is what makes the **period tab** appear: without it the three-tab row — the
+tightest label line in the app — would simply be absent from the measurement.
+That is not theoretical, it is how Russian's "Локально"/"Глобально 🌐" were caught
+overflowing a 95px tab and shortened to "Моя"/"Общая 🌐". One route handler
+dispatches on the URL rather than one per RPC plus a catch-all, because Playwright
+checks handlers in **reverse** registration order and a catch-all added last
+silently swallows the specific ones.
 
 It asserts on **element** geometry, never the page's, and that distinction is the
 whole point: `<body>` has `overflow-x: clip`, so a row that stops fitting

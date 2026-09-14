@@ -27,6 +27,13 @@
 //      leaderboard modal — have no overflowing control or label.
 //   4. `<html lang>` resolves to the pack the browser locale asks for.
 //
+// SAFETY: every Supabase RPC is intercepted with page.route and answered
+// locally, so this test never reads from — or writes to — the live leaderboard.
+// It also pins the leaderboard into a known shape: enough entries for the period
+// tab to be OFFERED, so the three-tab row is actually measured. That row is the
+// tightest label line in the app (three tabs plus "Global 🌐"), which is exactly
+// where a long-worded language such as Russian would break first.
+//
 // Prereqs: static server on BASE_URL (default http://localhost:8000) and the
 // environment's Playwright/Chromium (see board-helpers.mjs). Run with:
 //
@@ -45,6 +52,8 @@ const LOCALES = [
   ['de-DE', 'de'],
   ['fr-FR', 'fr'],
   ['es-ES', 'es'],
+  ['pt-BR', 'pt'],
+  ['ru-RU', 'ru'],
 ];
 // 320 = the smallest phone still in use, 430 = the largest before the media
 // query stops applying, 640 = the app's max-width.
@@ -57,6 +66,35 @@ const check = (msg, ok) => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${msg}`);
   if (!ok) failed = true;
 };
+
+// Answer every leaderboard read locally. `score_counts` reports a bucket that is
+// well populated all-time but only partly recent, which is the condition
+// `periodOffered` gates the period tab on (recent >= 5 && recent < total) — so
+// every language gets measured with all three tabs present.
+//
+// ONE handler that dispatches on the URL, rather than a specific route per RPC
+// plus a catch-all: Playwright checks route handlers in reverse registration
+// order, so a catch-all added last silently swallows the specific ones (that
+// mistake turned every run into ERR_FAILED). A single matcher has no ordering to
+// get wrong. Unknown RPCs get an empty array rather than an abort — the app
+// fails soft on that, and an abort would itself log a console error.
+//
+// Registered through openGame's `routes` hook because the app fires these on
+// boot, before any hook a test could attach afterwards.
+const stubLeaderboard = (page) =>
+  page.route('**/rest/v1/**', (route) => {
+    const url = route.request().url();
+    let body = [];
+    if (url.includes('score_counts')) {
+      body = [{ total: 40, recent: 12 }];
+    } else if (url.includes('top_scores')) {
+      body = [
+        { name: 'Aleksandra', seconds: 91, hints: 0, mistakes: 0, score: 91, created_at: '2026-09-01T10:00:00Z' },
+        { name: '', seconds: 140, hints: 2, mistakes: 1, score: 200, created_at: '2026-08-20T10:00:00Z' },
+      ];
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
 
 // --- the strings, with parameters that produce their longest realistic form ---
 function stringsFor(pack) {
@@ -198,6 +236,7 @@ try {
     let ok = true;
     for (const width of WIDTHS) {
       const page = await browser.newPage({ viewport: { width, height: 844 }, locale });
+      await stubLeaderboard(page);
       await page.goto(BASE_URL + '/index.html');
       await page.waitForSelector('html[data-i18n-ready]');
       await page.waitForTimeout(400);
@@ -219,7 +258,7 @@ try {
 for (const [locale, code] of LOCALES) {
   let browser2;
   try {
-    const opened = await openGame({ baseUrl: BASE_URL, locale });
+    const opened = await openGame({ baseUrl: BASE_URL, locale, routes: stubLeaderboard });
     browser2 = opened.browser;
     const { page, errors } = opened;
 
