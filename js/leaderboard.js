@@ -25,8 +25,11 @@
 // blocks fetch to external hosts, so this stays disabled there and the bundle
 // runs local-only — which is the same graceful fallback path.
 
-const SUPABASE_URL = 'https://bnyucmczsxzmsuylawgs.supabase.co'; // no trailing slash
-const SUPABASE_ANON_KEY = 'sb_publishable_U83QRj1qXeApAkrEQlsRmA_B2wMBmDy'; // public publishable key
+// Exported because js/stats.js posts the anonymous play counters to the same
+// project with the same public key. One copy of the config, not two — a second
+// pair of constants would be the kind of thing that silently drifts.
+export const SUPABASE_URL = 'https://bnyucmczsxzmsuylawgs.supabase.co'; // no trailing slash
+export const SUPABASE_ANON_KEY = 'sb_publishable_U83QRj1qXeApAkrEQlsRmA_B2wMBmDy'; // public publishable key
 const REQUEST_TIMEOUT_MS = 6000;
 
 // Backoff between retries for a transient submit failure. The first attempt is

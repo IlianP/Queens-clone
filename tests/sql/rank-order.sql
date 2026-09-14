@@ -16,8 +16,8 @@
 --   su pgtest -c "$PGBIN/pg_ctl -D $PGDIR/db -o '-k $PGDIR -p 5433 -c listen_addresses=' -w start"
 --   psql -h "$PGDIR" -p 5433 -U postgres -f tests/sql/rank-order.sql   # from the repo root
 --
--- Supabase supplies the `anon` / `authenticated` roles that the setup file
--- grants to; a bare Postgres doesn't, so create them first (below). Nothing here
+-- Supabase supplies the `anon` / `authenticated` / `service_role` roles that the
+-- setup file grants to; a bare Postgres doesn't, so create them first (below). Nothing here
 -- runs in CI — there is no database there, exactly like Playwright for
 -- tests/browser/.
 
@@ -27,6 +27,10 @@
 do $$ begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon; end if;
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated; end if;
+  -- service_role reads the tables for tools/weekly-report.mjs (sections 7/8 of
+  -- the setup file grant to it), so a bare Postgres needs it too or the file
+  -- fails on the grant rather than on anything this test is about.
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role; end if;
 end $$;
 
 -- The file under test, applied exactly as the project owner would apply it.

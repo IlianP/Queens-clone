@@ -47,10 +47,28 @@ before re-deriving how to drive things:
   `created_at` becomes `at` (and its absence reads as undated), and that every
   time-scoped call fails soft to `null`. Run it after touching `leaderboard.js`
   or `docs/leaderboard-setup.sql`.
+- `tests/logic/stats.mjs` — the play counters in `js/stats.js`: every branch of
+  `statsSource` (including that it fails **closed** — an environment it can't
+  place is never `web`), that a ping carries four fields and nothing
+  identifying, that an unknown kind is never sent, and that the allowed kinds
+  and sources still match the lists `bump_stat` accepts — it reads them out of
+  `docs/leaderboard-setup.sql`, because that function drops anything else
+  *silently*. Run it after touching `js/stats.js` or that SQL block.
+- `tests/logic/weekly-report.mjs` — the weekly activity report: window
+  boundaries, the record comparison, the new/returning name split, the state
+  marker, and the two properties nobody would notice regressing — that the
+  `client_key` hash never reaches the rendered text, and that the output doesn't
+  move with the host time zone. Run it after touching `tools/weekly-report.mjs`.
 - `tests/logic/verify-i18n.mjs` — the i18n guard: identical key sets across packs,
   same value *types*, every template still uses the parameters the fallback uses,
   and every key referenced from `index.html` / `t('…')` exists. Run it after
   touching any UI string.
+- `tests/sql/play-stats.sql` — the counter half of the server, against the same
+  kind of **throwaway** local Postgres: that only valid bumps land (invalid ones
+  are dropped silently by design, so nothing else would notice), that `web`,
+  `test` and `dev` stay in separate rows, that `anon` may bump but may not read,
+  that the 60-per-minute rate limit bites, and that re-running the setup file
+  keeps the counters. Run it after any change to section 8 of that SQL file.
 - `tests/sql/rank-order.sql` — the server half: applies
   `docs/leaderboard-setup.sql` to a **throwaway** local Postgres (it truncates
   `public.scores`, never point it at the live project) and asserts that
@@ -84,7 +102,7 @@ a single self-contained file under a strict CSP, bundle it (don't hand-write a
 copy) — the reproducible builder lives in git history for this branch
 (`build-artifact.mjs`): it concatenates the real sources in dependency order
 (`settings → audio → voice → solver → generator → levels → highscores → game →
-hint → leaderboard → main`, stripping `import`/`export` — the strip handles multi-line
+hint → leaderboard → stats → main`, stripping `import`/`export` — the strip handles multi-line
 imports and a post-strip guard throws if any survive), inlines the `levels/`
 pools as the `__QUEENS_LEVELS__` global (the Artifact CSP blocks fetch, so the
 online leaderboard is disabled in the Artifact and it runs local-only),
@@ -131,6 +149,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/settings.js` | Preferences (language/size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
 | `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. `isRefinaliseExtension(prevText, newText)` is the **pure** detector for the other half of the same problem: Chrome finalising a sentence it cut short ("Punkte Zeile 1" before "… außer Region E1"). A premature **fill** can't be repaired by re-running the narrower one (marking only adds), so `main.js` rolls the earlier fill back — identity-checking its undo snapshot against the stack top — and applies the completed utterance. It is only a *detector*: the full new transcript is re-parsed, never stripped. Mirrors the audio/leaderboard layering |
+| `js/stats.js` | Anonymous play counters ("pings"): `bumpStat(kind, {size, difficulty})` posts a counter increment to `bump_stat`, `statsSource(env)` is the **pure**, Node-testable rule that decides whether a page counts as `web` / `test` / `dev`. **Network layer, no DOM**, fire-and-forget — returns nothing, so no caller can await a counter — and fails soft everywhere, including a one-shot latch that stops asking after a 404/401/403. Reads `js/leaderboard.js`'s exported `SUPABASE_*` config rather than keeping a second copy. See "The weekly activity report" |
 | `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, QR share dialog, voice panel + coordinate labels (per-cell corner labels or an edge ruler — the `.board-stage` wraps the board so the rulers sit outside the intro rotation), the hint-cost surfaces (price tag on the button, the flying `+30 s` pill, the effective-time clock — see "Highscores / leaderboard"), debug export (with an optional `debugExtended` journal — the last 20 voice/board events: **every** heard final incl. ones that changed nothing (op `gehört`) plus effect entries, the raw voice transcript, replay-skips, and exactly what each undo removed; back-to-back coordinate finals also carry a short replay guard so a re-finalise doesn't double-apply). Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
 
 ### i18n (what is translated, and what deliberately isn't)
@@ -685,6 +704,89 @@ tightest label row in the app, which is why `.score-tabs` shrinks below 380px. B
 **no top-level name collisions** (that's why the store key is `SCORES_KEY`, not
 another `KEY`) and **no `import.meta`**.
 
+### The weekly activity report
+
+`tools/weekly-report.mjs` + `.github/workflows/weekly-report.yml` post one GitHub
+issue a week summarising the global leaderboard; GitHub's notification mail *is*
+the weekly mail (no SMTP, no third party, no password to rotate). Setup and the
+full rationale live in `docs/weekly-report.md`.
+
+Four things that are load-bearing:
+
+- **It is deliberately deterministic** — same rows plus same window produce
+  byte-identical text. That rules out `Intl`, `toLocaleString` and local time:
+  everything is UTC by construction with hand-written formatters, because a
+  report that regroups days depending on where the job ran can't be compared to
+  last week's. It also rules out generating it from a model.
+- **The state is the last issue, not a file in the repo.** The window starts
+  where the previous report ended, and that timestamp rides in an HTML comment
+  (`queens-report-state`) at the bottom of each report, found again via the
+  `wochenbericht` label. A committed state file would have to push to `main`,
+  which branch protection rejects and which `deploy.yml` would answer by
+  redeploying the site weekly. The invariant is better too: the window advances
+  only when a report was actually delivered, so a failed run merges into the
+  next one instead of losing a week.
+- **It reads the table directly as `service_role`**, not through `top_scores()` —
+  those functions deliberately never return `client_key`, which is exactly what
+  the device count needs. That key bypasses RLS and belongs only in the
+  `SUPABASE_SERVICE_KEY` repo secret, never in `js/leaderboard.js`.
+  `docs/leaderboard-setup.sql` section 7 grants the read; without it the job
+  gets a 401.
+- **Say what the numbers are.** A row exists only for a solved *and submitted*
+  game, so nothing here measures games played or visitors, and `client_key` is a
+  daily salted IP hash — hence "devices per day" and "device-days", never
+  "users". Every report carries that caveat in a collapsed "Lesehilfe" block;
+  keep it there rather than letting the figures read like analytics.
+
+The report's own text is **German**, like the debug journal and the SQL comments:
+it is operator output read by one person, not a player surface, so it stays out
+of the language packs.
+
+#### The play counters, and why they never touch the leaderboard's numbers
+
+`scores` only ever learns about a game that was solved **and** submitted.
+`js/stats.js` + `play_stats` (section 8 of the SQL) close that gap with three
+counters — `app_open`, `game_start`, `game_win` — which the report renders as a
+funnel ending in the submission count. Rules that must not erode:
+
+- **Two stores, never one number.** Submissions come from `scores` and only from
+  `scores`; pings come from `play_stats` and only from there. They live in
+  separate report sections with separate tables, and `summarizePlay` is a
+  separate function returning a separate object for exactly that reason. There
+  is deliberately **no `submit` ping**: that figure already exists, exactly, one
+  table over — a counter for it would be the same number twice, from two stores
+  that can disagree.
+- **A counter is not an event.** One row per (hour, kind, source, size,
+  difficulty), incremented in place. No row per game, no IP, no client id, no
+  session, no cookie, no storage — nothing identifying is sent, which is why the
+  feature needs no consent banner and why it still cannot answer "how many
+  users". Keep it that way: the moment a ping carries an identifier, this stops
+  being a counter and starts being tracking.
+- **Test traffic tags itself.** A Playwright run drives the real UI through the
+  real code and would otherwise read as a person playing. `statsSource` returns
+  `test` on `navigator.webdriver` — checked *before* the hostname, because
+  browser tests run against localhost and `dev` would hide the distinction — so
+  no test file has to remember to opt in and no forgotten flag can leak a run
+  into the real figures. The report counts `web` only and lists the rest under
+  "Nicht mitgezählt". Unrecognisable environments fail **closed** to `dev`.
+- **Tests still stub it.** `stubStats(page)` in `tests/browser/board-helpers.mjs`
+  answers `bump_stat` locally; `openGame` calls it, and a test that builds its
+  own page with `browser.newPage()` must call it too (`stats: 'live'` opts out).
+  The source tag is what keeps test runs out of the numbers; the stub is what
+  keeps the suite from writing to the live project at all — and an un-migrated
+  server answers 404, which lands in `errors` as console noise every test would
+  otherwise have to tolerate.
+- **Hours, not days, and half-open.** Submissions are windowed to the second;
+  counters exist per hour. The counter window is snapped to whole hours, ends at
+  the last *completed* one, and chains through its own `statsUntil` field in the
+  state marker — so consecutive reports never double-count an hour and never
+  skip one. A marker written before the counters existed has no `statsUntil` and
+  simply starts the counter window at the report window's hour.
+- **The whole thing is optional at runtime**, like every other SQL migration
+  here: `bump_stat` 404s until the owner re-runs the file, `js/stats.js`
+  swallows that (and stops asking for the rest of the page's life), the report
+  drops the section, and nothing else changes.
+
 ## Git / workflow
 
 - Default branch is **`main`**. Do feature work on a branch and open a PR;
@@ -693,6 +795,12 @@ another `KEY`) and **no `import.meta`**.
   scoped to one change.
 - Deployment: `.github/workflows/deploy.yml` publishes to GitHub Pages on push
   to `main` (or `master`). It's a static upload of the repo root — no build.
+- `.github/workflows/weekly-report.yml` runs every Monday 06:00 UTC and files
+  the activity report as an issue (see above). It needs the
+  `SUPABASE_SERVICE_KEY` secret; `workflow_dispatch` with `dry_run` renders it
+  into the job summary without posting or advancing the window. GitHub disables
+  scheduled workflows after 60 days without repository activity — if the mail
+  stops, check that first.
 - `main` has a **branch protection rule**: PRs need the `logic-tests` status
   check (`.github/workflows/ci.yml`, runs `tests/logic/`) to pass, and the PR
   branch must be **up to date with `main`** before the merge button unlocks.
