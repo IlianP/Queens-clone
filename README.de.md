@@ -125,9 +125,12 @@ ein Fehltipp eine Daumenbreite daneben; ein zusätzlicher Aufschlag bestrafte di
 Eingabe statt des Denkens. Jede Kombination aus Feldgröße
 und Schwierigkeit hat eine eigene Rangliste; über 🏆 lässt sich jede davon durchblättern.
 
-- **Lokal:** Bestzeiten werden immer auf dem Gerät gespeichert (bis zu **50** je
+- **Eigene:** Bestzeiten werden immer auf dem Gerät gespeichert (bis zu **50** je
   Rangliste), ganz ohne Server. Der zuletzt eingegebene Name wird gemerkt, damit er
-  nach jeder Runde schon vorausgefüllt ist.
+  nach jeder Runde schon vorausgefüllt ist. Der Reiter hieß früher *Lokal*; „Eigene"
+  sagt dasselbe in der Sprache der Spielenden statt in der der Technik – und stellt
+  klar, dass hier **jede** deiner Partien steht, auch die, die global nicht
+  auftauchen.
 - **Global (optional):** Ist eine Online-Rangliste eingerichtet, erscheint zusätzlich
   ein **Eintragen**-Button und ein *Global*-Tab, ebenfalls mit bis zu 50 Einträgen.
   Ohne Einrichtung läuft alles rein lokal weiter – Online ist nie Voraussetzung.
@@ -169,11 +172,20 @@ deine Partien innerhalb der 30 Tage, sagt sie nichts, was die Zeile darüber nic
 schon sagt, und bleibt weg.
 
 Nach dem **Eintragen** in die globale Rangliste ergänzt die Statuszeile den gleichen
-Vergleich für das gesamte Feld (*„Platz 37 von 214 – besser als 83 % der Einträge"*),
-sobald dort genug Einträge zusammengekommen sind; im *Global*-Tab wird die eigene,
-gerade eingetragene Zeile dann grün umrandet – genau wie im lokalen Tab. Solange du
-nicht eingetragen hast, ist dort nichts markiert, weil dein Ergebnis dort noch nicht
-existiert (die Statuszeile weist darauf hin).
+Vergleich für das gesamte Feld – und zwar **in Spielern, nicht in Einträgen**:
+*„Platz 3 von 12 Spielern"*. Die Liste zeigt weiterhin jede eingereichte Partie, aber
+eine Rangliste mit 83 Einträgen von drei Namen beschreibt kein Feld aus 83 Menschen,
+und „Platz 28 von 83" liest sich für Neue wie ein geschlossener Club. Wer diesmal
+langsamer war als seine eigene Bestzeit, bekommt das auch gesagt (*„Keine neue
+Bestzeit – deine beste hält Platz 1 von 3 Spielern"*), statt einen Platz gutgeschrieben
+zu bekommen, den dieser Lauf nicht geholt hat.
+
+Im *Global*-Tab wird die eigene, gerade eingetragene Zeile grün umrandet – genau wie im
+Reiter *Eigene*. Solange du nicht eingetragen hast, ist dort nichts markiert, weil dein
+Ergebnis dort noch nicht existiert (die Statuszeile weist darauf hin). In der
+🏆-Bestenliste, wo es kein Eintragen gibt, wird stattdessen deine **beste** Zeile
+anhand des gemerkten Namens markiert – ohne Namen bleibt sie unmarkiert, denn eine
+fremde Zeile als „du" zu umranden wäre schlicht gelogen.
 
 Wer schon vor dieser Neuerung gespielt hat, verliert den Vergleich nicht: die
 bestehenden Einträge der lokalen Bestenliste werden beim ersten Start als

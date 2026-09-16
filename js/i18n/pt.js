@@ -106,7 +106,8 @@ export const I18N_PT = {
   // ---------- win card ----------
   'win.title': '🎉 Resolvido!',
   'win.viewBoard': 'Ver o tabuleiro resolvido',
-  'win.tab.local': 'Local',
+  'win.tab.local': 'Meus',
+  'win.tab.localAria': 'Classificação neste aparelho',
   'win.tab.global': 'Global 🌐',
   'win.tab.period': ({ days }) => `${days} dias`,
   'win.tab.periodAria': ({ days }) => `Classificação dos últimos ${days} dias`,
@@ -152,6 +153,12 @@ export const I18N_PT = {
   'submit.done': ({ rank, total }) => `Publicado: posição ${rank} de ${total} 🌐`,
   'submit.donePercentile': ({ rank, total, percent }) =>
     `Publicado: posição ${rank} de ${total} – melhor que ${ptPercent(percent)} dos registros 🌐`,
+  'submit.donePlayers': ({ rank, total }) =>
+    `Publicado: posição ${rank} de ${ptPlural(total, 'jogador', 'jogadores')} 🌐`,
+  'submit.donePlayersPercentile': ({ rank, total, percent }) =>
+    `Publicado: posição ${rank} de ${ptPlural(total, 'jogador', 'jogadores')} – melhor que ${ptPercent(percent)} deles 🌐`,
+  'submit.donePlayersNotBest': ({ rank, total }) =>
+    `Publicado 🌐 Não é seu recorde – o seu melhor mantém a posição ${rank} de ${ptPlural(total, 'jogador', 'jogadores')}.`,
   'submit.unreachable': 'Classificação global inacessível – salvo localmente ✓. Tentar de novo?',
   'submit.rejectedSaved': ({ text }) => `${text} – salvo localmente ✓`,
   'submit.reject.implausibleTime': 'Recusado no servidor: tempo considerado impossível',

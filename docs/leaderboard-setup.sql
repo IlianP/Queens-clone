@@ -270,11 +270,124 @@ create or replace function public.score_counts(
     where s.size = p_size and s.difficulty = p_difficulty;
 $$;
 
+-- 5c) Rang auf SPIELER-Ebene statt auf Eintrags-Ebene --------------------------
+-- WARUM ES DAS GIBT: `scores` hält eine Zeile je eingereichter Partie, und ein
+-- Vielspieler erzeugt davon beliebig viele. Gemessen (8x8 schwer, September
+-- 2026): 83 Einträge von DREI Namen, 34 der ersten 50 Plätze von einer Person.
+-- "Platz 28 von 83" liest sich dann wie ein Feld aus 83 Menschen, obwohl der
+-- Einreichende in Wahrheit Dritter von dreien ist – und das demotiviert genau
+-- die neuen Spieler, die man halten möchte.
+--
+-- Diese Funktion beantwortet deshalb die andere Frage: "Der wievielte SPIELER
+-- bin ich?" Sie ändert die Liste NICHT und löscht nichts – top_scores() gibt
+-- weiterhin jede Zeile aus. Nur die Zahl daneben zählt ab jetzt Menschen.
+--
+-- SPIELER-SCHLÜSSEL: ein Paar aus einem Anonym-Kennzeichen und einem Text, NICHT
+-- ein Text allein. Benannte Spieler gruppieren über (false, normalisierter Name),
+-- namenlose Zeilen über (true, id) – jede für sich, denn sonst fielen sämtliche
+-- anonymen Einreichungen aller Menschen weltweit in eine einzige Zeile zusammen.
+--
+-- Dass das Kennzeichen eine eigene Spalte ist und kein Präfix im Text, ist der
+-- Punkt: ein früherer Entwurf schrieb 'row:' || id und ließ damit den Namen
+-- "row:17" mit der anonymen Zeile 17 verschmelzen. Der Name ist freier Text,
+-- also ist JEDES Präfix ein wählbarer Name – nachgewiesen wurden dabei ein um
+-- eins zu kleines `total` und, schlimmer, die Bestzeit des anonymen Spielers,
+-- die dem benannten zugeschrieben wurde. Ein Textraum, den Nutzereingaben
+-- teilen, kann nicht sicher partitioniert werden; zwei Spalten können es.
+--
+-- Der Name ist im Übrigen nicht besetzt; wer einen fremden tippt, verschmilzt
+-- mit ihm. Das nimmt niemandem etwas (es verschenkt nur den eigenen Platz) und
+-- ist der Preis dafür, ohne eine persistente Gerätekennung auszukommen.
+--
+-- WELCHE ZEILE SIND WIR? Mit Namen: unsere beste. Ohne Namen gibt es keinen
+-- Schlüssel, unter dem man uns suchen könnte – deshalb nennt der Client die
+-- submission_id, die submit_score() ohnehin schon führt, und wir lesen genau
+-- diese Zeile. Die frühere Heuristik "die jüngste namenlose Zeile mit diesem
+-- Wert" war angreifbar durch schlichtes Timing: reicht ein zweiter anonymer
+-- Client zwischen submit_score und player_rank denselben Wert ein, bekommt der
+-- erste den Rang der fremden Zeile. Die Heuristik bleibt nur für Clients ohne
+-- submission_id (die alte Sechs-Parameter-Variante von submit_score) übrig.
+--
+-- GLEICHSTAND: exakt dieselbe totale Ordnung wie submit_score() und
+-- top_scores() – Score, dann Zeit, dann Alter, dann id. Wer gleichzieht,
+-- überholt also nicht, und zwei Spieler mit identischer Bestzeit bekommen
+-- verschiedene Plätze (der ältere Eintrag steht vorn). Der Zeilenvergleich
+-- unten IST diese lexikografische Ordnung; dass wir selbst nicht kleiner als
+-- wir selbst sind, schließt uns dabei von allein aus.
+--
+-- AUFRUFVERTRAG: erst NACH einem bestätigten submit_score() aufrufen. Findet
+-- die Funktion die eigene Zeile nicht, gibt sie GAR KEINE Zeile zurück statt zu
+-- raten – der Client fällt dann still auf die alte Anzeige zurück.
+--
+-- ACHTUNG beim erneuten Ausführen: die Signatur hat sich um p_submission_id
+-- erweitert, und eine neue Parameterliste legt in Postgres eine ZWEITE Funktion
+-- an, statt die alte zu ersetzen – daher das `drop` davor. Daten werden dabei
+-- nicht angefasst.
+drop function if exists public.player_rank(int, text, text, int, int);
+create or replace function public.player_rank(
+  p_size int, p_difficulty text, p_name text,
+  p_score int default null, p_seconds int default null,
+  p_submission_id uuid default null
+) returns table (rank bigint, total bigint, is_best boolean)
+  language sql security definer set search_path = public stable as $player_rank$
+  with bucket as (
+    select s.id, s.score, s.seconds, s.created_at, s.submission_id,
+           btrim(coalesce(s.name, '')) = '' as anon,
+           case when btrim(coalesce(s.name, '')) = ''
+                then s.id::text
+                else lower(btrim(s.name)) end as pkey
+      from public.scores s
+     where s.size = p_size and s.difficulty = p_difficulty
+  ),
+  best as (
+    -- Je Spieler genau seine beste Zeile, in der Ordnung der Bestenliste.
+    -- Gruppiert wird über BEIDE Schlüsselspalten, siehe oben.
+    select distinct on (b.anon, b.pkey)
+           b.anon, b.pkey, b.score, b.seconds, b.created_at, b.id
+      from bucket b
+     order by b.anon, b.pkey, b.score asc, b.seconds asc, b.created_at asc, b.id asc
+  ),
+  me as (
+    -- Genau ein Zweig kann Zeilen liefern: der erste verlangt einen Namen, die
+    -- beiden anderen dessen Abwesenheit und schließen sich über p_submission_id
+    -- gegenseitig aus. `pref` hält die Reihenfolge trotzdem fest, damit die
+    -- Auswahl nicht von der Auswertungsreihenfolge des UNION abhängt.
+    select 0 as pref, b.score, b.seconds, b.created_at, b.id
+      from best b
+     where not b.anon
+       and b.pkey = nullif(lower(btrim(coalesce(p_name, ''))), '')
+    union all
+    -- Namenlos, aber identifizierbar: die Zeile, die dieser Einreichung gehört.
+    select 1 as pref, b.score, b.seconds, b.created_at, b.id
+      from bucket b
+     where nullif(lower(btrim(coalesce(p_name, ''))), '') is null
+       and p_submission_id is not null
+       and b.submission_id = p_submission_id
+    union all
+    -- Namenlos und ohne submission_id: nur noch die alte Heuristik möglich.
+    select 2 as pref, b.score, b.seconds, b.created_at, b.id
+      from bucket b
+     where nullif(lower(btrim(coalesce(p_name, ''))), '') is null
+       and p_submission_id is null
+       and b.anon
+       and b.score = p_score and b.seconds = p_seconds
+     order by pref, created_at desc, id desc
+     limit 1
+  )
+  select (select count(*) + 1 from best b
+            where (b.score, b.seconds, b.created_at, b.id)
+                < (m.score, m.seconds, m.created_at, m.id))::bigint,
+         (select count(*) from best)::bigint,
+         (m.score, m.seconds) is not distinct from (p_score, p_seconds)
+    from me m;
+$player_rank$;
+
 -- 6) Ausführrechte nur für diese Funktionen ------------------------------------
 grant execute on function public.submit_score(text, int, text, int, int, int) to anon;
 grant execute on function public.submit_score(text, int, text, int, int, int, uuid) to anon;
 grant execute on function public.top_scores(int, text, int, timestamptz) to anon;
 grant execute on function public.score_counts(int, text, timestamptz) to anon;
+grant execute on function public.player_rank(int, text, text, int, int, uuid) to anon;
 
 -- 7) Auswertung: Lesen für den Wochenbericht -----------------------------------
 -- .github/workflows/weekly-report.yml wertet einmal pro Woche die Aktivität aus
@@ -514,6 +627,16 @@ grant select on public.play_stats to service_role;
 -- HTTP 401/permission denied. Am Spiel selbst ändert sich nichts – die
 -- Rangliste im Browser läuft unverändert über anon und die SECURITY-DEFINER-
 -- Funktionen.
+--
+-- 2026-09: Rang auf Spieler-Ebene (player_rank, Abschnitt 5c). Die ganze
+-- Datei erneut ausführen (oder nur Abschnitt 5c plus das zugehörige `grant` in
+-- Abschnitt 6). Es werden KEINE Daten angefasst und keine bestehende Funktion
+-- geändert – die Funktion kommt additiv dazu. Ohne diese Migration antwortet
+-- player_rank mit 404; js/leaderboard.js fällt still auf null zurück und das
+-- Spiel meldet weiter "Platz 28 von 83" statt "Platz 3 von 3 Spielern".
+-- Abschnitt 5c enthält ein `drop function` für die frühere Fünf-Parameter-Form:
+-- p_submission_id kam dazu, und eine neue Parameterliste legt in Postgres sonst
+-- eine zweite Funktion an, statt die alte zu ersetzen.
 --
 -- 2026-09: Anonyme Spielzähler. Die ganze Datei erneut ausführen (oder nur
 -- Abschnitt 8) legt play_stats, stat_limits und bump_stat() an. Bestehende

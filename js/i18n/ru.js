@@ -148,7 +148,8 @@ export const I18N_RU = {
   // boxes are a fixed three-across grid, so Russian needs terser words than
   // "Локально"/"Глобально 🌐", which overflowed at 95px. Both are adjectives
   // agreeing with the implied "таблица": my list vs the shared one.
-  'win.tab.local': 'Моя',
+  'win.tab.local': 'Мои',
+  'win.tab.localAria': 'Таблица лидеров на этом устройстве',
   'win.tab.global': 'Общая 🌐',
   'win.tab.period': ({ days }) => ruPlural(days, 'день', 'дня', 'дней'),
   'win.tab.periodAria': ({ days }) =>
@@ -199,6 +200,12 @@ export const I18N_RU = {
   'submit.done': ({ rank, total }) => `Отправлено: место ${rank} из ${total} 🌐`,
   'submit.donePercentile': ({ rank, total, percent }) =>
     `Отправлено: место ${rank} из ${total} — лучше, чем ${ruPercent(percent)} всех записей 🌐`,
+  'submit.donePlayers': ({ rank, total }) =>
+    `Отправлено: место ${rank} из ${ruPlural(total, 'игрока', 'игроков', 'игроков')} 🌐`,
+  'submit.donePlayersPercentile': ({ rank, total, percent }) =>
+    `Отправлено: место ${rank} из ${ruPlural(total, 'игрока', 'игроков', 'игроков')} — лучше, чем ${ruPercent(percent)} из них 🌐`,
+  'submit.donePlayersNotBest': ({ rank, total }) =>
+    `Отправлено 🌐 Не личный рекорд — твой лучший результат держит место ${rank} из ${ruPlural(total, 'игрока', 'игроков', 'игроков')}.`,
   'submit.unreachable': 'Таблица лидеров недоступна — сохранено локально ✓. Повторить?',
   'submit.rejectedSaved': ({ text }) => `${text} — сохранено локально ✓`,
   'submit.reject.implausibleTime': 'Отклонено сервером: время признано невозможным',

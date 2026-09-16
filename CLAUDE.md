@@ -53,6 +53,17 @@ before re-deriving how to drive things:
   `created_at` becomes `at` (and its absence reads as undated), and that every
   time-scoped call fails soft to `null`. Run it after touching `leaderboard.js`
   or `docs/leaderboard-setup.sql`.
+- `tests/logic/player-rank.mjs` — `fetchPlayerRank` plus the sentences built on
+  it: that the RPC contract is what the SQL expects (an absent name travels as
+  `''`, never null), that **every** way of not knowing fails soft to `null` (404,
+  4xx, 5xx, offline, empty array, a rank outside `1..total`), and that a missing
+  `is_best` reads as *true* so "not your best" is never claimed without the
+  server saying so. It also checks the one thing `verify-i18n.mjs` structurally
+  cannot: a rank among players carries a **counted noun**, so each pack is
+  rendered at the totals where its own plural switches (`von 1 Spieler` vs
+  `von 5 Spielern`; Russian at 1/2/5/21). Run it after touching
+  `js/leaderboard.js`, `player_rank` in the SQL, or the `submit.donePlayers*`
+  keys.
 - `tests/logic/stats.mjs` — the play counters in `js/stats.js`: every branch of
   `statsSource` (including that it fails **closed** — an environment it can't
   place is never `web`), that a ping carries four fields and nothing
@@ -75,6 +86,21 @@ before re-deriving how to drive things:
   `test` and `dev` stay in separate rows, that `anon` may bump but may not read,
   that the 60-per-minute rate limit bites, and that re-running the setup file
   keeps the counters. Run it after any change to section 8 of that SQL file.
+- `tests/sql/player-rank.sql` — `player_rank` against the same kind of
+  **throwaway** local Postgres: the real 8×8-hard shape (ten entries, three
+  players), that a worse re-run keeps the player's place and reports
+  `is_best = false`, that the key normalises case and whitespace, that **empty
+  names never merge** (three anonymous rows are three players, not one), that a
+  tie between two players gives them *different* places with the older in front,
+  and that an unknown player yields no row at all rather than a guess. Two
+  regressions have their own blocks, both found in review and both reproduced
+  before they were fixed: a player named `row:<id>` must not merge with the
+  anonymous row of that id, and two anonymous clients on the same score must each
+  get their *own* rank via `submission_id`. Closes with an independent
+  cross-check: the rank must equal the position a window function gives the same
+  row — and that derivation carries the composite key too, since with a text
+  prefix it would reproduce the same bug and confirm it instead of catching it.
+  Run it after any change to section 5c of the SQL.
 - `tests/sql/rank-order.sql` — the server half: applies
   `docs/leaderboard-setup.sql` to a **throwaway** local Postgres (it truncates
   `public.scores`, never point it at the live project) and asserts that
@@ -149,7 +175,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint penalty; mistakes are counted, not charged) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic. History entries are **dated** (`[score, at]`, or a bare `score` for the undated ones — see "Time in the score data") |
-| `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores` — optional `{ since }` window, `created_at` per row — and `fetchBucketCounts`) fail soft to `null` (offline/unconfigured/CSP/SQL-not-re-run) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
+| `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores` — optional `{ since }` window, `created_at` per row — `fetchBucketCounts`, and `fetchPlayerRank` — the rank among **players** rather than entries) fail soft to `null` (offline/unconfigured/CSP/SQL-not-re-run) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
 | `js/i18n.js` | Translation layer: `t(key, params)`, `resolveLanguage`, the pack registry. **Pure** — no DOM, no browser globals at import time, so Node can import it (`js/hint.js` depends on it and the logic tests import that). Mirrors the audio/voice/leaderboard layering |
 | `js/i18n/en.js`, `de.js`, `fr.js`, `es.js`, `pt.js`, `ru.js` | The language packs. Flat `key → string \| (params) => string` maps, one identical key set per language — `tests/logic/verify-i18n.mjs` fails CI otherwise. Each pack owns its own plural/ordinal/percent helpers and its own noun choices; every pack pins the piece to the local name of the *n*-queens problem (`dame` / `reina` / `rainha` / `ферзь`). See "Grammar lives in the pack" below for what that buys |
 | `js/settings.js` | Preferences (language/size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
@@ -236,7 +262,17 @@ only the body slice, so a lost hook would render blank).
   keeps "no dependencies" true for languages whose rules nobody wants to hand-roll.
 - **The three-tab score row is the tightest line in the app** (`.score-tabs`,
   three tabs plus "Global 🌐"). Russian's first draft — "Локально" / "Глобально 🌐"
-  — overflowed at 95px and had to become "Моя" / "Общая 🌐". It is only measured
+  — overflowed at 95px and had to become "Моя" / "Общая 🌐". Russian was right
+  ahead of the others: the on-device tab is now "Eigene" / "Mine" / "Perso" /
+  "Míos" / "Meus" / "Мои" everywhere, because *whose* list it is beats *where* it
+  lives, and it pre-empts "where did all my games go?" once the global side
+  starts counting players. The precision the ≤8-character label can't carry sits
+  in `win.tab.localAria` ("Bestenliste auf diesem Gerät"), the same split
+  `win.tab.period` / `win.tab.periodAria` already used — so don't lengthen the
+  visible label to make it clearer. **Measure at 390px, not just 320px:** the
+  ≤380px media query drops the font to 0.75rem, so a 390px phone renders the full
+  0.85rem label in a still-narrow 95px box and is the *worst* case in the whole
+  range. "Meine Spiele" and "Meine Zeiten" both fit at 320 and clip at 390. It is only measured
   when the period tab is actually offered, which needs `score_counts` to answer
   `recent >= 5 && recent < total`; `tests/browser/i18n-layout.mjs` stubs exactly
   that, so the row is covered rather than accidentally absent.
@@ -801,6 +837,79 @@ rank/total. Board state alone can't explain a percentile, which is what made the
 empty-history bug undiagnosable from an export. The win card carries its own
 copy button (`#win-debug-row`, debug-only) because the interesting moment is the
 one right after a solve.
+
+### Ranking players, not entries (the crowd that isn't there)
+
+`scores` holds one row per submitted game, so the list length measures
+*submissions*, not people. Measured on the live board (8×8 hard, September 2026):
+**83 entries, three names** — one of them held 34 of the first 50 places, and the
+single newcomer in the bucket landed on "Platz 28 von 83" while genuinely being
+third of three. That number describes a field of 83 people that does not exist,
+and it is the one thing on the screen that actively discourages a fourth player
+from submitting at all.
+
+`player_rank` (section 5c of `docs/leaderboard-setup.sql`) answers the other
+question — *which player am I?* — and `main.js`'s `submitPlacementCopy` renders
+it. What it deliberately does **not** do is change the list: `top_scores` still
+returns every row. This is the cheap half of the idea; consolidating the list
+itself is a separate, bigger step (it would take 20 of 22 buckets down to 1–3
+rows, which is honest but empties the board).
+
+Four things hold it together:
+
+- **The player key is a pair, not a string**: an anonymity flag plus a text
+  (`false` + normalised name, or `true` + row id). Empty names must not merge —
+  otherwise every anonymous submission on earth is one entry — but encoding that
+  as a text prefix (`'row:' || id`) put the two namespaces in one space that
+  users can type into: a player calling themselves `row:17` merged with anonymous
+  row 17, which cost a player from `total` and handed that anonymous player's
+  best time to the named one. **A text space shared with user input cannot be
+  safely partitioned; two columns can.** The name itself is still not owned —
+  typing someone else's merges you into them — and that is the accepted price of
+  having no persistent device id. `client_key` cannot serve here: it is
+  `md5(IP || current_date)`, so it rotates daily and is shared behind NAT.
+- **An anonymous submitter is identified by `submission_id`, not by their
+  values.** A named player is found by name; an empty name is deliberately not an
+  identity, so there is no key to look one up under. Matching "the newest
+  anonymous row with this score" loses to plain timing — a second anonymous
+  client submitting the same value in the gap between `submit_score` and
+  `player_rank` hands the first one the other row's rank. The id already exists
+  as `submit_score`'s idempotency key, so it rides along. The heuristic survives
+  only for a client that submitted without one (the six-argument `submit_score`)
+  and for historical rows.
+- **The same tie rule as everywhere else.** The rank counts best-rows that sort
+  before ours under the full `(score, seconds, created_at, id)` ordering, exactly
+  as `submit_score` and `top_scores` do. Matching doesn't overtake, and two
+  players with an identical best get *different* places rather than both getting
+  second. An earlier draft counted equal values and subtracted one for ourselves;
+  it left rank 1 unoccupied whenever two players tied.
+- **Two thresholds, because there are two units.** `MIN_GLOBAL_FOR_PERCENTILE`
+  (20) counts entries; a player-level percentage needs
+  `MIN_GLOBAL_PLAYERS_FOR_PERCENTILE` (5), which is why `globalPercentile` takes
+  the minimum as an argument. Reusing the entry threshold would switch the
+  percentage off everywhere, since a bucket has far fewer players than rows — and
+  it would fail *silently*, which is the whole reason the constant is separate.
+- **`is_best` is what keeps the sentence honest.** A submit slower than the
+  player's own best still lands in the table, but the rank then belongs to an
+  older, faster row of theirs. The copy says so (`submit.donePlayersNotBest`)
+  rather than crediting this solve with a placement it didn't earn and sending
+  the player hunting for it in the list. Absent `is_best` reads as *true*: never
+  claim "not your best" without the server saying it.
+
+The call happens **only after a confirmed submit** — the server counts the
+caller's own row, so without it the field is one player short. Everything fails
+soft to `null` (an un-migrated database has no `player_rank` and answers 404),
+and the status line then prints the entry-based sentence it always did. That
+fallback is load-bearing, not a nicety: it is the only thing between a malformed
+row and a placement shown to a player that nothing supports. **Every browser test
+that lets a submit succeed must stub `player_rank`** — `win-feedback.mjs` and
+`leaderboard-retry.mjs` both do, and without it they talk to the live project.
+
+The Bestenliste modal marks the player's own best row too (`bestOwnRowIndex`),
+matched on the remembered nickname with the same normalisation the server uses.
+It previously marked nothing at all, which with one enthusiast holding 34 of 50
+places meant "count the rows to find yourself". An empty nickname marks nothing:
+an anonymous row belongs to nobody in particular.
 
 ### Time in the score data (entry age, rolling windows)
 

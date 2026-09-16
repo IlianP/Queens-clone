@@ -19,11 +19,18 @@ import {
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
+  MIN_GLOBAL_PLAYERS_FOR_PERCENTILE,
   MIN_RECENT_SOLVES,
   MAX_LOCAL_ENTRIES,
   HINT_PENALTY,
 } from './highscores.js';
-import { leaderboardConfigured, submitScore, fetchTopScores, fetchBucketCounts } from './leaderboard.js';
+import {
+  leaderboardConfigured,
+  submitScore,
+  fetchTopScores,
+  fetchBucketCounts,
+  fetchPlayerRank,
+} from './leaderboard.js';
 import { bumpStat } from './stats.js';
 import {
   t,
@@ -1413,25 +1420,43 @@ async function onWinSubmit() {
   globalSubmitInFlight = false;
 
   if (res && Number.isFinite(res.rank)) {
-    pendingWin.submittedGlobal = true; // latch: this solve is now on the global board
+    // The lookup below is a second round trip, and this screen can be gone by
+    // the time it lands (the player closes it, or starts a new board). Hold the
+    // win object rather than re-reading `pendingWin` afterwards.
+    const win = pendingWin;
+    win.submittedGlobal = true; // latch: this solve is now on the global board
     // Remember what was sent under which name and where it landed, so the global
     // tab can find and mark this exact row (see matchOwnEntry).
-    pendingWin.globalName = sanitizeName(name);
-    pendingWin.globalRank = res.rank;
-    pendingWin.globalTotal = res.total;
+    win.globalName = sanitizeName(name);
+    win.globalRank = res.rank;
+    win.globalTotal = res.total;
     dom.winSubmit.disabled = true;
-    // Placement plus, once the bucket is big enough to make it meaningful, the
-    // share of entries beaten — "Platz 37" alone says little without knowing
-    // how deep the field is.
-    const pct = globalPercentile(res.rank, res.total);
-    setStatus(
-      dom.winSubmitStatus,
-      pct == null
-        ? t('submit.done', { rank: res.rank, total: res.total })
-        : t('submit.donePercentile', { rank: res.rank, total: res.total, percent: pct }),
-      'ok'
-    );
+
+    // Report the placement the submit ALREADY earned, immediately. The
+    // player-level lookup that follows is worth up to a 6 s timeout, and leaving
+    // a solved player staring at "wird gesendet …" for that long to improve the
+    // wording of a message they could already have is a bad trade.
+    setStatus(dom.winSubmitStatus, submitPlacementCopy(res, null), 'ok');
     selectWinTab('global');
+
+    // Now upgrade it. res.total counts ENTRIES, and a bucket is mostly repeat
+    // visits by a handful of people (8x8 hard: 83 entries, 3 names), so the
+    // entry count describes a crowd that isn't there — "Platz 28 von 83" reads
+    // as a closed shop where "Platz 3 von 3 Spielern" invites another go.
+    // Fails soft in the most literal way available: an un-migrated database has
+    // no player_rank, this resolves null, and the message set above simply
+    // stays — which is exactly what the player has always seen.
+    const players = await fetchPlayerRank(
+      win.size,
+      win.difficulty,
+      win.globalName,
+      win.score,
+      win.seconds,
+      win.submissionId // identifies the row when the name can't (see fetchPlayerRank)
+    );
+    if (pendingWin !== win) return; // screen moved on; nothing left to update
+    win.globalPlayers = players; // debug export reads this (buildResultDebug)
+    if (players) setStatus(dom.winSubmitStatus, submitPlacementCopy(res, players), 'ok');
   } else if (res && res.rejected) {
     // The server answered and said no. Saying "nicht erreichbar" here sends the
     // player looking for a network problem that isn't there, so name the reason —
@@ -1455,6 +1480,35 @@ async function onWinSubmit() {
     // would just be one more thing lost if the player closes the screen.
     if (settings.debug) await copySubmitFailureDebug(res && res.attempts);
   }
+}
+
+// Which placement sentence does this submit deserve? Three cases, and the
+// difference between them is what the player is being told they achieved:
+//
+//   * player-level, personal best  — "Platz 3 von 3 Spielern". The number the
+//     player cares about, in the unit that describes actual people.
+//   * player-level, NOT their best — the submit landed, but `rank` belongs to an
+//     older, faster entry of theirs. Saying "Platz 1" here would credit this
+//     solve with a placement it didn't earn, and the player would look for it in
+//     the list in vain. So the copy names it as their standing best instead.
+//   * no player data — an un-migrated database. Fall back to exactly the
+//     entry-based sentence this screen showed before player_rank existed.
+//
+// The percentage rides along only where the field is deep enough to mean
+// something, and the threshold differs per unit (see globalPercentile's `min`).
+function submitPlacementCopy(res, players) {
+  if (players) {
+    const { rank, total, isBest } = players;
+    if (!isBest) return t('submit.donePlayersNotBest', { rank, total });
+    const pct = globalPercentile(rank, total, MIN_GLOBAL_PLAYERS_FOR_PERCENTILE);
+    return pct == null
+      ? t('submit.donePlayers', { rank, total })
+      : t('submit.donePlayersPercentile', { rank, total, percent: pct });
+  }
+  const pct = globalPercentile(res.rank, res.total);
+  return pct == null
+    ? t('submit.done', { rank: res.rank, total: res.total })
+    : t('submit.donePercentile', { rank: res.rank, total: res.total, percent: pct });
 }
 
 // A short celebratory confetti burst on a win — same pieces as the party-mode
@@ -2290,6 +2344,24 @@ function buildResultDebug() {
           percentile: globalPercentile(pendingWin.globalRank, pendingWin.globalTotal),
           minTotalForPercentile: MIN_GLOBAL_FOR_PERCENTILE,
           name: pendingWin.globalName,
+          // The player-level answer the status line actually rendered, in its
+          // own block so the two units can never be confused when reading a
+          // report: `rank`/`total` above count ENTRIES, these count PLAYERS.
+          // null means the server has no player_rank yet (SQL not re-run), which
+          // is also the explanation for an entry-based sentence in a screenshot.
+          players: pendingWin.globalPlayers
+            ? {
+                rank: pendingWin.globalPlayers.rank,
+                total: pendingWin.globalPlayers.total,
+                isBest: pendingWin.globalPlayers.isBest,
+                percentile: globalPercentile(
+                  pendingWin.globalPlayers.rank,
+                  pendingWin.globalPlayers.total,
+                  MIN_GLOBAL_PLAYERS_FOR_PERCENTILE
+                ),
+                minPlayersForPercentile: MIN_GLOBAL_PLAYERS_FOR_PERCENTILE,
+              }
+            : null,
         }
       : null,
   };
@@ -2727,6 +2799,25 @@ function hidePeriodTab() {
   if (lbTab === 'period') selectLbTab('global'); // never strand the view on a gone tab
 }
 
+// Find the player's own best row in a global list, by the remembered nickname.
+//
+// The Bestenliste modal marked nothing at all, so a player browsing it had no
+// way to see where they stand without counting rows — and with one enthusiast
+// holding 34 of the first 50 places, counting is exactly what nobody does. The
+// list is best-first, so the FIRST match is this player's best entry, which is
+// also the row player_rank ranks. Matching is by normalised name, the same key
+// the server groups by (trimmed, case-insensitive), so "goose" finds "Goose".
+//
+// An empty nickname returns -1 on purpose: an anonymous row belongs to nobody in
+// particular, and highlighting a stranger's entry as "you" would be a lie.
+// Same reason the name is not a claim of ownership anywhere else — see
+// player_rank's comment in docs/leaderboard-setup.sql.
+function bestOwnRowIndex(rows, nickname) {
+  const key = sanitizeName(nickname || '').trim().toLowerCase();
+  if (!key || !Array.isArray(rows)) return -1;
+  return rows.findIndex((r) => r && sanitizeName(r.name || '').trim().toLowerCase() === key);
+}
+
 async function renderLb() {
   const { size, difficulty } = currentLbBucket();
   if (lbTab === 'local') {
@@ -2746,7 +2837,7 @@ async function renderLb() {
     dom.lbScores.firstChild.textContent = t('global.unreachable');
     return;
   }
-  renderScoreList(dom.lbScores, rows, -1);
+  renderScoreList(dom.lbScores, rows, bestOwnRowIndex(rows, settings.nickname));
 }
 
 dom.openLeaderboard.addEventListener('click', () => {

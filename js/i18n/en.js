@@ -95,7 +95,8 @@ export const I18N_EN = {
   // ---------- win card ----------
   'win.title': '🎉 Solved!',
   'win.viewBoard': 'View solved board',
-  'win.tab.local': 'Local',
+  'win.tab.local': 'Mine',
+  'win.tab.localAria': 'Leaderboard on this device',
   'win.tab.global': 'Global 🌐',
   'win.tab.period': ({ days }) => `${days} days`,
   'win.tab.periodAria': ({ days }) => `Leaderboard for the last ${days} days`,
@@ -139,6 +140,12 @@ export const I18N_EN = {
   'submit.done': ({ rank, total }) => `Submitted: rank ${rank} of ${total} 🌐`,
   'submit.donePercentile': ({ rank, total, percent }) =>
     `Submitted: rank ${rank} of ${total} – better than ${enPercent(percent)} of all entries 🌐`,
+  'submit.donePlayers': ({ rank, total }) =>
+    `Submitted: rank ${rank} of ${enPlural(total, 'player', 'players')} 🌐`,
+  'submit.donePlayersPercentile': ({ rank, total, percent }) =>
+    `Submitted: rank ${rank} of ${enPlural(total, 'player', 'players')} – better than ${enPercent(percent)} of them 🌐`,
+  'submit.donePlayersNotBest': ({ rank, total }) =>
+    `Submitted 🌐 Not a personal best – your best still holds rank ${rank} of ${enPlural(total, 'player', 'players')}.`,
   'submit.unreachable': 'Global leaderboard unreachable – saved locally ✓. Try again?',
   'submit.rejectedSaved': ({ text }) => `${text} – saved locally ✓`,
   'submit.reject.implausibleTime': 'Rejected globally: time judged impossible',

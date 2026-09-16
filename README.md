@@ -110,9 +110,12 @@ it and take it back, and on a phone a mis-tap is a thumb's width away; charging
 for it a second time punished the input surface rather than the reasoning. Every combination of board size and difficulty has
 its own ranking; 🏆 lets you browse all of them.
 
-- **Local:** Best times are always stored on the device (up to **50** per
+- **Mine:** Best times are always stored on the device (up to **50** per
   ranking), with no server at all. The last name entered is remembered so it is
-  pre-filled after every round.
+  pre-filled after every round. The tab used to be called *Local*; "Mine" says the
+  same thing in the players' language rather than the machine's – and makes clear
+  that **every** one of your games is here, including the ones the global list
+  doesn't show.
 - **Global (optional):** If an online ranking is set up, a **Submit** button and a
   *Global* tab appear, likewise with up to 50 entries. Without that setup
   everything simply stays local – online is never a requirement.
@@ -153,11 +156,20 @@ up when it adds something – if all your games fall inside those 30 days it say
 the line above doesn't already say, and is left out.
 
 After **submitting** to the global ranking, the status line adds the same
-comparison for the whole field (*“Rank 37 of 214 – better than 83 % of all
-entries”*) once enough entries have accumulated there; in the *Global* tab your
-own freshly submitted row is then outlined in green – exactly like in the local
-tab. Until you submit, nothing is highlighted there, because your result genuinely
-isn't on that board yet (the status line points this out).
+comparison for the whole field – counted in **players, not entries**: *“Rank 3 of
+12 players”*. The list still shows every submitted game, but a ranking of 83
+entries belonging to three names does not describe a field of 83 people, and
+“rank 28 of 83” reads like a closed shop to a newcomer. If this run was slower
+than your own best, it says so (*“Not a personal best – your best still holds
+rank 1 of 3 players”*) instead of crediting the run with a placement it didn't
+earn.
+
+In the *Global* tab your own freshly submitted row is outlined in green – exactly
+like in the *Mine* tab. Until you submit, nothing is highlighted there, because
+your result genuinely isn't on that board yet (the status line points this out).
+In the 🏆 leaderboard, where there is no submitting, your **best** row is marked
+via the remembered name instead – without a name nothing is marked, since
+outlining a stranger's row as "you" would simply be a lie.
 
 Anyone who played before this feature existed doesn't lose the comparison: the
 existing entries of the local list are adopted as game history on first start –

@@ -132,7 +132,9 @@
 
       <div class="score-panel">
         <div class="score-tabs" id="win-tabs" hidden>
-          <button class="score-tab" id="win-tab-local" type="button" aria-selected="true" data-i18n="win.tab.local">Local</button>
+          <button class="score-tab" id="win-tab-local" type="button" aria-selected="true" data-i18n="win.tab.local"
+                  data-i18n-attr="aria-label:win.tab.localAria|title:win.tab.localAria"
+                  aria-label="Leaderboard on this device" title="Leaderboard on this device">Mine</button>
           <button class="score-tab" id="win-tab-global" type="button" aria-selected="false" data-i18n="win.tab.global">Global 🌐</button>
         </div>
         <div class="score-list" id="win-scores"></div>
@@ -363,7 +365,9 @@
              server how many entries fall inside the window and only reveals it
              where that is a field worth ranking (see MIN_PERIOD_ENTRIES). -->
         <div class="score-tabs" id="lb-tabs" hidden>
-          <button class="score-tab" id="lb-tab-local" type="button" aria-selected="true" data-i18n="win.tab.local">Local</button>
+          <button class="score-tab" id="lb-tab-local" type="button" aria-selected="true" data-i18n="win.tab.local"
+                  data-i18n-attr="aria-label:win.tab.localAria|title:win.tab.localAria"
+                  aria-label="Leaderboard on this device" title="Leaderboard on this device">Mine</button>
           <button class="score-tab" id="lb-tab-global" type="button" aria-selected="false" data-i18n="win.tab.global">Global 🌐</button>
           <button class="score-tab" id="lb-tab-period" type="button" aria-selected="false" hidden></button>
         </div>
