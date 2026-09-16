@@ -270,11 +270,85 @@ create or replace function public.score_counts(
     where s.size = p_size and s.difficulty = p_difficulty;
 $$;
 
+-- 5c) Rang auf SPIELER-Ebene statt auf Eintrags-Ebene --------------------------
+-- WARUM ES DAS GIBT: `scores` hält eine Zeile je eingereichter Partie, und ein
+-- Vielspieler erzeugt davon beliebig viele. Gemessen (8x8 schwer, September
+-- 2026): 83 Einträge von DREI Namen, 34 der ersten 50 Plätze von einer Person.
+-- "Platz 28 von 83" liest sich dann wie ein Feld aus 83 Menschen, obwohl der
+-- Einreichende in Wahrheit Dritter von dreien ist – und das demotiviert genau
+-- die neuen Spieler, die man halten möchte.
+--
+-- Diese Funktion beantwortet deshalb die andere Frage: "Der wievielte SPIELER
+-- bin ich?" Sie ändert die Liste NICHT und löscht nichts – top_scores() gibt
+-- weiterhin jede Zeile aus. Nur die Zahl daneben zählt ab jetzt Menschen.
+--
+-- SPIELER-SCHLÜSSEL: der normalisierte Name (getrimmt, kleingeschrieben). Ein
+-- LEERER Name ist bewusst KEIN gemeinsamer Spieler, sondern je Zeile ein
+-- eigener ('row:<id>') – sonst fielen sämtliche anonymen Einreichungen aller
+-- Menschen weltweit in eine einzige Zeile zusammen. Der Name ist nicht besetzt;
+-- wer einen fremden tippt, verschmilzt mit ihm. Das nimmt niemandem etwas (es
+-- verschenkt nur den eigenen Platz) und ist der Preis dafür, ohne eine
+-- persistente Gerätekennung auszukommen.
+--
+-- GLEICHSTAND: exakt dieselbe totale Ordnung wie submit_score() und
+-- top_scores() – Score, dann Zeit, dann Alter, dann id. Wer gleichzieht,
+-- überholt also nicht, und zwei Spieler mit identischer Bestzeit bekommen
+-- verschiedene Plätze (der ältere Eintrag steht vorn). Der Zeilenvergleich
+-- unten IST diese lexikografische Ordnung; dass wir selbst nicht kleiner als
+-- wir selbst sind, schließt uns dabei von allein aus.
+--
+-- AUFRUFVERTRAG: erst NACH einem bestätigten submit_score() aufrufen. Findet
+-- die Funktion die eigene Zeile nicht, gibt sie GAR KEINE Zeile zurück statt zu
+-- raten – der Client fällt dann still auf die alte Anzeige zurück.
+create or replace function public.player_rank(
+  p_size int, p_difficulty text, p_name text,
+  p_score int default null, p_seconds int default null
+) returns table (rank bigint, total bigint, is_best boolean)
+  language sql security definer set search_path = public stable as $player_rank$
+  with bucket as (
+    select s.id, s.score, s.seconds, s.created_at,
+           case when btrim(coalesce(s.name, '')) = ''
+                then 'row:' || s.id::text
+                else lower(btrim(s.name)) end as pkey
+      from public.scores s
+     where s.size = p_size and s.difficulty = p_difficulty
+  ),
+  best as (
+    -- Je Spieler genau seine beste Zeile, in der Ordnung der Bestenliste.
+    select distinct on (b.pkey) b.pkey, b.score, b.seconds, b.created_at, b.id
+      from bucket b
+     order by b.pkey, b.score asc, b.seconds asc, b.created_at asc, b.id asc
+  ),
+  me as (
+    -- Unsere Messlatte. Mit Namen: unsere eigene beste Zeile. Ohne Namen: die
+    -- gerade eingereichte Zeile, erkennbar als die JÜNGSTE namenlose Zeile mit
+    -- genau diesem Wert (submit_score hat sie eben erst geschrieben).
+    select b.score, b.seconds, b.created_at, b.id
+      from best b
+     where b.pkey = nullif(lower(btrim(coalesce(p_name, ''))), '')
+    union all
+    select b.score, b.seconds, b.created_at, b.id
+      from bucket b
+     where nullif(lower(btrim(coalesce(p_name, ''))), '') is null
+       and b.pkey like 'row:%'
+       and b.score = p_score and b.seconds = p_seconds
+     order by 3 desc, 4 desc
+     limit 1
+  )
+  select (select count(*) + 1 from best b
+            where (b.score, b.seconds, b.created_at, b.id)
+                < (m.score, m.seconds, m.created_at, m.id))::bigint,
+         (select count(*) from best)::bigint,
+         (m.score, m.seconds) is not distinct from (p_score, p_seconds)
+    from me m;
+$player_rank$;
+
 -- 6) Ausführrechte nur für diese Funktionen ------------------------------------
 grant execute on function public.submit_score(text, int, text, int, int, int) to anon;
 grant execute on function public.submit_score(text, int, text, int, int, int, uuid) to anon;
 grant execute on function public.top_scores(int, text, int, timestamptz) to anon;
 grant execute on function public.score_counts(int, text, timestamptz) to anon;
+grant execute on function public.player_rank(int, text, text, int, int) to anon;
 
 -- 7) Auswertung: Lesen für den Wochenbericht -----------------------------------
 -- .github/workflows/weekly-report.yml wertet einmal pro Woche die Aktivität aus
@@ -502,6 +576,13 @@ grant select on public.play_stats to service_role;
 -- HTTP 401/permission denied. Am Spiel selbst ändert sich nichts – die
 -- Rangliste im Browser läuft unverändert über anon und die SECURITY-DEFINER-
 -- Funktionen.
+--
+-- 2026-09: Rang auf Spieler-Ebene (player_rank, Abschnitt 5c). Die ganze
+-- Datei erneut ausführen (oder nur Abschnitt 5c plus das zugehörige `grant` in
+-- Abschnitt 6). Es werden KEINE Daten angefasst und keine bestehende Funktion
+-- geändert – die Funktion kommt additiv dazu. Ohne diese Migration antwortet
+-- player_rank mit 404; js/leaderboard.js fällt still auf null zurück und das
+-- Spiel meldet weiter "Platz 28 von 83" statt "Platz 3 von 3 Spielern".
 --
 -- 2026-09: Anonyme Spielzähler. Die ganze Datei erneut ausführen (oder nur
 -- Abschnitt 8) legt play_stats, stat_limits und bump_stat() an. Bestehende

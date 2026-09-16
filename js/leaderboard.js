@@ -235,6 +235,45 @@ export async function fetchTopScores(size, difficulty, { limit = TOP_SCORES_LIMI
 // Fails soft to null like every read here, which doubles as the feature gate: a
 // project whose SQL predates score_counts answers 404, the caller sees null and
 // simply never offers the view. No version handshake, no config flag.
+// Where does this player stand among PLAYERS, not among entries?
+//
+// The bucket holds one row per submitted game, so a single enthusiast fills it:
+// measured on 8x8 hard, 83 entries belonged to three names and one of them held
+// 34 of the first 50 places. "Rank 28 of 83" then describes a field of 83 people
+// that doesn't exist, and it reads as a closed shop to the newcomer who just
+// submitted their first solve. player_rank answers the honest question instead —
+// the list itself is unchanged and still shows every entry.
+//
+// Returns { rank, total, isBest } or null. `isBest` is false when the solve just
+// submitted was slower than this player's own best, in which case `rank` belongs
+// to that older, better entry — the caller says so rather than pointing at a
+// placement the new solve didn't earn.
+//
+// MUST be called only after a confirmed submit: the server counts the caller's
+// own row, and without it the field would be one player short. Fails soft to
+// null like every read here, which doubles as the feature gate — a project whose
+// SQL predates player_rank answers 404 and the UI keeps the entry-based copy.
+export async function fetchPlayerRank(size, difficulty, name, score, seconds) {
+  const data = await rpc('player_rank', {
+    p_size: size,
+    p_difficulty: difficulty,
+    p_name: name || '',
+    p_score: score,
+    p_seconds: seconds,
+  });
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  const rank = Number(row.rank);
+  const total = Number(row.total);
+  // A server that can't place us returns no row at all; anything outside
+  // 1..total would be a bug, and showing it would be worse than saying nothing.
+  if (!Number.isFinite(rank) || !Number.isFinite(total)) return null;
+  if (total < 1 || rank < 1 || rank > total) return null;
+  // Absent (an older function shape) means "no reason to doubt it" — never
+  // claim "not your best" without the server actually saying so.
+  return { rank, total, isBest: row.is_best !== false };
+}
+
 export async function fetchBucketCounts(size, difficulty, since) {
   const data = await rpc('score_counts', {
     p_size: size,

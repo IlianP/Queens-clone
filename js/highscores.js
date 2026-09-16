@@ -64,6 +64,13 @@ export const MAX_SOLVE_HISTORY = 500;
 export const MIN_SOLVES_FOR_PERCENTILE = 5;
 // Same idea for the global board, where a young bucket has very few entries.
 export const MIN_GLOBAL_FOR_PERCENTILE = 20;
+// And once more in the other UNIT. The threshold above counts entries, and 20 of
+// those can be two people submitting ten games each — so it cannot double as the
+// gate for a player-level percentage. Five is the smallest field where "better
+// than 75 % of players" says more than the plain placement already does. Keep
+// the two apart: reusing the entry threshold here would silently switch the
+// percentage off everywhere, since a bucket has far fewer players than rows.
+export const MIN_GLOBAL_PLAYERS_FOR_PERCENTILE = 5;
 
 // The rolling window behind the time-scoped half of the personal feedback
 // ("besser als 92 % deiner Partien der letzten 30 Tage"). Rolling rather than
@@ -514,11 +521,16 @@ export function matchOwnEntry(rows, entry) {
 // entries in the bucket (the fresh entry included), which is all a percentage
 // needs. Returns null when the bucket is too small for the number to mean
 // anything — the caller then shows the plain placement instead.
-export function globalPercentile(rank, total) {
+// `min` is the smallest field the percentage is allowed to speak about, and it
+// exists because the same maths serves two different units: a rank among entries
+// (default, MIN_GLOBAL_FOR_PERCENTILE) and a rank among players, which needs the
+// much lower MIN_GLOBAL_PLAYERS_FOR_PERCENTILE. The caller passes the threshold
+// that matches the numbers it is holding.
+export function globalPercentile(rank, total, min = MIN_GLOBAL_FOR_PERCENTILE) {
   const r = Number(rank);
   const n = Number(total);
   if (!Number.isFinite(r) || !Number.isFinite(n)) return null;
-  if (n < MIN_GLOBAL_FOR_PERCENTILE || r < 1 || r > n) return null;
+  if (n < min || r < 1 || r > n) return null;
   const others = n - 1; // everyone else in the bucket
   if (others <= 0) return null;
   const pct = Math.round(((others - (r - 1)) / others) * 100);

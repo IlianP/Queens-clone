@@ -37,6 +37,25 @@ none (an un-migrated database has no such parameter and would 404), that
 time-scoped call fails soft to `null` — which is what silently hides the period
 tab rather than breaking the modal.
 
+`player-rank.mjs` covers `fetchPlayerRank` — the read behind "Platz 3 von 3
+Spielern" instead of "Platz 28 von 83" — with the same mocked `fetch`. The happy
+path is the small half of it: what matters is that a wrong answer becomes **no**
+answer, because the status line falls back to the entry-based sentence whenever
+this resolves `null`, and that fallback is all that stands between a malformed
+row and a placement shown to the player that nothing supports. So every way of
+not knowing is enumerated (404 for an un-migrated database, 4xx, 5xx, offline, an
+empty array, a rank outside `1..total`, a non-numeric rank), plus the two
+contract details the SQL depends on: an absent name goes out as `''` and never
+`null`, and a missing `is_best` reads as *true* so "not your best" is never
+claimed without the server saying so.
+
+It ends with the check `verify-i18n.mjs` structurally cannot do. A rank among
+players carries a **counted noun**, which none of the previous submit copy did
+("Platz 3 von 83" needs no grammar) — identical key sets and matching parameters
+would happily let a pack print "von 1 Spielern". Each pack is therefore rendered
+at the totals where its own plural switches: 1 vs 5 for the five Latin packs, and
+1/2/5/21 for Russian, whose three forms repeat modulo 100.
+
 `percentile.mjs` covers the relative-feedback half of `js/highscores.js` — the
 solve history, `percentileBetter` / `globalPercentile` (ties count half, and the
 rounding never claims a flat 0/100 unless the score really beat none/all),
@@ -115,6 +134,20 @@ windowed list and that re-running the setup file leaves existing rows alone.
 ⚠ It **truncates `public.scores`** — throwaway database only, never the live
 project. The file's header carries the initdb/pg_ctl commands. Nothing runs it
 automatically: there is no Postgres in CI, exactly like there is no Playwright.
+
+`player-rank.sql` covers `player_rank` (section 5c) on the same scratch database.
+It builds the real shape of the live board — ten entries belonging to three
+players — and checks that the single newcomer reads as *third of three* rather
+than eighth of ten, while `top_scores` still returns all ten rows. Then the ways
+the player key can go wrong: case and whitespace normalise, but **empty names
+never merge** (three anonymous rows are three players, not one shared account),
+a tie between two players gives them *different* places with the older in front,
+and an unknown player yields no row at all instead of a guess. It closes with an
+independent cross-check — the rank must equal the position a window function
+gives the same row, derived without sharing any code with the function, the way
+`logic/qr-code.mjs` decodes the QR matrix rather than re-encoding it.
+
+Same throwaway-database rules as `rank-order.sql`; it TRUNCATES `public.scores`.
 
 `play-stats.sql` covers the counter half of the server: that only valid bumps
 land (invalid ones are dropped silently by design — nothing else would notice a
@@ -235,6 +268,18 @@ the window holds a field, hidden where it holds almost nothing, hidden where
 against a server that answers 404 because the SQL was never re-run. It also
 measures the three-tab row at 390/360/320px — three tabs plus "Global 🌐" is the
 tightest label row in the app.
+
+`player-rank.mjs` (browser) covers the two surfaces the player-level rank shows
+up on. First the renamed on-device tab — "Eigene" / "Mine" / "Perso" / "Míos" /
+"Meus" / "Мои" — measured in all six languages at 390/360/320px with the third
+tab forced up, because the row is only tight when all three are shown and a
+two-tab measurement would happily pass a label that cannot fit. It refuses to
+measure without that third tab for exactly that reason. The surprise the
+measurement produced: **390px is the worst case, not 320px** — below 380px a
+media query shrinks the font, so a 390px phone renders the full-size label in a
+still-narrow box. Second, the own-row highlight in the Bestenliste modal: exactly
+one row marked, it is the player's *best* row rather than any of theirs, the
+nickname matches case-insensitively, and an empty nickname marks nothing at all.
 
 `i18n-layout.mjs` is the layout half of the i18n guard — `logic/verify-i18n.mjs`
 checks that the packs *match*, this one checks that they *fit*. It walks every

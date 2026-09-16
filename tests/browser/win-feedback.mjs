@@ -120,6 +120,25 @@ await page.route('**/rest/v1/rpc/submit_score', async (route) => {
     body: JSON.stringify([{ rank: 3, total: 40 }]),
   });
 });
+// The submit status line asks for the player-level placement right after a
+// successful submit (main.js: submitPlacementCopy). Unstubbed it would reach the
+// LIVE project on every run of this test — a read, but still exactly what the
+// safety note at the top of this file promises never happens. Answering 404 is
+// also the more useful default here: it is what an un-migrated database says, so
+// the assertions below keep checking the entry-based sentence they were written
+// for. A dedicated player-level test lives in tests/browser/player-rank.mjs.
+await page.route('**/rest/v1/rpc/player_rank', (route) =>
+  // rank 3 of 12 PLAYERS → the percentage is shown (12 ≥
+  // MIN_GLOBAL_PLAYERS_FOR_PERCENTILE). Deliberately different numbers from
+  // submit_score's 3-of-40 above, so an assertion can tell the two units apart:
+  // if the status line ever fell back to counting entries, "von 12 Spielern"
+  // would turn into "von 40" and this test would say so.
+  route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ rank: 3, total: 12, is_best: true }]),
+  })
+);
 // Flipped on for step 3b: the list then also holds an entry with EXACTLY our
 // values, submitted earlier — the tie that used to mis-place the highlight.
 let twinBefore = false;
@@ -290,7 +309,10 @@ try {
   // --- 3. after submitting: own row highlighted + percentile in the status ---
   await page.click('#win-submit');
   await page.waitForFunction(
-    () => /Global eingetragen/.test(document.getElementById('win-submit-status').textContent),
+    // "Spielern", not just "Global eingetragen": the entry-based sentence is
+    // rendered FIRST and upgraded when player_rank answers, so waiting for the
+    // generic prefix would race the upgrade and read the interim text.
+    () => /Spielern/.test(document.getElementById('win-submit-status').textContent),
     { timeout: 15000 }
   );
   await page.waitForFunction(
@@ -303,10 +325,13 @@ try {
   check('exactly one row is highlighted', s.rows.filter((r) => r.me).length === 1);
   check('the highlighted row is the freshly submitted one', meIdx === 2);
   check(
-    'status reports placement and the share beaten',
+    'status reports placement among PLAYERS and the share beaten',
     // \s, not a literal space: German renders "88 %" with a NON-BREAKING one
     // (Intl/DIN 5008), so a plain space never matches.
-    /Platz 3 von 40/.test(s.status) && /besser als \d+\s%/.test(s.status)
+    // "Spielern", not a bare number: the entry count (40) describes a field that
+    // doesn't exist — 40 entries here are 4 people. Asserting the word keeps the
+    // two units from quietly swapping back.
+    /Platz 3 von 12 Spielern/.test(s.status) && /besser als \d+\s%/.test(s.status)
   );
 
   // --- 3b. a tie must not move the highlight to the other row --------------
