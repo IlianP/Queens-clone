@@ -329,3 +329,14 @@ that have quietly stopped looking like the style. It also pins that asking for
 strips has no easy boards by construction. Both files share their board checks
 via `lib/board-checks.mjs`; `hint-solve.mjs` keeps its own drive loop on purpose
 (it is the CI smoke test and is written to read as "this is what a player does").
+
+`board-size-hint.mjs` covers the board-size rule: every size is pickable on every
+screen, and the settings say how small a cell would render rather than deciding
+for the player. It checks the slider reaches `MAX_SIZE` on a phone, that the hint
+appears exactly when the measured cell size is below the threshold (and quotes
+that figure), that it follows a resize, that it fits its card in the two longest
+languages — and, at the end, the measurement the whole rule rests on: a 14x14 on
+a 390x844 phone lays out with no overflow, nothing under the top bar, nothing cut
+off, and a single tap marks exactly one cell. An earlier version of this feature
+capped the slider instead; that last check is what says the cap wasn't protecting
+anything.

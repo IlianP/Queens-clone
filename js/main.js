@@ -140,6 +140,7 @@ const dom = {
   lbClose: el('lb-close'),
   settingsOverlay: el('settings-overlay'),
   sizeRange: el('size-range'),
+  sizeHint: el('size-hint'),
   sizeValue: el('size-value'),
   difficulty: el('difficulty'),
   difficultyHint: el('difficulty-hint'),
@@ -232,12 +233,17 @@ const HARD_ONLY_SIZE = 12;
 // 13x13: strips ~0.3 s, organic ~12 s.
 const STRIPS_ONLY_SIZE = 13;
 
-// The smallest a cell may render and still be comfortably tappable, used only to
-// decide whether the sizes ABOVE HARD_ONLY_SIZE are offered at all. It is
-// deliberately not applied to 5..12: those already ship down to ~30px on a
-// narrow phone and nothing about this change should shrink the sizes people
-// already play. A big board is the one that has to earn its screen.
-const BIG_BOARD_MIN_CELL = 36;
+// Below this rendered cell size a board is cramped enough to be worth saying so.
+// It is a HINT, never a limit: which board is too small is a question about the
+// player's eyes, their thumbs and whether they zoom, and none of those are
+// things this code can measure. Every size stays pickable on every screen; the
+// hint just makes the consequence visible before the choice instead of after it.
+//
+// 28px is a fact about this app rather than a guideline: the smallest cell it
+// has ever shipped is 24px (12x12 on a 320px-wide phone). So the hint fires a
+// little above what the game already asks of people — including, deliberately,
+// for a few pre-existing small-screen combinations. It is true there too.
+const TIGHT_CELL_PX = 28;
 
 // Put the grid size on the board and pick the box it renders in. Above
 // HARD_ONLY_SIZE columns the cells would otherwise get cramped, so the board
@@ -248,36 +254,33 @@ function applyBoardSize(N) {
   // The stage's own --n is buildCoordRulers' job; both callers run it next.
 }
 
-// The largest size worth offering on THIS screen. The board's own CSS decides
-// how wide it renders (it leans harder on the viewport above 12 columns, see
-// .board-xl), so rather than restate that formula here — where the two would
-// drift apart the first time the cap moves — this toggles the class on the real
-// element and measures the result back.
-function maxSizeForViewport() {
-  let max = HARD_ONLY_SIZE;
+// How big a single cell would render at size N on THIS screen, or 0 when the
+// board isn't laid out. The board's own CSS decides how wide it is (it leans
+// harder on the viewport above 12 columns, see .board-xl), so rather than
+// restate that formula here — where the two would drift apart the first time the
+// cap moves — this puts the real element in the state it would be in and
+// measures the result back.
+function cellPxFor(N) {
   const wasXl = dom.board.classList.contains('board-xl');
-  dom.board.classList.add('board-xl');
+  dom.board.classList.toggle('board-xl', N > HARD_ONLY_SIZE);
   // offsetWidth, NOT getBoundingClientRect(): the board carries the intro
   // animation's rotate/scale transform, and a rect read mid-intro comes back
-  // scaled (0.71x at its smallest) — which silently costs the big sizes their
-  // ceiling on a screen that has the room.
+  // scaled (0.71x at its smallest), which would make every size look cramped.
   const edge = dom.board.offsetWidth;
-  if (!wasXl) dom.board.classList.remove('board-xl');
-  // A board that measures 0 is one that isn't laid out yet (or at all); offering
-  // the big sizes on a guess is worse than not offering them.
-  if (edge > 0)
-    for (let n = HARD_ONLY_SIZE + 1; n <= MAX_SIZE; n++)
-      if (edge / n >= BIG_BOARD_MIN_CELL) max = n;
-  return max;
+  dom.board.classList.toggle('board-xl', wasXl);
+  return edge > 0 ? edge / N : 0;
 }
 
-// The board the first game is played on: the stored size, but never larger than
-// this screen can show properly (see maxSizeForViewport). The clamp is NOT
-// saved — a tablet opened in portrait shouldn't permanently forget that its
-// owner plays 14x14 in landscape; only pressing Apply writes a size back.
-settings.size = Math.min(settings.size, maxSizeForViewport());
+// Both size sliders run to MAX_SIZE on every screen. The markup carries the
+// same number as its no-JS baseline, but this is the one that decides — a bound
+// stated in two places is a bound that drifts the first time it moves.
+dom.sizeRange.max = String(MAX_SIZE);
+dom.lbSizeRange.max = String(MAX_SIZE);
+
 // Sizes 12 and up are hard-only (see applyDifficultyConstraint) — normalise a
 // persisted or stale easy/medium choice so the first board matches the modal.
+// Note there is no size clamp here: a small board is still the player's board,
+// and a stored 14 stays 14 on whatever they open it on.
 if (settings.size >= HARD_ONLY_SIZE) settings.difficulty = 'hard';
 let game = null;
 let currentSolution = null; // cols[r] of the unique solution (for hints)
@@ -2466,14 +2469,11 @@ function closeSettings() {
 function openSettings() {
   clearHint();
   dom.languageSelect.value = settings.language;
-  // Measured now, not at boot: the window may have been resized or the device
-  // rotated since, and this is the moment the choice is actually made.
-  const maxSize = maxSizeForViewport();
-  dom.sizeRange.max = String(maxSize);
-  dom.sizeRange.value = Math.min(settings.size, maxSize);
-  dom.sizeValue.textContent = dom.sizeRange.value;
+  dom.sizeRange.value = settings.size;
+  dom.sizeValue.textContent = settings.size;
   setDifficultyUI(settings.difficulty);
-  applyDifficultyConstraint(dom.sizeRange.value);
+  applyDifficultyConstraint(settings.size);
+  updateSizeHint(settings.size);
   dom.quickMode.checked = settings.quickMode;
   dom.liveCheck.checked = settings.liveCheck;
   dom.introAnimation.checked = settings.introAnimation;
@@ -2532,23 +2532,29 @@ function onLanguageChange() {
 }
 dom.languageSelect.addEventListener('change', onLanguageChange);
 
-// Rotating a tablet with the modal open changes which sizes fit, so re-measure
-// rather than leave a ceiling from the previous orientation on screen. Only
-// while the modal is actually open — nothing else reads the slider.
+// Say how small a cell would actually get, but only when that is worth saying.
+// The figure is measured on this screen at this size, so it stays true when the
+// window is resized or the device rotated — which is why the resize listener
+// below exists rather than a one-off reading at boot.
+function updateSizeHint(size) {
+  const px = cellPxFor(Number(size));
+  const tight = px > 0 && px < TIGHT_CELL_PX;
+  dom.sizeHint.textContent = tight ? t('settings.size.tight', { px: Math.round(px) }) : '';
+  dom.sizeHint.hidden = !tight;
+}
+
+// Rotating a tablet with the modal open changes what a cell would measure, so
+// re-read it rather than leave the previous orientation's figure on screen. Only
+// while the modal is actually open — nothing else shows it.
 window.addEventListener('resize', () => {
   if (dom.settingsOverlay.hidden) return;
-  const maxSize = maxSizeForViewport();
-  dom.sizeRange.max = String(maxSize);
-  if (Number(dom.sizeRange.value) > maxSize) {
-    dom.sizeRange.value = String(maxSize);
-    dom.sizeValue.textContent = dom.sizeRange.value;
-    applyDifficultyConstraint(dom.sizeRange.value);
-  }
+  updateSizeHint(dom.sizeRange.value);
 });
 
 dom.sizeRange.addEventListener('input', () => {
   dom.sizeValue.textContent = dom.sizeRange.value;
   applyDifficultyConstraint(dom.sizeRange.value);
+  updateSizeHint(dom.sizeRange.value);
 });
 
 dom.difficulty.addEventListener('click', (e) => {
@@ -2601,7 +2607,7 @@ dom.introAnimation.addEventListener('change', () => {
 });
 
 dom.settingsApply.addEventListener('click', () => {
-  settings.size = Math.min(clampSize(dom.sizeRange.value), maxSizeForViewport());
+  settings.size = clampSize(dom.sizeRange.value);
   settings.difficulty = settings.size >= HARD_ONLY_SIZE ? 'hard' : currentDifficultyUI();
   settings.quickMode = dom.quickMode.checked;
   settings.liveCheck = dom.liveCheck.checked;

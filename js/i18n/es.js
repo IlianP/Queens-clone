@@ -156,6 +156,8 @@ export const I18N_ES = {
   'settings.size': 'Tamaño del tablero',
   'settings.difficulty': 'Dificultad',
   'settings.difficulty.hardOnly': 'A partir del tamaño 12 solo son posibles los tableros difíciles.',
+  'settings.size.tight': ({ px }) =>
+    `En esta pantalla una casilla mediría unos ${px} px; se juega mejor en un dispositivo más grande.`,
   'settings.language.label': 'Idioma',
   'settings.language.auto': 'Automático (navegador)',
   'settings.language.hint':

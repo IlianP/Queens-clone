@@ -168,6 +168,8 @@ export const I18N_PT = {
   'settings.size': 'Tamanho do tabuleiro',
   'settings.difficulty': 'Dificuldade',
   'settings.difficulty.hardOnly': 'A partir do tamanho 12 só existem tabuleiros difíceis.',
+  'settings.size.tight': ({ px }) =>
+    `Neste ecrã uma casa teria apenas cerca de ${px} px; joga-se melhor num dispositivo maior.`,
   'settings.language.label': 'Idioma',
   'settings.language.auto': 'Automático (navegador)',
   'settings.language.hint':

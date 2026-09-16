@@ -443,45 +443,76 @@ after the build finished. Match on the output file instead (e.g. `until grep -q
 
 ### Board sizes above 12
 
-`MAX_SIZE` is 14, but 13 and 14 are **offered only where they fit**, and the two
-halves of that are independent:
+`MAX_SIZE` is 14. Two independent questions, and they get opposite answers:
 
 - **Can we build one?** Only because of the strips style. Per accepted hard board
-  at 13×13: strips ~0.3 s, organic ~12 s, blocky worse. `stylesFor` /
-  `mixFor` therefore pin sizes ≥ 13 to strips, and `generate-levels.mjs` builds
+  at 13×13: strips ~0.3 s, organic ~12 s, blocky worse. `stylesFor` / `mixFor`
+  therefore pin sizes ≥ 13 to strips, and `generate-levels.mjs` builds
   `13-hard` / `14-hard` as strips-only buckets. `HARD_ONLY_FROM` already covered
   them: like 12, an easy/medium board that size essentially doesn't exist.
-- **Should we show one?** `maxSizeForViewport()` in `main.js` decides, and it
-  **measures rather than computes**: it toggles `.board-xl` on the real board
-  element and reads `offsetWidth` back, so the rule lives in CSS alone and the two
-  can't drift. A size is offered while a cell would render at ≥ `BIG_BOARD_MIN_CELL`
-  (36 px). Measured: phone portrait/landscape → 12, 1280×640 laptop → 13, iPad
-  mini portrait / iPad landscape / 1440×800 laptop / desktop → 14 (43–46 px per
-  cell). That floor is deliberately *not* applied to sizes 5–12, which already
-  ship down to ~30 px on a narrow phone — nothing here should shrink what people
-  already play.
+- **Should we stop someone picking one?** **No.** Every size is pickable on every
+  screen. The app measures what a cell would render at and *says so*
+  (`updateSizeHint` → `settings.size.tight`, below `TIGHT_CELL_PX` = 28 px);
+  it does not decide.
+
+That second answer is a deliberate reversal, and the reasoning is worth keeping
+because the first instinct is to cap:
+
+- **A cap here is a judgement the code cannot make.** "Too small" depends on
+  eyesight, thumbs, whether someone zooms, and whether they're using a mouse on a
+  narrow window. None of that is measurable from `offsetWidth`.
+- **It was also hiding the feature.** A capped slider just stops, with no
+  explanation — so a phone player would never learn that 13 and 14 exist, and
+  someone who plays on both phone and laptop sees the option silently vanish.
+- **It isn't protecting anything.** Measured on a 390×844 phone at 14×14: cells
+  render at 25.8 px, the page has no sideways overflow, the board sits clear of
+  the top bar and fully on screen, and a single tap marks exactly one cell. It is
+  small, not broken. `tests/browser/board-size-hint.mjs` pins all of that, so the
+  evidence stays checkable rather than remembered.
+- **The old cap contradicted the app's own precedent anyway.** 12×12 on a 320 px
+  phone has always rendered at 24 px, below the 36 px floor the cap enforced for
+  the new sizes only. A rule you have to exempt your own shipped defaults from is
+  the wrong rule.
+
+`TIGHT_CELL_PX` is 28 because 24 px is the smallest cell this app has ever
+shipped, so the hint fires a little above what the game already asks of people.
+It therefore *also* fires for a few pre-existing small-screen combinations
+(11×11 and up on a 320 px phone). That is intentional: the sentence is true
+there too, and it is a hint, not a limit. Measured, with `.board-xl`:
+
+| screen | 12 | 13 | 14 |
+|---|---|---|---|
+| 320×568 | 24.5 px ⚠ | 23.2 px ⚠ | 21.5 px ⚠ |
+| 390×844 | 29.9 px | 28.2 px | 26.2 px ⚠ |
+| 430×932 | 33.0 px | 31.1 px | 28.9 px |
+| iPad / laptop / desktop | 46.7 px | 49.2 px | 45.7 px |
+
+(13 is *larger* than 12 on a roomy screen: `.board-xl` gives boards above 12
+columns `min(94vw, 78vh, 640px)` instead of `min(92vw, 70vh, 560px)`.)
 
 Two traps:
 
 - **`offsetWidth`, never `getBoundingClientRect()`.** The board carries the intro
   animation's `rotate`/`scale` transform, and a rect read mid-intro comes back
-  scaled (0.71× at its smallest) — which silently costs the big sizes their
-  ceiling on a screen that has the room. This cost a debugging round.
-- **The ceiling is measured, never persisted.** The boot clamp and the settings
-  modal both clamp `settings.size` down, but only pressing *Anwenden* writes a
-  size back — otherwise a tablet opened once in portrait would permanently forget
-  that its owner plays 14×14 in landscape.
+  scaled (0.71× at its smallest) — which would make every size look cramped and
+  fire the hint everywhere. This cost a debugging round.
+- **`cellPxFor` measures the real element**, toggling `.board-xl` on and off
+  around the read, rather than restating the CSS formula in JS. Keep it that way:
+  the two would drift the first time either cap moves.
 
-Two more things are sized by `MAX_SIZE` and would fail silently if they fell
-behind it: `PALETTE` in `main.js` (one colour per region — the two entries added
-for 13/14 were picked by measuring ΔE, see the comment there), and **Voice
-Mode's grammar** — `VOICE_COL_WORDS` / `VOICE_NUM_WORDS` in `js/voice.js` have
-to name every column and row, or the far edge of a big board is simply
-unsayable. Nothing at runtime compares the two, so `tests/logic/voice-parse.mjs`
-asserts `VOICE_MAX_SIZE >= MAX_SIZE` and that every column up to `MAX_SIZE`
-parses. The **Bestenliste** size slider deliberately goes to `MAX_SIZE` on every
-screen: it browses results, including the global list, so a phone should still be
-able to look at the 14×14 board someone else played.
+`MAX_SIZE` is the single source for both size sliders' `max` (set from JS at
+boot; the `max="14"` in `index.html` is only the no-JS baseline). Two more things
+are sized by it and would fail silently if they fell behind: `PALETTE` in
+`main.js` (one colour per region — the two entries added for 13/14 were picked by
+measuring ΔE, see the comment there), and **Voice Mode's grammar** —
+`VOICE_COL_WORDS` / `VOICE_NUM_WORDS` in `js/voice.js` have to name every column
+and row, or the far edge of a big board is simply unsayable. Nothing at runtime
+compares those, so `tests/logic/voice-parse.mjs` asserts
+`VOICE_MAX_SIZE >= MAX_SIZE` and that every column up to `MAX_SIZE` parses.
+
+The **Bestenliste** size slider goes to `MAX_SIZE` too: it browses results,
+including the global list, so a phone should be able to look at a 14×14 board
+someone else played.
 
 `docs/leaderboard-setup.sql` had `p_size ... > 12` in both submit functions and
 rejects 13/14 with `bad size` until the project owner re-runs the file — the

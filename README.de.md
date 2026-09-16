@@ -46,15 +46,15 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   zu keiner vorhandenen Übersetzung, wird **Englisch** genommen. Ein Sprachwechsel
   lädt die Seite neu (läuft gerade eine Partie, wird vorher gefragt); ein bereits
   gelöstes, noch nicht eingetragenes Ergebnis geht dabei nicht verloren.
-- **Feldgröße:** 5 bis 12, auf einem **ausreichend großen Bildschirm** bis 14.
-  Ab **12** sind ausschließlich schwere Rätsel möglich – ein Feld dieser Größe ist
-  von Natur aus schwer, „leichte“/„mittlere“ Rätsel davon existieren praktisch
-  nicht –, deshalb wird die Schwierigkeit dort auf *Schwer* festgelegt. Die Größen
-  13 und 14 werden nur angeboten, solange ein Feld noch mindestens 36 px groß
-  gezeichnet würde, was ein Telefon nie schafft: Die Obergrenze des Reglers wird
-  am echten Brett auf dem echten Bildschirm gemessen und liegt damit auf dem
-  Telefon bei 12, in einem flachen Laptop-Fenster bei 13 und auf Tablet, Laptop
-  oder Desktop bei 14.
+- **Feldgröße:** 5 bis 14, auf jedem Bildschirm. Ab **12** sind ausschließlich
+  schwere Rätsel möglich – ein Feld dieser Größe ist von Natur aus schwer,
+  „leichte“/„mittlere“ Rätsel davon existieren praktisch nicht –, deshalb wird die
+  Schwierigkeit dort auf *Schwer* festgelegt. Ein großes Brett auf einem kleinen
+  Bildschirm wird nicht verhindert, sondern nur benannt: Die Einstellungen messen,
+  wie groß ein Feld auf **deinem** Bildschirm tatsächlich würde, und sagen es,
+  wenn es eng wird (unter 28 px) – z. B. „ein Feld wäre nur etwa 26 px groß“. Ob
+  das zu klein ist, entscheidest du, nicht das Spiel; ab 13 Spalten nimmt sich das
+  Brett außerdem etwas mehr Fenster.
 - **Schwierigkeit:**
   - *Leicht* – lösbar allein durch „nur ein Feld übrig"-Schlüsse.
   - *Mittel* – benötigt zusätzlich Zeilen-/Spalten-↔-Regionen-Schlüsse.

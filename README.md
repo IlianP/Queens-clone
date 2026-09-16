@@ -44,13 +44,14 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
   available translation, **English** is used.
   Switching the language reloads the page (you are asked first if a game is in
   progress); a solved but not-yet-submitted result is not lost in the process.
-- **Board size:** 5 to 12, and up to **14 on a big enough screen**. From **12**
-  up only hard puzzles are possible – a board that size is inherently hard and
-  “easy”/“medium” puzzles of it essentially don't exist – so the difficulty is
-  fixed to *Hard* there. Sizes 13 and 14 are offered only while a cell would
-  still render at least 36 px, which a phone never manages: the slider's ceiling
-  is measured from the actual board on the actual screen, so it is 12 on a
-  phone, 13 on a short laptop window and 14 on a tablet, laptop or desktop.
+- **Board size:** 5 to 14, on every screen. From **12** up only hard puzzles are
+  possible – a board that size is inherently hard and “easy”/“medium” puzzles of
+  it essentially don't exist – so the difficulty is fixed to *Hard* there.
+  A large board on a small screen is not blocked, just flagged: the settings
+  measure what a cell would actually render at on **your** screen and say so
+  when it gets cramped (below 28 px), e.g. “a cell would be only about 26 px”.
+  Whether that is too small is your call, not the game's – above 12 columns the
+  board also claims a bit more of the window to help.
 - **Difficulty:**
   - *Easy* – solvable with “only one cell left” deductions alone.
   - *Medium* – additionally needs row/column ↔ region deductions.

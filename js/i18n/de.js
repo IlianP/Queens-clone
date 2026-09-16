@@ -150,6 +150,8 @@ export const I18N_DE = {
   'settings.size': 'Feldgröße',
   'settings.difficulty': 'Schwierigkeit',
   'settings.difficulty.hardOnly': 'Ab Feldgröße 12 sind nur schwere Rätsel möglich.',
+  'settings.size.tight': ({ px }) =>
+    `Ein Feld wäre auf diesem Bildschirm nur etwa ${px} px groß – auf einem größeren Gerät spielt es sich angenehmer.`,
   // "Anzeigesprache", not "Sprache": this label sits a few rows above
   // "Sprachsteuerung (Beta)", and two settings starting with "Sprach…" that mean
   // entirely different things read as one feature. English/French/Spanish have
