@@ -8,7 +8,9 @@ import {
   colLetter,
   dedupeReplayCells,
   isRefinaliseExtension,
+  VOICE_MAX_SIZE,
 } from '../../js/voice.js';
+import { MAX_SIZE } from '../../js/settings.js';
 
 let failed = 0;
 function check(name, cond) {
@@ -43,6 +45,27 @@ check('"4c" reversed glued → (3,2)', cellIs(parseVoiceCommand('4c', 8), 3, 2, 
 check('"Cäsar vier" → (3,2)', cellIs(parseVoiceCommand('Cäsar vier', 8), 3, 2));
 check('"anton eins" → (0,0)', cellIs(parseVoiceCommand('anton eins', 8), 0, 0));
 check('"ludwig zwölf" on 12 → (11,11)', cellIs(parseVoiceCommand('ludwig zwölf', 12), 11, 11));
+// The board can go to 14 (see MAX_SIZE), so the grammar has to reach column N
+// and row 14 — a size the parser can't name is one Voice Mode silently can't
+// play, and nothing else in the app would notice.
+check('"nordpol vierzehn" on 14 → (13,13)', cellIs(parseVoiceCommand('nordpol vierzehn', 14), 13, 13));
+check('"martha dreizehn" on 14 → (12,12)', cellIs(parseVoiceCommand('martha dreizehn', 14), 12, 12));
+check('"N14" glued on 14 → (13,13)', cellIs(parseVoiceCommand('N14', 14), 13, 13));
+// …and must NOT reach past the board it is on. This is what keeps a bare "n"
+// (how a recogniser renders the clipped article "'n") from firing on an 8x8.
+check('"n8" on 8 → no cell', !parseVoiceCommand('n8', 8) || parseVoiceCommand('n8', 8).type !== 'cell');
+check('"martha drei" on 12 → no cell', !parseVoiceCommand('martha drei', 12) || parseVoiceCommand('martha drei', 12).type !== 'cell');
+check('colLetter(13) is "N"', colLetter(13) === 'N');
+check('coordLabel(13,13) is "N14"', coordLabel(13, 13) === 'N14');
+// The grammar's reach and the app's biggest board are two constants in two
+// pure modules; nothing at runtime compares them, so this is where they meet.
+check(`VOICE_MAX_SIZE (${VOICE_MAX_SIZE}) covers MAX_SIZE (${MAX_SIZE})`, VOICE_MAX_SIZE >= MAX_SIZE);
+check(
+  `every column up to MAX_SIZE is nameable`,
+  Array.from({ length: MAX_SIZE }, (_, c) => colLetter(c).toLowerCase()).every(
+    (letter) => cellIs(parseVoiceCommand(`${letter} 1`, MAX_SIZE), 0, letter.charCodeAt(0) - 97)
+  )
+);
 check('number-before-letter "vier cäsar" → (3,2)', cellIs(parseVoiceCommand('vier cäsar', 8), 3, 2));
 
 // --- Action verbs pick the cell action. ---

@@ -25,10 +25,12 @@
 
 export const VOICE_LANG = 'de-DE';
 
-// Highest board size we can address: columns A..L cover 12, matching MAX_SIZE.
-export const VOICE_MAX_SIZE = 12;
+// Highest board size we can address: columns A..N cover 14, matching MAX_SIZE in
+// js/settings.js. Keep the two in step — a size the grammar can't name is a size
+// Voice Mode silently can't play, and nothing else would notice.
+export const VOICE_MAX_SIZE = 14;
 
-// Column A=0 .. L=11. Includes the German spelling alphabet, the NATO alphabet
+// Column A=0 .. N=13. Includes the German spelling alphabet, the NATO alphabet
 // (people reach for it), and the bare letter as a browser might transcribe it.
 const VOICE_COL_WORDS = {
   a: 0, anton: 0, alfa: 0, alpha: 0,
@@ -43,9 +45,14 @@ const VOICE_COL_WORDS = {
   j: 9, jot: 9, jott: 9, julius: 9, juliett: 9,
   k: 10, ka: 10, kaufmann: 10, konrad: 10, kilo: 10,
   l: 11, el: 11, ludwig: 11, lima: 11,
+  // M and N only reach a board that actually has 13/14 columns — voiceCol drops
+  // an out-of-range letter, which is what keeps the bare "n" (a recogniser's
+  // rendering of the clipped article "'n") harmless on every smaller board.
+  m: 12, em: 12, martha: 12, mike: 12,
+  n: 13, en: 13, nordpol: 13, november: 13,
 };
 
-// Spoken number words 1..12 (plus common variants a recogniser emits).
+// Spoken number words 1..14 (plus common variants a recogniser emits).
 const VOICE_NUM_WORDS = {
   eins: 1, ein: 1, eine: 1,
   zwei: 2, zwo: 2,
@@ -59,6 +66,8 @@ const VOICE_NUM_WORDS = {
   zehn: 10,
   elf: 11,
   'zwölf': 12, zwoelf: 12,
+  dreizehn: 13,
+  vierzehn: 14,
 };
 
 // Unit words for whole-line/region fills. Regions are named by COLOUR (the game

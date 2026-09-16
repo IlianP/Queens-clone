@@ -472,8 +472,14 @@ Two traps:
   size back — otherwise a tablet opened once in portrait would permanently forget
   that its owner plays 14×14 in landscape.
 
-`PALETTE` in `main.js` must stay at least `MAX_SIZE` long (one colour per
-region). The **Bestenliste** size slider deliberately goes to `MAX_SIZE` on every
+Two more things are sized by `MAX_SIZE` and would fail silently if they fell
+behind it: `PALETTE` in `main.js` (one colour per region — the two entries added
+for 13/14 were picked by measuring ΔE, see the comment there), and **Voice
+Mode's grammar** — `VOICE_COL_WORDS` / `VOICE_NUM_WORDS` in `js/voice.js` have
+to name every column and row, or the far edge of a big board is simply
+unsayable. Nothing at runtime compares the two, so `tests/logic/voice-parse.mjs`
+asserts `VOICE_MAX_SIZE >= MAX_SIZE` and that every column up to `MAX_SIZE`
+parses. The **Bestenliste** size slider deliberately goes to `MAX_SIZE` on every
 screen: it browses results, including the global list, so a phone should still be
 able to look at the 14×14 board someone else played.
 
