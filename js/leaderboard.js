@@ -249,17 +249,26 @@ export async function fetchTopScores(size, difficulty, { limit = TOP_SCORES_LIMI
 // to that older, better entry — the caller says so rather than pointing at a
 // placement the new solve didn't earn.
 //
+// `submissionId` is what identifies an ANONYMOUS submitter. A named one is found
+// by their name, but an empty name is deliberately not a shared identity (see the
+// SQL), so there is no key to look them up under — and matching on "the newest
+// row with this score" loses to plain timing: a second anonymous client
+// submitting the same value between submit_score and this call would hand the
+// first one the other row's rank. The id already exists (submit_score's
+// idempotency key), so pass it and let the server read that exact row.
+//
 // MUST be called only after a confirmed submit: the server counts the caller's
 // own row, and without it the field would be one player short. Fails soft to
 // null like every read here, which doubles as the feature gate — a project whose
 // SQL predates player_rank answers 404 and the UI keeps the entry-based copy.
-export async function fetchPlayerRank(size, difficulty, name, score, seconds) {
+export async function fetchPlayerRank(size, difficulty, name, score, seconds, submissionId) {
   const data = await rpc('player_rank', {
     p_size: size,
     p_difficulty: difficulty,
     p_name: name || '',
     p_score: score,
     p_seconds: seconds,
+    p_submission_id: submissionId || null,
   });
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;

@@ -1367,7 +1367,8 @@ async function onWinSubmit() {
       win.difficulty,
       win.globalName,
       win.score,
-      win.seconds
+      win.seconds,
+      win.submissionId // identifies the row when the name can't (see fetchPlayerRank)
     );
     if (pendingWin !== win) return; // screen moved on; nothing left to update
     win.globalPlayers = players; // debug export reads this (buildResultDebug)

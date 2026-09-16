@@ -86,9 +86,15 @@ before re-deriving how to drive things:
   `is_best = false`, that the key normalises case and whitespace, that **empty
   names never merge** (three anonymous rows are three players, not one), that a
   tie between two players gives them *different* places with the older in front,
-  and that an unknown player yields no row at all rather than a guess. Closes
-  with an independent cross-check: the rank must equal the position a window
-  function gives the same row. Run it after any change to section 5c of the SQL.
+  and that an unknown player yields no row at all rather than a guess. Two
+  regressions have their own blocks, both found in review and both reproduced
+  before they were fixed: a player named `row:<id>` must not merge with the
+  anonymous row of that id, and two anonymous clients on the same score must each
+  get their *own* rank via `submission_id`. Closes with an independent
+  cross-check: the rank must equal the position a window function gives the same
+  row — and that derivation carries the composite key too, since with a text
+  prefix it would reproduce the same bug and confirm it instead of catching it.
+  Run it after any change to section 5c of the SQL.
 - `tests/sql/rank-order.sql` — the server half: applies
   `docs/leaderboard-setup.sql` to a **throwaway** local Postgres (it truncates
   `public.scores`, never point it at the live project) and asserts that
@@ -678,12 +684,26 @@ rows, which is honest but empties the board).
 
 Four things hold it together:
 
-- **The player key is the normalised name** (trimmed, lower-cased) and an **empty
-  name is not a player but a row** (`'row:' || id`). Without that carve-out every
-  anonymous submission on earth would collapse into one entry. The name is not
-  owned — typing someone else's merges you into them — and that is the accepted
-  price of having no persistent device id. `client_key` cannot serve here: it is
+- **The player key is a pair, not a string**: an anonymity flag plus a text
+  (`false` + normalised name, or `true` + row id). Empty names must not merge —
+  otherwise every anonymous submission on earth is one entry — but encoding that
+  as a text prefix (`'row:' || id`) put the two namespaces in one space that
+  users can type into: a player calling themselves `row:17` merged with anonymous
+  row 17, which cost a player from `total` and handed that anonymous player's
+  best time to the named one. **A text space shared with user input cannot be
+  safely partitioned; two columns can.** The name itself is still not owned —
+  typing someone else's merges you into them — and that is the accepted price of
+  having no persistent device id. `client_key` cannot serve here: it is
   `md5(IP || current_date)`, so it rotates daily and is shared behind NAT.
+- **An anonymous submitter is identified by `submission_id`, not by their
+  values.** A named player is found by name; an empty name is deliberately not an
+  identity, so there is no key to look one up under. Matching "the newest
+  anonymous row with this score" loses to plain timing — a second anonymous
+  client submitting the same value in the gap between `submit_score` and
+  `player_rank` hands the first one the other row's rank. The id already exists
+  as `submit_score`'s idempotency key, so it rides along. The heuristic survives
+  only for a client that submitted without one (the six-argument `submit_score`)
+  and for historical rows.
 - **The same tie rule as everywhere else.** The rank counts best-rows that sort
   before ours under the full `(score, seconds, created_at, id)` ordering, exactly
   as `submit_score` and `top_scores` do. Matching doesn't overtake, and two

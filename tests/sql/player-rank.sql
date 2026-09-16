@@ -47,14 +47,18 @@ begin
   raise notice 'ok  %', p_label;
 end $$;
 
--- Ein Einfügehelfer, der created_at kontrolliert (die Ordnung hängt daran).
+-- Ein Einfügehelfer, der created_at kontrolliert (die Ordnung hängt daran)
+-- und die id der neuen Zeile zurückgibt.
 create or replace function pg_temp.add(
-  p_name text, p_size int, p_difficulty text, p_seconds int, p_min int
-) returns void language sql as $$
-  insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, created_at)
+  p_name text, p_size int, p_difficulty text, p_seconds int, p_min int,
+  p_submission_id uuid default null
+) returns bigint language sql as $$
+  insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, created_at, submission_id)
   values (p_name, p_size, p_difficulty, p_seconds, 0, 0,
           public.queens_score(p_seconds, 0, 0),
-          timestamptz '2026-01-01 00:00:00+00' + (p_min || ' minutes')::interval);
+          timestamptz '2026-01-01 00:00:00+00' + (p_min || ' minutes')::interval,
+          p_submission_id)
+  returning id;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -142,6 +146,76 @@ do $$ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- 5b) Ein Name darf nicht im Namensraum der anonymen Zeilen landen.
+--     `name` ist freier Text, also ist JEDES Präfix ein wählbarer Name. Der
+--     erste Entwurf schlüsselte anonyme Zeilen als 'row:' || id – wer sich
+--     "row:17" nannte, verschmolz mit der anonymen Zeile 17: `total` fiel um
+--     eins, und die Bestzeit des anonymen Spielers wurde dem benannten
+--     zugeschrieben (der dann seine eigene als "nicht die beste" gemeldet bekam).
+--     Deshalb ist der Schlüssel heute ein Paar aus Kennzeichen und Text.
+-- ---------------------------------------------------------------------------
+do $$
+declare v_anon bigint; v_name text; r record;
+begin
+  v_anon := pg_temp.add('',    11, 'hard', 20, 10);   -- anonym
+  v_name := 'row:' || v_anon;                          -- ... und jemand heißt so
+  perform pg_temp.add(v_name,  11, 'hard', 50, 20);
+  perform pg_temp.add('Ada',   11, 'hard', 30, 30);
+
+  select * into r from public.player_rank(11, 'hard', v_name, 50, 50);
+  if r.total <> 3 then
+    raise exception 'Namensraum-Kollision: total=% (erwartet 3, drei echte Spieler)', r.total;
+  end if;
+  if r.rank <> 3 or r.is_best is not true then
+    raise exception 'Namensraum-Kollision: "%" bekam rank=% is_best=% (erwartet 3/true)',
+      v_name, r.rank, r.is_best;
+  end if;
+
+  -- Und die anonyme Zeile bleibt ihr eigener Spieler.
+  select * into r from public.player_rank(11, 'hard', '', 20, 20);
+  if r.rank <> 1 or r.total <> 3 then
+    raise exception 'anonyme Zeile verschmolzen: rank=%/% (erwartet 1/3)', r.rank, r.total;
+  end if;
+  raise notice 'ok  ein Name wie "row:<id>" verschmilzt nicht mit der anonymen Zeile';
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 5c) Anonyme Einreichungen werden über die submission_id identifiziert, nicht
+--     über "die jüngste Zeile mit diesem Wert". Sonst entscheidet Timing: reicht
+--     ein zweiter anonymer Client zwischen submit_score und player_rank denselben
+--     Wert ein, bekommt der erste den Rang der fremden Zeile.
+-- ---------------------------------------------------------------------------
+do $$
+declare v_a uuid := gen_random_uuid(); v_b uuid := gen_random_uuid(); r record;
+begin
+  perform pg_temp.add('',    12, 'hard', 25, 10, v_a);  -- A, älter
+  perform pg_temp.add('',    12, 'hard', 25, 20, v_b);  -- B, jünger, gleicher Wert
+  perform pg_temp.add('Ada', 12, 'hard', 10, 30);
+
+  select * into r from public.player_rank(12, 'hard', '', 25, 25, v_a);
+  if r.rank <> 2 or r.total <> 3 then
+    raise exception 'A bekam rank=%/% (erwartet 2/3 – das ist SEINE Zeile, die ältere)', r.rank, r.total;
+  end if;
+  select * into r from public.player_rank(12, 'hard', '', 25, 25, v_b);
+  if r.rank <> 3 or r.total <> 3 then
+    raise exception 'B bekam rank=%/% (erwartet 3/3)', r.rank, r.total;
+  end if;
+
+  -- Ohne id bleibt nur die Heuristik: sie greift weiter (alte Clients, Altdaten),
+  -- trifft aber eben die jüngste passende Zeile. Bewusst so, und hier festgehalten.
+  select * into r from public.player_rank(12, 'hard', '', 25, 25);
+  if r.rank <> 3 then
+    raise exception 'Heuristik ohne id: rank=% (erwartet 3, die jüngste passende Zeile)', r.rank;
+  end if;
+
+  -- Eine unbekannte id ist kein Grund zu raten.
+  if exists (select 1 from public.player_rank(12, 'hard', '', 25, 25, gen_random_uuid())) then
+    raise exception 'unbekannte submission_id darf keine Zeile liefern';
+  end if;
+  raise notice 'ok  anonyme Einreichungen werden über die submission_id identifiziert';
+end $$;
+
 -- 6) Gegenprobe auf ANDEREM Weg: der Rang eines Spielers muss die Position
 --    seiner besten Zeile in der nach derselben Ordnung sortierten Liste der
 --    Spieler-Bestzeilen sein. Hier über eine Fensterfunktion hergeleitet,
@@ -153,16 +227,22 @@ declare r record; v record;
 begin
   for r in
     with bucket as (
+      -- Derselbe zweiteilige Schlüssel wie in der Funktion: das Anonym-Kennzeichen
+      -- ist eine eigene Spalte, kein Präfix im Text. Ein Bucket unten enthält
+      -- absichtlich einen Spieler, der sich nach einer Zeilen-id benennt – mit
+      -- einem Text-Präfix würde diese Gegenprobe denselben Fehler machen wie die
+      -- Funktion und ihn dadurch bestätigen statt aufdecken.
       select s.id, s.size, s.difficulty, s.score, s.seconds, s.created_at, s.name,
-             case when btrim(s.name) = '' then 'row:' || s.id::text
+             btrim(s.name) = '' as anon,
+             case when btrim(s.name) = '' then s.id::text
                   else lower(btrim(s.name)) end as pkey
         from public.scores s
     ),
     best as (
-      select distinct on (b.size, b.difficulty, b.pkey)
-             b.size, b.difficulty, b.pkey, b.name, b.score, b.seconds, b.created_at, b.id
+      select distinct on (b.size, b.difficulty, b.anon, b.pkey)
+             b.size, b.difficulty, b.anon, b.pkey, b.name, b.score, b.seconds, b.created_at, b.id
         from bucket b
-       order by b.size, b.difficulty, b.pkey, b.score, b.seconds, b.created_at, b.id
+       order by b.size, b.difficulty, b.anon, b.pkey, b.score, b.seconds, b.created_at, b.id
     ),
     ranked as (
       -- Das Fenster muss ALLE Spieler sehen (auch die anonymen), sonst zählt es

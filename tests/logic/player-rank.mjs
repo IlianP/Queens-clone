@@ -49,7 +49,7 @@ try {
   //    than null — the SQL keys anonymous rows off the empty string.
   {
     const calls = installFetch({ status: 200, body: [{ rank: 3, total: 3, is_best: true }] });
-    const got = await fetchPlayerRank(8, 'hard', 'D', 15, 15);
+    const got = await fetchPlayerRank(8, 'hard', 'D', 15, 15, 'a1b2c3d4-0000-4000-8000-000000000001');
     eq(calls.length, 1, 'one request');
     eq(calls[0].url.endsWith('/rpc/player_rank'), true, 'calls player_rank');
     eq(calls[0].body.p_size, 8, 'p_size');
@@ -57,6 +57,7 @@ try {
     eq(calls[0].body.p_name, 'D', 'p_name');
     eq(calls[0].body.p_score, 15, 'p_score');
     eq(calls[0].body.p_seconds, 15, 'p_seconds');
+    eq(calls[0].body.p_submission_id, 'a1b2c3d4-0000-4000-8000-000000000001', 'p_submission_id');
     eq(got && got.rank, 3, 'rank');
     eq(got && got.total, 3, 'total');
     eq(got && got.isBest, true, 'isBest');
@@ -65,11 +66,27 @@ try {
   // 2) An empty name is sent as '' — never null, never omitted.
   {
     const calls = installFetch({ status: 200, body: [{ rank: 1, total: 4, is_best: true }] });
-    await fetchPlayerRank(10, 'hard', '', 30, 30);
+    await fetchPlayerRank(10, 'hard', '', 30, 30, 'a1b2c3d4-0000-4000-8000-000000000002');
     eq(calls[0].body.p_name, '', 'empty name travels as empty string');
     const calls2 = installFetch({ status: 200, body: [{ rank: 1, total: 4, is_best: true }] });
     await fetchPlayerRank(10, 'hard', null, 30, 30);
     eq(calls2[0].body.p_name, '', 'null name travels as empty string');
+  }
+
+  // 2b) The submission id is what identifies an anonymous submitter — a name
+  //     can't, because an empty name is deliberately not a shared identity. An
+  //     absent one must go out as an explicit null rather than be dropped: the
+  //     server switches to its legacy heuristic on null, and a MISSING key would
+  //     leave the parameter at its default, which is the same thing today but
+  //     stops being so the moment the default changes.
+  {
+    const calls = installFetch({ status: 200, body: [{ rank: 1, total: 4, is_best: true }] });
+    await fetchPlayerRank(10, 'hard', '', 30, 30);
+    eq('p_submission_id' in calls[0].body, true, 'p_submission_id is always present');
+    eq(calls[0].body.p_submission_id, null, 'an absent submission id travels as null');
+    const calls2 = installFetch({ status: 200, body: [{ rank: 1, total: 4, is_best: true }] });
+    await fetchPlayerRank(10, 'hard', '', 30, 30, '');
+    eq(calls2[0].body.p_submission_id, null, 'an empty submission id travels as null, not ""');
   }
 
   // 3) is_best false survives — this is what turns "Platz 1" into "deine beste

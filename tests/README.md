@@ -142,7 +142,17 @@ than eighth of ten, while `top_scores` still returns all ten rows. Then the ways
 the player key can go wrong: case and whitespace normalise, but **empty names
 never merge** (three anonymous rows are three players, not one shared account),
 a tie between two players gives them *different* places with the older in front,
-and an unknown player yields no row at all instead of a guess. It closes with an
+and an unknown player yields no row at all instead of a guess.
+
+Two blocks cover regressions found in review, each reproduced against a real
+database before it was fixed. A player may legitimately call themselves
+`row:17`, which under the first draft's text-prefix key merged them with the
+anonymous row of id 17 — one player vanished from `total` and the anonymous
+player's best time was reported as the named player's. And two anonymous clients
+submitting the same score seconds apart used to be told apart by recency, so the
+one that asked first could be handed the other's rank; they now carry their
+`submission_id`. The block also pins the legacy path (no id → the old heuristic,
+still reachable by an older client) so it can't change unnoticed. It closes with an
 independent cross-check — the rank must equal the position a window function
 gives the same row, derived without sharing any code with the function, the way
 `logic/qr-code.mjs` decodes the QR matrix rather than re-encoding it.
