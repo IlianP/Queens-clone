@@ -91,6 +91,18 @@ await page.route('**/rest/v1/rpc/top_scores', async (route) => {
     body: JSON.stringify([{ name: 'Tester', seconds: 42, hints: 0, mistakes: 0, score: 42 }]),
   });
 });
+// The `succeed` path above reaches main.js's player-level placement lookup, and
+// an unstubbed one would leave this test talking to the LIVE project — which the
+// safety note at the top of this file promises it never does. What it answers
+// doesn't matter here (this test is about the retry ladder, not the copy), only
+// that it is answered locally.
+await page.route('**/rest/v1/rpc/player_rank', async (route) => {
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ rank: 1, total: 1, is_best: true }]),
+  });
+});
 
 const submitStatus = () =>
   page.evaluate(() => {

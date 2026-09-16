@@ -90,7 +90,8 @@ export const I18N_DE = {
   // ---------- win card ----------
   'win.title': '🎉 Gelöst!',
   'win.viewBoard': 'Gelöstes Spielfeld ansehen',
-  'win.tab.local': 'Lokal',
+  'win.tab.local': 'Eigene',
+  'win.tab.localAria': 'Bestenliste auf diesem Gerät',
   'win.tab.global': 'Global 🌐',
   'win.tab.period': ({ days }) => `${days} Tage`,
   'win.tab.periodAria': ({ days }) => `Bestenliste der letzten ${days} Tage`,
@@ -135,6 +136,12 @@ export const I18N_DE = {
   'submit.done': ({ rank, total }) => `Global eingetragen: Platz ${rank} von ${total} 🌐`,
   'submit.donePercentile': ({ rank, total, percent }) =>
     `Global eingetragen: Platz ${rank} von ${total} – besser als ${dePercent(percent)} der Einträge 🌐`,
+  'submit.donePlayers': ({ rank, total }) =>
+    `Global eingetragen: Platz ${rank} von ${dePlural(total, 'Spieler', 'Spielern')} 🌐`,
+  'submit.donePlayersPercentile': ({ rank, total, percent }) =>
+    `Global eingetragen: Platz ${rank} von ${dePlural(total, 'Spieler', 'Spielern')} – besser als ${dePercent(percent)} 🌐`,
+  'submit.donePlayersNotBest': ({ rank, total }) =>
+    `Global eingetragen 🌐 Keine neue Bestzeit – deine beste hält Platz ${rank} von ${dePlural(total, 'Spieler', 'Spielern')}.`,
   'submit.unreachable': 'Global nicht erreichbar – lokal gespeichert ✓. Erneut versuchen?',
   'submit.rejectedSaved': ({ text }) => `${text} – lokal gespeichert ✓`,
   'submit.reject.implausibleTime': 'Global abgelehnt: Zeit als unmöglich eingestuft',
