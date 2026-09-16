@@ -20,6 +20,21 @@ const SMALL_CAP = 40000;
 
 const LEVELS = { easy: 0, medium: 1, hard: 2 };
 
+// The four orthogonal steps, shared by the strips grower and its repair. The two
+// older growers keep their own local copies; they are not part of this change.
+const ORTHO = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
+];
+
+// Size floor for a strip. Same reasoning as blocky's `minSize`: a one-cell
+// region is a free "only cell of this colour" queen. Unlike blocky this floor
+// costs nothing on easy, because the strips style has no easy boards to lose
+// (see `stripCoverage`).
+const STRIP_MIN_LEN = 2;
+
 function shuffle(arr, rng) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -218,6 +233,249 @@ function growRegionsBlocky(
   return region;
 }
 
+// Third region growth: the "strips" style (see CLAUDE.md → "Region-growth
+// styles"). It comes from a LinkedIn screenshot whose signature neither of the
+// two styles above reproduces: on that 8x8 board SEVEN of the eight colours were
+// straight, one-cell-wide segments (a 1x2 up to a 1x5), and the eighth was one
+// amorphous background covering 64% of the grid. Measured over the 1760 shipped
+// pool boards, "N-1 regions are strips" occurs in 0.15% of blocky boards and in
+// none at all of the organic ones — it is not a rare draw of the other styles,
+// it is a different construction.
+//
+// So this grower builds it directly instead of hoping for it: every queen but
+// one gets a straight segment through its own cell, and whatever is left over
+// becomes the one background region. That flips the usual job — the other two
+// styles decide where borders run, this one decides how much board is NOT a
+// border.
+//
+// The invariant that makes it work: the background is "every cell no strip
+// claimed", so it is contiguous exactly when the still-free cells plus the
+// background's own seed stay connected. Checking that after every single claim
+// turns "grow a board, then test it, then throw it away" into a local veto, and
+// the build succeeds essentially always instead of ~10% of the time.
+//
+// Knobs:
+//   - `minLen` (2) is a floor like blocky's: a 1-cell region is a free queen.
+//   - `coverage` is the share of the board the strips should claim between them;
+//     the rest is background. The screenshot sits at 36% strips / 64% background.
+//     The caller tapers it with N (see `stripCoverage`).
+//   - `spread` varies the individual strip caps around that mean, so lengths
+//     come out mixed (the screenshot's were 2,2,3,3,4,4,5) rather than uniform.
+function growRegionsStrips(N, cols, rng, { minLen = 2, coverage = 0.5, spread = 0.6 } = {}) {
+  const region = Array.from({ length: N }, () => new Array(N).fill(-1));
+  for (let i = 0; i < N; i++) region[i][cols[i]] = i;
+  const background = Math.floor(rng() * N);
+  const bgSeedR = background;
+  const bgSeedC = cols[background];
+
+  // Connectivity of the future background: the free cells plus its seed.
+  const freeMassConnected = () => {
+    const inMass = (r, c) => region[r][c] === -1 || (r === bgSeedR && c === bgSeedC);
+    let startR = -1;
+    let startC = -1;
+    let total = 0;
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if (inMass(r, c)) {
+          total++;
+          if (startR < 0) {
+            startR = r;
+            startC = c;
+          }
+        }
+    if (startR < 0) return false;
+    const seen = new Set([startR * N + startC]);
+    const stack = [[startR, startC]];
+    while (stack.length) {
+      const [r, c] = stack.pop();
+      for (const [dr, dc] of ORTHO) {
+        const nr = r + dr;
+        const nc = c + dc;
+        if (nr < 0 || nr >= N || nc < 0 || nc >= N || !inMass(nr, nc)) continue;
+        const ni = nr * N + nc;
+        if (seen.has(ni)) continue;
+        seen.add(ni);
+        stack.push([nr, nc]);
+      }
+    }
+    return seen.size === total;
+  };
+
+  const meanLen = (coverage * N * N) / (N - 1);
+  const strips = [];
+  for (let g = 0; g < N; g++) {
+    if (g === background) continue;
+    strips.push({
+      g,
+      r: g,
+      c: cols[g],
+      vertical: rng() < 0.5,
+      flipped: false,
+      lo: 0,
+      hi: 0,
+      len: 1,
+      cap: Math.max(minLen, Math.round(meanLen + (rng() * 2 - 1) * spread * meanLen)),
+    });
+  }
+
+  // Claim the cell `off` steps from the seed along the strip's axis, unless it
+  // would cut the background in two.
+  const claim = (s, off) => {
+    const r = s.vertical ? s.r + off : s.r;
+    const c = s.vertical ? s.c : s.c + off;
+    if (r < 0 || r >= N || c < 0 || c >= N || region[r][c] !== -1) return false;
+    region[r][c] = s.g;
+    if (!freeMassConnected()) {
+      region[r][c] = -1;
+      return false;
+    }
+    s.len++;
+    if (off > s.hi) s.hi = off;
+    else s.lo = off;
+    return true;
+  };
+  const extend = (s) => {
+    const sides = rng() < 0.5 ? [s.hi + 1, s.lo - 1] : [s.lo - 1, s.hi + 1];
+    for (const off of sides) if (claim(s, off)) return true;
+    return false;
+  };
+
+  // Phase 1: every strip must reach the floor. A seed boxed in along its first
+  // axis gets one flip of orientation; only then is the board scrapped.
+  for (const s of strips) {
+    while (s.len < minLen) {
+      if (extend(s)) continue;
+      if (s.len === 1 && !s.flipped) {
+        s.flipped = true;
+        s.vertical = !s.vertical;
+        continue;
+      }
+      return null;
+    }
+  }
+  // Phase 2: round-robin to the individual caps, so an early strip can't eat the
+  // room the later ones need.
+  let live = strips.filter((s) => s.len < s.cap);
+  while (live.length) {
+    let any = false;
+    for (const s of shuffle(live, rng)) if (s.len < s.cap && extend(s)) any = true;
+    if (!any) break;
+    live = live.filter((s) => s.len < s.cap);
+  }
+
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) if (region[r][c] === -1) region[r][c] = background;
+  return { region, background };
+}
+
+// Uniqueness repair for the strips style. `makeUnique` above can't be used: it
+// moves a cell into an arbitrary neighbouring region, which turns a straight
+// segment into an L and destroys the very thing this style is built for.
+//
+// It kills an alternate solution S2 the same way — every solution holds exactly
+// one queen per region, so giving a region a SECOND S2 queen invalidates S2 —
+// but only through two moves that leave every strip a strip:
+//   - GROW: a background cell that continues some strip's line joins that strip.
+//     Tried first: it makes the board tighter, which is the direction uniqueness
+//     lies in.
+//   - SHRINK: a strip's end cell goes to the background. Always available where
+//     grow isn't, and shortening a segment from an end leaves a segment.
+// Neither ever touches an S1 queen cell, so the intended solution survives; the
+// size floor and both contiguity invariants are re-checked per move.
+function makeUniqueStrips(N, region, S1, background, rng, deadline) {
+  const maxIters = N * N * 6;
+  const sizeOf = (g) => {
+    let n = 0;
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (region[r][c] === g) n++;
+    return n;
+  };
+  const sameRegionNeighbours = (r, c, g) => {
+    let n = 0;
+    for (const [dr, dc] of ORTHO) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr >= 0 && nr < N && nc >= 0 && nc < N && region[nr][nc] === g) n++;
+    }
+    return n;
+  };
+  const touches = (r, c, g) => sameRegionNeighbours(r, c, g) > 0;
+  // A 1-wide segment stays one iff the bounding box is a line the cells fill.
+  const isStrip = (g) => {
+    let r0 = N;
+    let r1 = -1;
+    let c0 = N;
+    let c1 = -1;
+    let area = 0;
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++)
+        if (region[r][c] === g) {
+          area++;
+          if (r < r0) r0 = r;
+          if (r > r1) r1 = r;
+          if (c < c0) c0 = c;
+          if (c > c1) c1 = c;
+        }
+    const h = r1 - r0 + 1;
+    const w = c1 - c0 + 1;
+    return (h === 1 || w === 1) && area === Math.max(h, w);
+  };
+
+  for (let iter = 0; iter < maxIters; iter++) {
+    if (now() > deadline) return false;
+
+    let res = solveUpTo2(N, region, SMALL_CAP);
+    if (res.count < 2) {
+      if (logicSolves(N, region, 2)) return true;
+      res = solveUpTo2(N, region, NODE_CAP);
+      if (res.aborted) return false;
+      if (res.count < 2) return true;
+    }
+    const S2 = sameSolution(res.first, S1, N) ? res.second : res.first;
+
+    const cands = [];
+    for (let r = 0; r < N; r++) if (S2[r] !== S1[r]) cands.push([r, S2[r]]);
+    shuffle(cands, rng);
+
+    let moved = false;
+    for (const [ar, ac] of cands) {
+      if (region[ar][ac] !== background) continue;
+      const targets = [];
+      for (const [dr, dc] of ORTHO) {
+        const nr = ar + dr;
+        const nc = ac + dc;
+        if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
+        const g = region[nr][nc];
+        if (g !== background && !targets.includes(g)) targets.push(g);
+      }
+      for (const g of shuffle(targets, rng)) {
+        region[ar][ac] = g;
+        if (isStrip(g) && regionContiguous(N, region, background)) {
+          moved = true;
+          break;
+        }
+        region[ar][ac] = background;
+      }
+      if (moved) break;
+    }
+    if (!moved) {
+      for (const [ar, ac] of cands) {
+        const g = region[ar][ac];
+        if (g === background) continue;
+        if (sizeOf(g) <= STRIP_MIN_LEN) continue; // never shrink below the floor
+        if (sameRegionNeighbours(ar, ac, g) > 1) continue; // a middle cell would split it
+        if (!touches(ar, ac, background)) continue; // background must stay contiguous
+        region[ar][ac] = background;
+        moved = true;
+        break;
+      }
+    }
+    if (!moved) return false;
+  }
+  if (logicSolves(N, region, 2)) return true;
+  const res = solveUpTo2(N, region, NODE_CAP);
+  return !res.aborted && res.count < 2;
+}
+
 function sameSolution(a, b, N) {
   for (let r = 0; r < N; r++) if (a[r] !== b[r]) return false;
   return true;
@@ -256,6 +514,12 @@ function contiguousWithout(N, region, reg, ar, ac) {
     }
   }
   return seen.size === cells.length;
+}
+
+// Is colour region `reg` contiguous as it stands? contiguousWithout with a cell
+// coordinate no board has, so nothing is removed.
+function regionContiguous(N, region, reg) {
+  return contiguousWithout(N, region, reg, -1, -1);
 }
 
 // Mutate `region` until the puzzle is solvable by pure deduction — which makes
@@ -346,6 +610,18 @@ const BLOCKY_OPTS = {
   2: { minSize: 2, maxRun: 6, dominance: 0.45, maxShare: 0.4 },
 };
 
+// How much of the board the strips claim between them, by size. The screenshot
+// this style comes from sits at 36% strips / 64% background on an 8x8, and a
+// small board reproduces that comfortably. A big one cannot: strips get in each
+// other's way, so the background share drifts up regardless, and asking for more
+// coverage only makes the uniqueness repair grind (measured on 12x12: 40 ms per
+// hard board at 0.40, 507 ms at 0.50). So the ask tapers and the look holds —
+// one dominant background with N-1 straight segments in it — rather than the
+// exact 64%.
+function stripCoverage(N) {
+  return N <= 9 ? 0.55 : Math.max(0.36, 0.55 - 0.05 * (N - 9));
+}
+
 /**
  * Generate a puzzle.
  * @param {number} N board size
@@ -354,6 +630,8 @@ const BLOCKY_OPTS = {
  *   style: 'organic' (default — flood fill, the shape the shipped pools have)
  *          | 'blocky' (segment growth: straight borders, one big background
  *            region, no single-cell freebies above easy)
+ *          | 'strips' (N-1 straight one-wide segments plus one background
+ *            region — has NO easy boards, see below)
  * @returns {{ region:number[][], solution:number[], level:number, attempts:number }}
  */
 export function generatePuzzle(N, difficulty, opts = {}) {
@@ -361,10 +639,32 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   const budgetMs = opts.budgetMs ?? 1500;
   const target = LEVELS[difficulty] ?? 1;
   const blocky = opts.style === 'blocky';
+  // The strips style has no EASY boards at all — with a size floor of 2 no
+  // colour is ever down to its last cell at the start, so the opening is always
+  // a line<->region confinement (medium) and the naked-single reach is 0. Across
+  // ~60k sampled boards at every size not one rated easy. That is a property of
+  // the construction, not a tuning miss: raising the floor is what creates the
+  // look, and dropping it to 1 would just rebuild blocky-easy under a new name.
+  // So callers ask for strips on medium/hard only (see tools/generate-levels.mjs
+  // and randomStyle() in main.js); asking for easy is not an error, it simply
+  // comes back one level up, honestly rated.
+  const strips = opts.style === 'strips';
   const blockyOpts = BLOCKY_OPTS[target] ?? BLOCKY_OPTS[1];
-  const minSize = blocky ? blockyOpts.minSize : 1;
-  const grow = (cols, balanceIn) =>
-    blocky ? growRegionsBlocky(N, cols, rng, blockyOpts) : growRegions(N, cols, rng, balanceIn);
+  const minSize = blocky ? blockyOpts.minSize : strips ? STRIP_MIN_LEN : 1;
+  const stripsOpts = { minLen: STRIP_MIN_LEN, coverage: stripCoverage(N), spread: 0.6 };
+  // Growth returns the region grid plus, for strips, which id ended up as the
+  // background — the repair below needs it, and only that grower decides it.
+  const grow = (cols, balanceIn) => {
+    if (strips) return growRegionsStrips(N, cols, rng, stripsOpts);
+    const region = blocky
+      ? growRegionsBlocky(N, cols, rng, blockyOpts)
+      : growRegions(N, cols, rng, balanceIn);
+    return region ? { region, background: -1 } : null;
+  };
+  const repair = (grown, cols, deadline) =>
+    strips
+      ? makeUniqueStrips(N, grown.region, cols, grown.background, rng, deadline)
+      : makeUnique(N, grown.region, cols, rng, deadline, minSize);
   // How many "free" naked-single queens we tolerate for this difficulty before a
   // board counts as too open (it plays easier than its technique rating claims).
   // Easy IS naked singles, so it has no cap; medium allows a handful; hard wants
@@ -392,9 +692,10 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     attempts++;
     const cols = generatePlacement(N, rng);
     if (!cols) continue;
-    const region = grow(cols, balance);
-    if (!region) continue;
-    if (!makeUnique(N, region, cols, rng, start + budgetMs, minSize)) continue;
+    const grown = grow(cols, balance);
+    if (!grown) continue;
+    const region = grown.region;
+    if (!repair(grown, cols, start + budgetMs)) continue;
 
     const level = difficultyLevel(N, region);
     // A level-3 board isn't solvable by our explainable techniques, so every
@@ -447,9 +748,10 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     attempts++;
     const cols = generatePlacement(N, rng);
     if (!cols) continue;
-    const region = grow(cols, 0);
-    if (!region) continue;
-    if (!makeUnique(N, region, cols, rng, now() + 500, minSize)) continue;
+    const grown = grow(cols, 0);
+    if (!grown) continue;
+    const region = grown.region;
+    if (!repair(grown, cols, now() + 500)) continue;
     const level = difficultyLevel(N, region);
     if (level >= 3) continue; // never hand back a board the hints can't explain
     const dist = Math.abs(level - target);
@@ -474,9 +776,13 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   for (let tries = 0; tries < 2000; tries++) {
     attempts++;
     const cols = generatePlacement(N, rng) || defaultPlacement(N);
-    const region = grow(cols, 0) || trivialRegions(N);
-    // No size floor here on purpose: this path's only job is to hand back SOME
-    // fair unique board, and the floor can only make the repair fail.
+    // Organic explicitly, not the requested style: this path's only job is to
+    // hand back SOME fair unique board, and organic is the growth whose repair
+    // never fails. (It also keeps the strips style away from `makeUnique`, which
+    // would happily bend a segment into an L to buy uniqueness.)
+    const region = growRegions(N, cols, rng, 0) || trivialRegions(N);
+    // No size floor here on purpose, for the same reason: the floor can only
+    // make the repair fail.
     if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
     const level = difficultyLevel(N, region);
     const result = { region, solution: cols.slice(), level, attempts };

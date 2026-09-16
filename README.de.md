@@ -46,10 +46,15 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   zu keiner vorhandenen Übersetzung, wird **Englisch** genommen. Ein Sprachwechsel
   lädt die Seite neu (läuft gerade eine Partie, wird vorher gefragt); ein bereits
   gelöstes, noch nicht eingetragenes Ergebnis geht dabei nicht verloren.
-- **Feldgröße:** 5 bis 12. Bei **12** sind ausschließlich schwere Rätsel möglich –
-  ein 12×12-Feld ist von Natur aus schwer, „leichte“/„mittlere“ Rätsel dieser Größe
-  existieren praktisch nicht –, deshalb wird die Schwierigkeit dort auf *Schwer*
-  festgelegt.
+- **Feldgröße:** 5 bis 12, auf einem **ausreichend großen Bildschirm** bis 14.
+  Ab **12** sind ausschließlich schwere Rätsel möglich – ein Feld dieser Größe ist
+  von Natur aus schwer, „leichte“/„mittlere“ Rätsel davon existieren praktisch
+  nicht –, deshalb wird die Schwierigkeit dort auf *Schwer* festgelegt. Die Größen
+  13 und 14 werden nur angeboten, solange ein Feld noch mindestens 36 px groß
+  gezeichnet würde, was ein Telefon nie schafft: Die Obergrenze des Reglers wird
+  am echten Brett auf dem echten Bildschirm gemessen und liegt damit auf dem
+  Telefon bei 12, in einem flachen Laptop-Fenster bei 13 und auf Tablet, Laptop
+  oder Desktop bei 14.
 - **Schwierigkeit:**
   - *Leicht* – lösbar allein durch „nur ein Feld übrig"-Schlüsse.
   - *Mittel* – benötigt zusätzlich Zeilen-/Spalten-↔-Regionen-Schlüsse.
@@ -217,29 +222,36 @@ Fall, bevor überhaupt gesendet wird.
 
 „Neues Spiel" startet sofort: Die Rätsel werden nicht live berechnet, sondern aus
 vorberechneten Pools in `levels/` gezogen – eine JSON-Datei pro Kombination aus
-Feldgröße und Schwierigkeit, je 50 Rätsel. Das sind **22 Pools mit zusammen 1100
-Rätseln** (Feldgröße 12 hat nur einen `schwer`-Pool, siehe unten). Damit sich
+Feldgröße und Schwierigkeit, je 50 Rätsel. Das sind **24 Pools mit zusammen 1200
+Rätseln** (die Feldgrößen 12 bis 14 haben nur einen `schwer`-Pool, siehe unten). Damit sich
 nichts einprägt, wird jedes
 gezogene Rätsel zufällig **gedreht oder gespiegelt** (8 Symmetrien) und bekommt wie
 bisher zufällige Farben – aus 50 gespeicherten Formen entstehen so hunderte
 unterscheidbare Bretter. Innerhalb einer Sitzung wiederholt sich keine Form, bevor
 nicht alle an der Reihe waren (nur im Speicher, nichts wird persistiert).
 
-### Zwei Formensprachen
+### Drei Formensprachen
 
-Die Farbregionen werden in **zwei verschiedenen Stilen** gebaut, und jeder Pool
-enthält beide zur Hälfte:
+Die Farbregionen werden in **drei verschiedenen Stilen** gebaut, und jeder Pool
+enthält von jedem einen gleich großen Anteil:
 
 - **organisch** – amöbenartige Regionen mit ausgefransten Grenzen.
 - **blockig** – Regionen wachsen in geraden Streifen, dadurch lange gerade
   Grenzen, rechteckige Formen und eine große Hintergrundfarbe.
+- **Streifen** – bis auf eine sind alle Farben gerade, ein Feld breite Segmente;
+  die eine Ausnahme ist ein einzelner Hintergrund, der den Großteil des Bretts
+  einnimmt.
 
 Weil jedes Rätsel eines Pools einmal an die Reihe kommt, bevor sich etwas
-wiederholt, wechseln sich beide Looks beim Spielen gleichmäßig ab. **An der
+wiederholt, wechseln sich die Looks beim Spielen gleichmäßig ab. **An der
 Schwierigkeit ändert der Stil nichts** – sie hängt allein davon ab, welche
-Denktechniken ein Brett verlangt. Nur bei *Leicht* fällt der Unterschied kaum
-auf: diese Stufe braucht die kleinen „geschenkten" Regionen, die den blockigen
-Look erst ausmachen würden.
+Denktechniken ein Brett verlangt. Zwei Stufen sind Ausnahmen, und zwar aus
+demselben Grund: Bei *Leicht* fällt der blockige Unterschied kaum auf (diese
+Stufe braucht die kleinen „geschenkten" Regionen, die den blockigen Look erst
+ausmachen würden), und *Leicht* hat gar keine **Streifen**-Rätsel, weil genau die
+Mindestgröße, die den Look erzeugt, der Stufe ihren erzwungenen Einstieg nimmt.
+Oberhalb von Feldgröße 12 ist Streifen der einzige Stil – er ist der, der ein
+Brett dieser Größe überhaupt schnell genug erzeugt.
 
 Schlägt das Laden eines Pools fehl (z. B. offline geänderte Dateien), erzeugt das
 Spiel das Rätsel wie früher live im Hintergrund – es gibt also immer ein Brett,

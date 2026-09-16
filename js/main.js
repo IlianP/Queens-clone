@@ -3,7 +3,7 @@ import { generatePuzzle } from './generator.js';
 import { drawLevel } from './levels.js';
 import { Game } from './game.js';
 import { computeHint } from './hint.js';
-import { loadSettings, saveSettings, clampSize, sanitizeNickname } from './settings.js';
+import { loadSettings, saveSettings, clampSize, sanitizeNickname, MAX_SIZE } from './settings.js';
 import {
   computeScore,
   sanitizeName,
@@ -56,10 +56,19 @@ import {
   voiceCancelSpeech,
 } from './voice.js';
 
-// Distinct, mildly pastel region colours (supports up to 12 regions).
+// Distinct, mildly pastel region colours — one per region, so the list must be
+// at least MAX_SIZE long, and on a 14x14 board all 14 are on screen at once.
+// The last two were added for sizes 13/14 and were chosen by measuring rather
+// than by eye: the first twelve leave two clear holes in hue (~110 pure green
+// and ~300 magenta), and these fill them at the palette's own lightness and
+// chroma. Checked in CIELAB: the closest pair in the set is still the
+// pre-existing #8aa2ff/#bd93f9 (ΔE 20.6 in light, 16.2 under the board-wide
+// dark-mode saturate/brightness filter) — the additions make nothing worse in
+// either theme. Measure again before adding a fifteenth.
 const PALETTE = [
   '#ff8a8a', '#ffb26b', '#ffe066', '#c1e15b', '#7ed99a', '#66d9cd',
   '#79c7ff', '#8aa2ff', '#bd93f9', '#ff9ed8', '#d0a679', '#c9cdd6',
+  '#c8e4be', '#f17ee7',
 ];
 
 const CROWN = `<svg class="queen" viewBox="0 0 24 24" aria-hidden="true">
@@ -209,9 +218,67 @@ function decorateHintButton() {
   dom.hint.title = t('ui.hint.title', { seconds: HINT_PENALTY });
 }
 
-// Size 12 is hard-only (see applyDifficultyConstraint) — normalise a persisted
-// or stale easy/medium choice so the first board matches what the modal allows.
-if (settings.size >= 12) settings.difficulty = 'hard';
+// ---------- Board size limits ----------
+// Three different questions, three constants — they are not the same number by
+// accident and should not be collapsed.
+
+// From here up a board is inherently hard: puzzles solvable by the easy/medium
+// techniques essentially don't exist at that size, so the modal locks the choice
+// to "Schwer" (and forces it) whenever the slider sits there or above.
+const HARD_ONLY_SIZE = 12;
+
+// From here up 'strips' is the only growth style that produces a board inside a
+// playable budget (see stylesFor / js/generator.js). Measured per accepted hard
+// 13x13: strips ~0.3 s, organic ~12 s.
+const STRIPS_ONLY_SIZE = 13;
+
+// The smallest a cell may render and still be comfortably tappable, used only to
+// decide whether the sizes ABOVE HARD_ONLY_SIZE are offered at all. It is
+// deliberately not applied to 5..12: those already ship down to ~30px on a
+// narrow phone and nothing about this change should shrink the sizes people
+// already play. A big board is the one that has to earn its screen.
+const BIG_BOARD_MIN_CELL = 36;
+
+// Put the grid size on the board and pick the box it renders in. Above
+// HARD_ONLY_SIZE columns the cells would otherwise get cramped, so the board
+// leans harder on the viewport (.board-xl in css/styles.css).
+function applyBoardSize(N) {
+  dom.board.style.setProperty('--n', N);
+  dom.board.classList.toggle('board-xl', N > HARD_ONLY_SIZE);
+  // The stage's own --n is buildCoordRulers' job; both callers run it next.
+}
+
+// The largest size worth offering on THIS screen. The board's own CSS decides
+// how wide it renders (it leans harder on the viewport above 12 columns, see
+// .board-xl), so rather than restate that formula here — where the two would
+// drift apart the first time the cap moves — this toggles the class on the real
+// element and measures the result back.
+function maxSizeForViewport() {
+  let max = HARD_ONLY_SIZE;
+  const wasXl = dom.board.classList.contains('board-xl');
+  dom.board.classList.add('board-xl');
+  // offsetWidth, NOT getBoundingClientRect(): the board carries the intro
+  // animation's rotate/scale transform, and a rect read mid-intro comes back
+  // scaled (0.71x at its smallest) — which silently costs the big sizes their
+  // ceiling on a screen that has the room.
+  const edge = dom.board.offsetWidth;
+  if (!wasXl) dom.board.classList.remove('board-xl');
+  // A board that measures 0 is one that isn't laid out yet (or at all); offering
+  // the big sizes on a guess is worse than not offering them.
+  if (edge > 0)
+    for (let n = HARD_ONLY_SIZE + 1; n <= MAX_SIZE; n++)
+      if (edge / n >= BIG_BOARD_MIN_CELL) max = n;
+  return max;
+}
+
+// The board the first game is played on: the stored size, but never larger than
+// this screen can show properly (see maxSizeForViewport). The clamp is NOT
+// saved — a tablet opened in portrait shouldn't permanently forget that its
+// owner plays 14x14 in landscape; only pressing Apply writes a size back.
+settings.size = Math.min(settings.size, maxSizeForViewport());
+// Sizes 12 and up are hard-only (see applyDifficultyConstraint) — normalise a
+// persisted or stale easy/medium choice so the first board matches the modal.
+if (settings.size >= HARD_ONLY_SIZE) settings.difficulty = 'hard';
 let game = null;
 let currentSolution = null; // cols[r] of the unique solution (for hints)
 let cells = []; // cells[r][c] -> HTMLElement
@@ -367,16 +434,27 @@ function freshWorker() {
   return genWorker;
 }
 
-// The pools are mixed half organic / half blocky, so live generation — the
-// fallback when a pool is missing — flips a coin too. Otherwise the rare board
-// that misses the pool would always come back in the same look, which is exactly
-// when a player would notice the inconsistency.
-function randomStyle() {
-  return Math.random() < 0.5 ? 'organic' : 'blocky';
+// The pools mix every style a bucket has, so live generation — the fallback when
+// a pool is missing — draws from the same set. Otherwise the rare board that
+// misses the pool would always come back in one fixed look, which is exactly the
+// moment a player would notice the inconsistency.
+//
+// The two exceptions are properties of the styles, not preferences (see
+// js/generator.js and tools/generate-levels.mjs, which splits the pools the same
+// way): 'strips' has no easy boards at all, and above size 12 it is the only
+// style that produces a board inside a playable budget at all.
+function stylesFor(N, difficulty) {
+  if (N >= STRIPS_ONLY_SIZE) return ['strips'];
+  if (difficulty === 'easy') return ['organic', 'blocky'];
+  return ['organic', 'blocky', 'strips'];
+}
+function randomStyle(N, difficulty) {
+  const pool = stylesFor(N, difficulty);
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function generateAsync(N, difficulty, budgetMs) {
-  const style = randomStyle();
+  const style = randomStyle(N, difficulty);
   return new Promise((resolve) => {
     const w = freshWorker();
     if (!w) {
@@ -410,7 +488,11 @@ async function newGame() {
 
   const N = settings.size;
   const difficulty = settings.difficulty;
-  const budgetMs = N >= 12 ? 5200 : N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
+  // Only ever spent when the pool draw misses. The big sizes get more because
+  // they need it (a hard 14x14 takes ~1 s of strips generation at the median,
+  // ~3.4 s at the tail) — not because they are slower per attempt.
+  const budgetMs =
+    N >= 14 ? 8000 : N >= 13 ? 6500 : N >= 12 ? 5200 : N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
   const animate = introEnabled();
 
   if (animate) intro.startCompute(N);
@@ -532,7 +614,7 @@ const intro = (() => {
     startCompute(N) {
       cancel();
       dom.board.classList.remove('intro-revealing');
-      dom.board.style.setProperty('--n', N);
+      applyBoardSize(N);
       buildCoordRulers(N); // keep the edge rulers in step with the new size
       dom.board.innerHTML = '';
       placeholder = [];
@@ -685,8 +767,7 @@ function buildCoordRulers(N) {
 function buildBoard(N, region, reveal = false) {
   // Assign a distinct palette colour per region.
   colorMap = shuffledPalette(N);
-  dom.board.style.setProperty('--n', N);
-  dom.boardStage.style.setProperty('--n', N);
+  applyBoardSize(N);
   buildCoordRulers(N);
   dom.board.classList.remove('intro-revealing');
   dom.board.style.setProperty('--intro-rot', '0deg');
@@ -2385,10 +2466,14 @@ function closeSettings() {
 function openSettings() {
   clearHint();
   dom.languageSelect.value = settings.language;
-  dom.sizeRange.value = settings.size;
-  dom.sizeValue.textContent = settings.size;
+  // Measured now, not at boot: the window may have been resized or the device
+  // rotated since, and this is the moment the choice is actually made.
+  const maxSize = maxSizeForViewport();
+  dom.sizeRange.max = String(maxSize);
+  dom.sizeRange.value = Math.min(settings.size, maxSize);
+  dom.sizeValue.textContent = dom.sizeRange.value;
   setDifficultyUI(settings.difficulty);
-  applyDifficultyConstraint(settings.size);
+  applyDifficultyConstraint(dom.sizeRange.value);
   dom.quickMode.checked = settings.quickMode;
   dom.liveCheck.checked = settings.liveCheck;
   dom.introAnimation.checked = settings.introAnimation;
@@ -2447,6 +2532,20 @@ function onLanguageChange() {
 }
 dom.languageSelect.addEventListener('change', onLanguageChange);
 
+// Rotating a tablet with the modal open changes which sizes fit, so re-measure
+// rather than leave a ceiling from the previous orientation on screen. Only
+// while the modal is actually open — nothing else reads the slider.
+window.addEventListener('resize', () => {
+  if (dom.settingsOverlay.hidden) return;
+  const maxSize = maxSizeForViewport();
+  dom.sizeRange.max = String(maxSize);
+  if (Number(dom.sizeRange.value) > maxSize) {
+    dom.sizeRange.value = String(maxSize);
+    dom.sizeValue.textContent = dom.sizeRange.value;
+    applyDifficultyConstraint(dom.sizeRange.value);
+  }
+});
+
 dom.sizeRange.addEventListener('input', () => {
   dom.sizeValue.textContent = dom.sizeRange.value;
   applyDifficultyConstraint(dom.sizeRange.value);
@@ -2462,10 +2561,6 @@ function setDifficultyUI(value) {
     btn.setAttribute('aria-checked', String(btn.dataset.value === value));
   }
 }
-// A 12x12 board is inherently hard: puzzles solvable by the easy/medium
-// techniques essentially don't exist at that size, so lock the choice to
-// "Schwer" (and force it) whenever the slider sits at 12.
-const HARD_ONLY_SIZE = 12;
 function applyDifficultyConstraint(size) {
   const hardOnly = Number(size) >= HARD_ONLY_SIZE;
   for (const btn of dom.difficulty.querySelectorAll('button')) {
@@ -2506,7 +2601,7 @@ dom.introAnimation.addEventListener('change', () => {
 });
 
 dom.settingsApply.addEventListener('click', () => {
-  settings.size = clampSize(dom.sizeRange.value);
+  settings.size = Math.min(clampSize(dom.sizeRange.value), maxSizeForViewport());
   settings.difficulty = settings.size >= HARD_ONLY_SIZE ? 'hard' : currentDifficultyUI();
   settings.quickMode = dom.quickMode.checked;
   settings.liveCheck = dom.liveCheck.checked;

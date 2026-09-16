@@ -6,19 +6,20 @@
 //
 //   node tools/generate-levels.mjs [--size N] [--difficulty easy|medium|hard]
 //                                  [--count 50] [--seed <int>]
-//                                  [--style organic|blocky|mixed] [--out-suffix <s>]
+//                                  [--style organic|blocky|strips|mixed]
+//                                  [--out-suffix <s>]
 //
 // --style picks the region-growth style (see js/generator.js): 'organic' is the
-// flood fill the shipped pools were built with, 'blocky' the segment growth with
-// straight borders and one big background region, and 'mixed' fills each bucket
-// half and half so ONE pool serves both looks (each entry is tagged with the
-// style it grew in). Combine with --out-suffix to
+// flood fill the first pools were built with, 'blocky' the segment growth with
+// straight borders and one big background region, 'strips' the N-1 straight
+// one-wide segments around a single background, and 'mixed' fills each bucket
+// from every style that bucket HAS (see `mixFor`), so ONE pool serves every look
+// (each entry is tagged with the style it grew in). Combine with --out-suffix to
 // build a trial pool next to the real one (e.g. `8-hard-blocky.json`) instead of
-// overwriting it — handy for comparing the two styles side by side before
-// committing to one.
+// overwriting it — handy for comparing styles side by side before committing.
 //
-// No flags = regenerate all 22 buckets (5..11 in all three difficulties plus
-// hard-only at 12; minutes to tens of minutes — the N>=11 buckets dominate,
+// No flags = regenerate all 24 buckets (5..11 in all three difficulties plus
+// hard-only at 12..14; minutes to tens of minutes — the N>=11 buckets dominate,
 // exact-level hits there can take tens of seconds each). Re-run this (then
 // tools/verify-levels.mjs) whenever generator/solver/difficulty logic changes,
 // or stored ratings drift from the code.
@@ -32,16 +33,33 @@ import { encodePuzzle, canonicalKey } from '../js/levels.js';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(ROOT, 'levels');
 
-const SIZES = [5, 6, 7, 8, 9, 10, 11, 12];
+const SIZES = [5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 const DIFFICULTIES = ['easy', 'medium', 'hard'];
 const LEVELS = { easy: 0, medium: 1, hard: 2 };
 
 // A 12x12 board is inherently hard: puzzles the easy/medium techniques can
 // solve essentially don't occur at that size (a naked-single-only 12x12 is
-// vanishingly rare), so we only pool "hard" there — matching the hard-only
-// difficulty lock the UI applies at size 12.
+// vanishingly rare), so we only pool "hard" from there up — matching the
+// hard-only difficulty lock the UI applies at size 12 and above.
 const HARD_ONLY_FROM = 12;
 const difficultiesFor = (N) => (N >= HARD_ONLY_FROM ? ['hard'] : DIFFICULTIES);
+
+// Above this size only the strips style is practical. Measured per accepted hard
+// board at 13x13: strips ~0.3 s, organic ~12 s, blocky worse still — a mixed
+// 13/14 bucket would be an overnight job for the two thirds nobody could tell
+// apart at that cell size anyway. This is what makes sizes beyond 12 exist at
+// all, so it is a fact about the styles, not a shortcut.
+const STRIPS_ONLY_FROM = 13;
+
+// Which styles a mixed bucket is filled from. Easy has no strips boards at all
+// (the size floor removes the forced naked-single opening easy IS — see
+// js/generator.js), so an easy bucket stays organic + blocky; everything else
+// gets all three, in as even a split as `count` allows.
+function mixFor(N, difficulty) {
+  if (N >= STRIPS_ONLY_FROM) return ['strips'];
+  if (difficulty === 'easy') return ['organic', 'blocky'];
+  return ['organic', 'blocky', 'strips'];
+}
 
 // ---------- CLI ----------
 const args = process.argv.slice(2);
@@ -56,8 +74,8 @@ const seed = argValue('--seed') ? Number(argValue('--seed')) : (Math.random() * 
 const style = argValue('--style') || 'organic';
 const outSuffix = argValue('--out-suffix') || '';
 
-if (!['organic', 'blocky', 'mixed'].includes(style)) {
-  console.error("--style must be 'organic', 'blocky' or 'mixed'");
+if (!['organic', 'blocky', 'strips', 'mixed'].includes(style)) {
+  console.error("--style must be 'organic', 'blocky', 'strips' or 'mixed'");
   process.exit(1);
 }
 
@@ -86,6 +104,17 @@ function mulberry32(a) {
 // contain the same shape (or a rotation of it) twice.
 function fillBucket(N, difficulty, rng, growStyle, want, puzzles, seen) {
   const target = LEVELS[difficulty];
+  // The one combination that can never be satisfied: the strips style has no
+  // easy boards (see js/generator.js), and the loop below only accepts an exact
+  // level match — so without this it would spin forever rather than fail. mixFor
+  // never asks for it; a hand-typed `--style strips --difficulty easy` would.
+  if (growStyle === 'strips' && target === 0) {
+    console.error(
+      `${N}-${difficulty}: the 'strips' style has no easy boards — build easy with ` +
+        "'organic', 'blocky' or 'mixed'."
+    );
+    process.exit(1);
+  }
   const start = Date.now();
   let attempts = 0;
   let lastLog = start;
@@ -120,21 +149,23 @@ function buildBucket(N, difficulty, rng) {
   const puzzles = [];
   const seen = new Set();
   if (style === 'mixed') {
-    // Half of each, so one pool file serves both looks. drawLevel's shuffle bag
-    // then hands them out evenly and without repeats — a steadier mix than
-    // flipping a coin per game, which would happily deal five of one in a row.
-    const half = Math.floor(count / 2);
-    fillBucket(N, difficulty, rng, 'organic', half, puzzles, seen);
-    fillBucket(N, difficulty, rng, 'blocky', count - half, puzzles, seen);
+    // An even split over every style this bucket has, so one pool file serves
+    // every look. drawLevel's shuffle bag then hands them out evenly and without
+    // repeats — a steadier mix than flipping a coin per game, which would
+    // happily deal five of one in a row.
+    const styles = mixFor(N, difficulty);
+    const base = Math.floor(count / styles.length);
+    styles.forEach((s, i) => {
+      // The remainder goes to the first styles, so the bucket holds exactly
+      // `count` puzzles whether or not it divides evenly.
+      const want = base + (i < count % styles.length ? 1 : 0);
+      fillBucket(N, difficulty, rng, s, want, puzzles, seen);
+    });
     // Interleave so a truncated or partially-read pool is still mixed.
-    puzzles.sort((a, b) => (a.t === b.t ? 0 : a.t === 'organic' ? -1 : 1));
-    const organic = puzzles.filter((p) => p.t === 'organic');
-    const blocky = puzzles.filter((p) => p.t === 'blocky');
+    const byStyle = styles.map((s) => puzzles.filter((p) => p.t === s));
     puzzles.length = 0;
-    for (let i = 0; i < Math.max(organic.length, blocky.length); i++) {
-      if (organic[i]) puzzles.push(organic[i]);
-      if (blocky[i]) puzzles.push(blocky[i]);
-    }
+    for (let i = 0; i < Math.max(...byStyle.map((g) => g.length)); i++)
+      for (const group of byStyle) if (group[i]) puzzles.push(group[i]);
   } else {
     fillBucket(N, difficulty, rng, style, count, puzzles, seen);
   }

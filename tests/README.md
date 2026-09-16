@@ -317,3 +317,15 @@ and — above easy — no single-cell region and no board that falls out of nake
 singles alone. That last pair is the regression to fear: the uniqueness repair
 moves cells *out* of regions, so without its `minSize` guard it quietly undoes
 the size floor the style depends on.
+
+`strips-style.mjs` is its counterpart for the `strips` style (same CLAUDE.md
+section). It asserts the same invariants plus the one the style *is*: exactly
+`N-1` regions are straight one-cell-wide segments and the one that isn't is the
+biggest. That is the regression to fear here — `makeUnique`, the repair the other
+two styles use, bends a segment into an L to buy uniqueness, so a refactor
+routing strips back through it would still produce valid, unique, fair boards
+that have quietly stopped looking like the style. It also pins that asking for
+`easy` returns a board rated one level up rather than a mislabelled easy one:
+strips has no easy boards by construction. Both files share their board checks
+via `lib/board-checks.mjs`; `hint-solve.mjs` keeps its own drive loop on purpose
+(it is the CI smoke test and is written to read as "this is what a player does").

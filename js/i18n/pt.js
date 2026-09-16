@@ -167,7 +167,7 @@ export const I18N_PT = {
   'settings.title': 'Ajustes',
   'settings.size': 'Tamanho do tabuleiro',
   'settings.difficulty': 'Dificuldade',
-  'settings.difficulty.hardOnly': 'No tamanho 12 só existem tabuleiros difíceis.',
+  'settings.difficulty.hardOnly': 'A partir do tamanho 12 só existem tabuleiros difíceis.',
   'settings.language.label': 'Idioma',
   'settings.language.auto': 'Automático (navegador)',
   'settings.language.hint':

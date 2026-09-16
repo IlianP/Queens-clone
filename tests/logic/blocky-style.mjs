@@ -15,8 +15,8 @@
 // one-cell colour is a free queen and the whole point of the floor is that the
 // opening costs real reasoning.
 import { generatePuzzle } from '../../js/generator.js';
-import { computeHint } from '../../js/hint.js';
 import { countSolutions, difficultyLevel, nakedSingleReach } from '../../js/solver.js';
+import { contiguous, solveByHints } from './lib/board-checks.mjs';
 
 // [size, difficulty, howMany]. Kept small so CI stays quick; the style's shape
 // statistics live in tools/compare-styles.mjs, not here.
@@ -88,83 +88,4 @@ function checkPuzzle(N, region, solution, difficulty) {
   if (!solved.ok) problems.push(`not hint-solvable: ${solved.reason}`);
 
   return problems;
-}
-
-function contiguous(N, region, g) {
-  let start = -1;
-  let total = 0;
-  for (let r = 0; r < N; r++)
-    for (let c = 0; c < N; c++)
-      if (region[r][c] === g) {
-        total++;
-        if (start < 0) start = r * N + c;
-      }
-  if (start < 0) return false;
-  const seen = new Set([start]);
-  const stack = [start];
-  while (stack.length) {
-    const idx = stack.pop();
-    const r = (idx / N) | 0;
-    const c = idx % N;
-    for (const [dr, dc] of [
-      [-1, 0],
-      [1, 0],
-      [0, -1],
-      [0, 1],
-    ]) {
-      const nr = r + dr;
-      const nc = c + dc;
-      if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
-      if (region[nr][nc] !== g) continue;
-      const ni = nr * N + nc;
-      if (seen.has(ni)) continue;
-      seen.add(ni);
-      stack.push(ni);
-    }
-  }
-  return seen.size === total;
-}
-
-// Same drive loop as hint-solve.mjs: ask computeHint for the next deduction,
-// apply it, repeat — a player using only hints must reach the unique solution.
-function solveByHints(N, region, solution) {
-  const queen = Array.from({ length: N }, () => Array(N).fill(false));
-  const mark = Array.from({ length: N }, () => Array(N).fill(false));
-  const collectQueens = () => {
-    const out = [];
-    for (let r = 0; r < N; r++)
-      for (let c = 0; c < N; c++) if (queen[r][c]) out.push([r, c]);
-    return out;
-  };
-
-  for (let step = 0; step < N * N * 4; step++) {
-    const queens = collectQueens();
-    if (queens.length === N) {
-      for (let r = 0; r < N; r++)
-        if (!queen[r][solution[r]]) return { ok: false, reason: `row ${r} queen off-solution` };
-      return { ok: true };
-    }
-    const hint = computeHint(N, region, solution, queens, mark);
-    if (hint.kind === 'place') {
-      const [r, c] = hint.targetCells[0];
-      if (solution[r] !== c) return { ok: false, reason: `hint placed a queen off-solution at ${r},${c}` };
-      queen[r][c] = true;
-      mark[r][c] = false;
-    } else if (hint.kind === 'eliminate') {
-      let progressed = false;
-      for (const [r, c] of hint.targetCells) {
-        if (solution[r] === c) return { ok: false, reason: `hint eliminated the solution cell ${r},${c}` };
-        if (!mark[r][c] && !queen[r][c]) {
-          mark[r][c] = true;
-          progressed = true;
-        }
-      }
-      if (!progressed) return { ok: false, reason: 'eliminate hint marked nothing new (stalled)' };
-    } else if (hint.kind === 'mistake') {
-      return { ok: false, reason: `mistake reported on a clean board: ${hint.title}` };
-    } else {
-      return { ok: false, reason: `no hint with ${queens.length}/${N} queens placed` };
-    }
-  }
-  return { ok: false, reason: 'no progress within the step budget' };
 }
