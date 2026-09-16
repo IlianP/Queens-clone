@@ -276,6 +276,129 @@ grant execute on function public.submit_score(text, int, text, int, int, int, uu
 grant execute on function public.top_scores(int, text, int, timestamptz) to anon;
 grant execute on function public.score_counts(int, text, timestamptz) to anon;
 
+-- 7) Auswertung: Lesen für den Wochenbericht -----------------------------------
+-- .github/workflows/weekly-report.yml wertet einmal pro Woche die Aktivität aus
+-- (tools/weekly-report.mjs) und liest die Tabelle dafür DIREKT, nicht über die
+-- Funktionen oben: top_scores() gibt client_key bewusst nie heraus, und genau
+-- den braucht die Zählung aktiver Geräte. Gelesen wird als service_role, der
+-- RLS umgeht.
+--
+-- Der service_role-Key gehört ausschließlich in das GitHub-Secret
+-- SUPABASE_SERVICE_KEY. Er darf NIE in js/leaderboard.js oder sonst in den
+-- Browser – dort steht der öffentliche anon-Key, und das ist der Unterschied
+-- zwischen "lesbar" und "beschreibbar von jedem".
+--
+-- In Supabase hat service_role diese Rechte meist schon über die
+-- Default-Privileges; das Grant ist idempotent und macht die Abhängigkeit
+-- ausdrücklich, statt sie zu vermuten.
+grant select on public.scores to service_role;
+
+-- 8) Anonyme Spielzähler (Pings) -----------------------------------------------
+-- Die Rangliste weiß nur von Partien, die gelöst UND eingereicht wurden. Alles
+-- davor – geöffnet, angefangen, gelöst-aber-nicht-eingereicht – war bisher
+-- unsichtbar. Diese Tabelle schließt die Lücke, und zwar bewusst ALS ZÄHLER,
+-- nicht als Ereignisprotokoll:
+--
+--   * Eine Zeile ist ein Zähler je (Stunde, Art, Quelle, Größe, Schwierigkeit).
+--     Es gibt KEINE Zeile pro Spiel, keine IP, keinen client_key, keine Sitzung,
+--     kein Cookie, keine Kennung irgendeiner Art. Aus einem Zähler lässt sich
+--     nichts auf eine Person zurückrechnen – es ist schlicht eine Zahl, die um
+--     eins steigt.
+--   * Stundenauflösung, nicht Tag: der Wochenbericht läuft montags um 06:00 UTC
+--     und muss sein Fenster ohne Überlappung an das des Vorberichts anschließen
+--     können. Ein Tageszähler ließe sich an einer 06:00-Grenze nicht teilen.
+--
+-- GETRENNT VON DER RANGLISTE, und das ist der Punkt: `scores` und `play_stats`
+-- werden nie addiert. Einreichungen zählt weiterhin ausschließlich `scores`
+-- (exakt, mit Namen und Zeiten), Pings zählen ausschließlich hier. Es gibt
+-- deshalb absichtlich KEINE Ping-Art "eingereicht" – die gäbe es dann zweimal.
+-- Die drei Arten stehen zueinander wie ein Trichter:
+--
+--   app_open  → game_start → game_win → (Einreichung, aus `scores`)
+--
+-- QUELLE: 'web' ist echtes Spiel, 'test' ein automatisierter Browser-Testlauf
+-- (js/stats.js erkennt ihn an navigator.webdriver), 'dev' eine lokale
+-- Entwicklungsinstanz. Der Bericht rechnet nur mit 'web' und weist die anderen
+-- getrennt aus – so verfälschen Testläufe die Statistik nicht, bleiben aber
+-- sichtbar.
+create table if not exists public.play_stats (
+  bucket_hour timestamptz not null,
+  kind        text        not null,
+  source      text        not null,
+  -- 0 bzw. '' heißt "nicht brettbezogen" (app_open gilt keiner Größe).
+  size        int         not null default 0,
+  difficulty  text        not null default '',
+  count       bigint      not null default 0,
+  primary key (bucket_hour, kind, source, size, difficulty)
+);
+
+-- Rate-Limit-Hilfstabelle. Sie hält NUR den täglich gesalzenen IP-Hash (wie das
+-- Rate-Limit in submit_score) und einen Zähler, keine Ereignisse. Dass sie
+-- überhaupt nötig ist, liegt daran, dass bump_stat für anon offen ist: ohne
+-- Bremse könnte eine Schleife den Wochenbericht beliebig aufblasen.
+create table if not exists public.stat_limits (
+  client_key   text        primary key,
+  window_start timestamptz not null,
+  hits         int         not null
+);
+
+alter table public.play_stats  enable row level security;
+alter table public.stat_limits enable row level security;
+revoke all on public.play_stats  from anon, authenticated;
+revoke all on public.stat_limits from anon, authenticated;
+
+-- Einen Zähler um eins erhöhen. Fire-and-forget: der Client wartet die Antwort
+-- nicht ab und kann mit einem Fehler ohnehin nichts anfangen, deshalb wird
+-- Unsinn STILL verworfen (`return`) statt mit einer Exception beantwortet. Was
+-- durchkommt, ist damit per Konstruktion aus der erlaubten Wertemenge – die
+-- Tabelle kann keine erfundenen Arten, Quellen oder Größen enthalten.
+create or replace function public.bump_stat(
+  p_kind text, p_source text, p_size int default 0, p_difficulty text default ''
+) returns void
+  language plpgsql security definer set search_path = public as $bump$
+declare
+  v_size int;
+  v_diff text;
+  v_key  text;
+  v_hits int;
+  v_minute timestamptz := date_trunc('minute', now());
+begin
+  if p_kind   not in ('app_open', 'game_start', 'game_win') then return; end if;
+  if p_source not in ('web', 'test', 'dev')                 then return; end if;
+  v_size := coalesce(p_size, 0);
+  if v_size <> 0 and (v_size < 5 or v_size > 12) then return; end if;
+  v_diff := coalesce(p_difficulty, '');
+  if v_diff <> '' and v_diff not in ('easy', 'medium', 'hard') then return; end if;
+
+  -- Best-Effort-Bremse: 60 Pings je Minute und Client. Ein echter Spieler
+  -- erzeugt eine Handvoll pro Stunde; 60 trifft nur Schleifen.
+  v_key := md5(coalesce(host(inet_client_addr()), '') || '|' || current_date::text);
+  insert into public.stat_limits as l (client_key, window_start, hits)
+  values (v_key, v_minute, 1)
+  on conflict (client_key) do update
+    set window_start = case when l.window_start < v_minute then v_minute else l.window_start end,
+        hits         = case when l.window_start < v_minute then 1 else l.hits + 1 end
+  returning l.hits into v_hits;
+  if v_hits > 60 then return; end if;
+
+  -- Gelegentlich aufräumen. Die Tabelle ist klein und ihr Inhalt ist nach einem
+  -- Tag wertlos (der Hash-Salt wechselt täglich); ein Vollscan bei jedem Ping
+  -- wäre trotzdem Verschwendung.
+  if random() < 0.01 then
+    delete from public.stat_limits where window_start < now() - interval '1 day';
+  end if;
+
+  insert into public.play_stats as s (bucket_hour, kind, source, size, difficulty, count)
+  values (date_trunc('hour', now()), p_kind, p_source, v_size, v_diff, 1)
+  on conflict (bucket_hour, kind, source, size, difficulty)
+    do update set count = s.count + 1;
+end;
+$bump$;
+
+grant execute on function public.bump_stat(text, text, int, text) to anon;
+-- Gelesen wird nur vom Wochenbericht (tools/weekly-report.mjs), wie `scores`.
+grant select on public.play_stats to service_role;
+
 -- MIGRATION für bereits eingerichtete Projekte ---------------------------------
 -- Die ganze Datei erneut auszuführen ist immer sicher (alles ist `if not exists`
 -- bzw. `create or replace`, keine Daten werden angefasst). Wer nur die Änderung
@@ -370,3 +493,19 @@ grant execute on function public.score_counts(int, text, timestamptz) to anon;
 -- 2026-09: Idempotente Score-Einreichung. Die ganze Datei erneut ausführen,
 -- um submission_id, den Unique-Index, die sichere sieben-Parameter-Funktion
 -- und ihre Berechtigung zu ergänzen. Bestehende Score-Zeilen bleiben unverändert.
+--
+-- 2026-09: Lesezugriff für den Wochenbericht. Nur eine Zeile (Abschnitt 7):
+--
+--     grant select on public.scores to service_role;
+--
+-- Ohne sie liest der Berichts-Job je nach Projekt-Default nichts und meldet
+-- HTTP 401/permission denied. Am Spiel selbst ändert sich nichts – die
+-- Rangliste im Browser läuft unverändert über anon und die SECURITY-DEFINER-
+-- Funktionen.
+--
+-- 2026-09: Anonyme Spielzähler. Die ganze Datei erneut ausführen (oder nur
+-- Abschnitt 8) legt play_stats, stat_limits und bump_stat() an. Bestehende
+-- Daten werden nicht angefasst, die Rangliste ändert sich nicht. Ohne diese
+-- Migration antwortet bump_stat mit 404; js/stats.js verschluckt das still und
+-- das Spiel läuft unverändert – im Wochenbericht bleibt der Abschnitt
+-- "Spielverlauf" dann einfach leer.

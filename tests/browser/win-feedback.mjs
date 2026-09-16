@@ -27,6 +27,7 @@
 //   python3 -m http.server 8000 &
 //   node tests/browser/win-feedback.mjs
 
+import { stubStats } from './board-helpers.mjs';
 const PLAYWRIGHT = '/opt/node22/lib/node_modules/playwright/index.js';
 const CHROMIUM = '/opt/pw-browsers/chromium';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8000';
@@ -44,6 +45,7 @@ const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
 // Pinned to German: this test asserts on visible copy ("deiner N Partien"), so
 // the UI language must not follow whatever host the test runs on.
 const page = await browser.newPage({ viewport: { width: 375, height: 667 }, locale: 'de-DE' });
+await stubStats(page); // the play counters are stubbed like every other RPC
 
 const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));

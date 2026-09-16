@@ -78,6 +78,28 @@ out-of-range rejection, the global actions, and that `stopp` always wins. Pure
 logic — `voice.js` only touches `window` inside its recogniser wrapper, never at
 import time.
 
+`stats.mjs` covers `js/stats.js`, the anonymous play counters. Two properties
+carry the feature: `statsSource` must tag an automated run as `test` (it reads
+`navigator.webdriver`, checked *before* the hostname, so a Playwright run against
+localhost is test traffic and not dev traffic) and must fail **closed** — an
+environment it cannot place is never `web`. The other is agreement with the
+server: `bump_stat` drops unknown kinds and sources *silently*, so a value added
+on one side only would look exactly like a working feature that counts nothing.
+The test therefore reads the accepted lists straight out of
+`docs/leaderboard-setup.sql` and compares them. A mocked `fetch` covers the rest:
+four fields and nothing identifying in the payload, nothing sent for an unknown
+kind, and no failure — not even a synchronous throw — reaching the caller.
+
+`weekly-report.mjs` covers `tools/weekly-report.mjs`, the deterministic weekly
+activity report (`docs/weekly-report.md`). Plain arrays in, markdown out — no
+network. Besides the arithmetic (window boundaries, the record comparison
+following `top_scores`' ordering, the new/returning name split, device-days) it
+pins the two properties that would rot silently: the `client_key` hash — the
+daily salted IP hash — must never appear in the rendered text, and the output
+must not change when the host time zone does. The second check flips
+`process.env.TZ` to UTC+14 and re-renders; a stray `toLocaleString` or a
+local-time `getDate()` would regroup the days and fail it.
+
 ## `sql/` — a throwaway local Postgres
 
 `rank-order.sql` is the only test that touches the *server* half of the
@@ -93,6 +115,14 @@ windowed list and that re-running the setup file leaves existing rows alone.
 ⚠ It **truncates `public.scores`** — throwaway database only, never the live
 project. The file's header carries the initdb/pg_ctl commands. Nothing runs it
 automatically: there is no Postgres in CI, exactly like there is no Playwright.
+
+`play-stats.sql` covers the counter half of the server: that only valid bumps
+land (invalid ones are dropped silently by design — nothing else would notice a
+regression), that `web`, `test` and `dev` stay in separate rows instead of
+separate numbers, that `anon` may bump but may not read, that the 60-per-minute
+rate limit bites, and that re-running the setup file leaves the counters alone.
+Same throwaway-database rules as `rank-order.sql`; it TRUNCATES `play_stats` and
+`stat_limits`.
 
 ## `browser/` — Playwright, environment-provided
 
@@ -113,6 +143,15 @@ serve it over HTTP first:
 python3 -m http.server 8000 &          # serve the repo root
 node tests/browser/error-delay.mjs      # BASE_URL defaults to http://localhost:8000
 ```
+
+**Every browser test must stub the play counters.** `openGame()` does it for
+you; a test that builds its own page with `browser.newPage()` calls
+`stubStats(page)` from `board-helpers.mjs` right after. Same reason the
+leaderboard RPCs are stubbed — a test must not write to the live project — with
+one extra wrinkle: on a server where the counter migration hasn't run, the ping
+404s, and that lands in the collected `errors` as console noise the test would
+then have to tolerate. Pass `stats: 'live'` to `openGame` (or register your own
+route afterwards) when observing the pings is the point of the test.
 
 `error-delay.mjs` asserts that board error feedback (conflict + dead-unit
 marks) stays hidden the instant a queen is placed and only appears after the

@@ -24,6 +24,7 @@
 // It exercises the real backoff schedule (~5.6s to exhaust), so it is slow by
 // design. Exits non-zero on failure.
 
+import { stubStats } from './board-helpers.mjs';
 const PLAYWRIGHT = '/opt/node22/lib/node_modules/playwright/index.js';
 const CHROMIUM = '/opt/pw-browsers/chromium';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8000';
@@ -39,6 +40,7 @@ const browser = await pw.chromium.launch({ executablePath: CHROMIUM });
 // Pinned to German: this test asserts on visible copy (the manual
 // "Erneut versuchen" retry label), so the UI language must not follow the host.
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
+await stubStats(page); // the play counters are stubbed like every other RPC
 
 const errors = [];
 // The aborted submit routes below are *deliberate* network failures; the

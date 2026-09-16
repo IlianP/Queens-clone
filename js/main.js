@@ -24,6 +24,7 @@ import {
   HINT_PENALTY,
 } from './highscores.js';
 import { leaderboardConfigured, submitScore, fetchTopScores, fetchBucketCounts } from './leaderboard.js';
+import { bumpStat } from './stats.js';
 import {
   t,
   setLanguage,
@@ -441,6 +442,10 @@ async function newGame() {
   updateActionButtons();
   updateBoard();
   startTimer(); // clock starts only once the board is playable, not during the intro
+  // Anonymous counter, fired here rather than at the top of newGame(): a
+  // generation that a newer newGame() superseded returned above and was never
+  // played. Fire-and-forget by construction — see js/stats.js.
+  bumpStat('game_start', { size: N, difficulty });
 }
 
 // ---------- Intro animation ----------
@@ -1095,6 +1100,10 @@ function onWin() {
   winHandled = true;
   clearHint();
   stopTimer();
+  // Counted for every solve, submitted or not — that gap is precisely what the
+  // leaderboard alone could never show. It is NOT a submission counter; those
+  // are counted once, server-side, in `scores`.
+  bumpStat('game_win', { size: game.N, difficulty: settings.difficulty });
 
   const seconds = currentElapsed();
   const score = computeScore(seconds, hintsUsed);
@@ -3369,4 +3378,8 @@ seedSolveHistory();
 updateDebugButton();
 applySoundSetting();
 applyVoiceSetting();
+// One anonymous counter per page load, before the first board. Together with
+// game_start and game_win it makes a funnel the leaderboard can't show on its
+// own; see js/stats.js for what is (not) sent.
+bumpStat('app_open');
 newGame();
