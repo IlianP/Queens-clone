@@ -363,6 +363,19 @@ html[data-i18n-ready] .app {
   -webkit-user-select: none;
 }
 
+/* Boards above 12 columns get a bigger box, because the cell — not the board —
+   is what has to stay tappable: at the normal cap a 14x14 cell is 40px against
+   a 12x12's 47px. Leaning harder on the viewport buys that back on the screens
+   these sizes are offered on at all (a laptop is height-limited by 70vh, so
+   raising that matters more there than the px cap).
+
+   This rule is also what maxSizeForViewport() in js/main.js measures: it toggles
+   this class on the real element and reads the resulting width back, rather than
+   restating the formula in JS where the two would drift apart. */
+.board.board-xl {
+  width: min(94vw, 78vh, 640px);
+}
+
 /* The region palette is tuned for a light background; on the dark background
    the same bright pastels glare. Dampen them board-wide (relative differences
    stay intact) rather than shipping a second palette. The explicit light

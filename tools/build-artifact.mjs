@@ -2,10 +2,11 @@
 // Artifact so a branch can be tested on a phone (see CLAUDE.md → "Testing a
 // branch on mobile"). Generated FROM the real sources so it mirrors the branch.
 //
-//   node tools/build-artifact.mjs [output.html] [--style blocky]
+//   node tools/build-artifact.mjs [output.html] [--style blocky|strips]
 //
-// --style blocky builds a *trial* bundle of the blocky region-growth style (see
-// CLAUDE.md → "Region-growth styles") without touching what the site serves: it
+// --style blocky|strips|organic builds a *trial* bundle of one region-growth
+// style (see CLAUDE.md → "Region-growth styles") without touching what the site
+// serves: it
 // embeds the `levels/<N>-<difficulty>-blocky.json` pools under the plain keys
 // js/levels.js looks up, and makes both generation paths — the worker and
 // main.js's synchronous fallback — pass `style: 'blocky'`. Handing that bundle to
@@ -27,8 +28,8 @@ const css = read('css/styles.css');
 const argv = process.argv.slice(2);
 const styleIdx = argv.indexOf('--style');
 const style = styleIdx >= 0 ? argv[styleIdx + 1] : 'mixed';
-if (!['organic', 'blocky', 'mixed'].includes(style)) {
-  console.error("--style must be 'organic', 'blocky' or 'mixed'");
+if (!['organic', 'blocky', 'strips', 'mixed'].includes(style)) {
+  console.error("--style must be 'organic', 'blocky', 'strips' or 'mixed'");
   process.exit(1);
 }
 // 'mixed' is what the app itself does — the shipped pools already hold both
@@ -114,12 +115,16 @@ main = main.replace(workerExpr, 'new Worker(__WORKER_URL__)');
 // (worker and both inline fallbacks) through randomStyle(), so overriding that
 // one function covers all of them. Guarded: a rename must fail the build rather
 // than silently leave the bundle mixed.
+// A single-style bundle overrides the *pool* randomStyle() draws from, not the
+// draw itself, so the rule that 'strips' has no easy boards still applies: a
+// `--style strips` trial bundle on easy returns an honestly-rated medium board
+// rather than a mislabelled easy one.
 if (style !== 'mixed') {
-  const coinFlip = "return Math.random() < 0.5 ? 'organic' : 'blocky';";
-  if (!main.includes(coinFlip)) {
+  const pick = '  const pool = stylesFor(N, difficulty);';
+  if (!main.includes(pick)) {
     throw new Error('randomStyle() body not found — single-style bundle would stay mixed');
   }
-  main = main.replace(coinFlip, `return '${style}';`);
+  main = main.replace(pick, `  const pool = ['${style}'];`);
 }
 
 // Classic worker source: solver + generator + a plain message handler.

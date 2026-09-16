@@ -119,7 +119,7 @@ begin
   v_name := left(btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')), 20);
 
   -- Wertebereiche prüfen.
-  if p_size < 5 or p_size > 12 then raise exception 'bad size'; end if;
+  if p_size < 5 or p_size > 14 then raise exception 'bad size'; end if;
   if p_difficulty not in ('easy', 'medium', 'hard') then raise exception 'bad difficulty'; end if;
   if p_seconds is null or p_seconds < queens_min_seconds(p_size) or p_seconds > 86400 then
     raise exception 'implausible time';
@@ -176,7 +176,7 @@ declare
 begin
   if p_submission_id is null then raise exception 'missing submission id'; end if;
   v_name := left(btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')), 20);
-  if p_size < 5 or p_size > 12 then raise exception 'bad size'; end if;
+  if p_size < 5 or p_size > 14 then raise exception 'bad size'; end if;
   if p_difficulty not in ('easy', 'medium', 'hard') then raise exception 'bad difficulty'; end if;
   if p_seconds is null or p_seconds < queens_min_seconds(p_size) or p_seconds > 86400 then
     raise exception 'implausible time';
@@ -516,6 +516,18 @@ grant select on public.play_stats to service_role;
 -- Die ganze Datei erneut auszuführen ist immer sicher (alles ist `if not exists`
 -- bzw. `create or replace`, keine Daten werden angefasst). Wer nur die Änderung
 -- will, führt genau diesen Block aus:
+--
+--   2026-09: Feldgrößen 13 und 14 zugelassen. Vorher wies `submit_score` (und
+--   `submit_score_v2`) jede Größe über 12 mit "bad size" (P0001, HTTP 400) ab –
+--   bis diese Datei erneut läuft, kommt ein 13×13- oder 14×14-Ergebnis also als
+--   ABGELEHNT zurück, nicht als "nicht erreichbar" (rejectionCopy in main.js
+--   sagt das auch so), und landet weiterhin in der lokalen Bestenliste. Das
+--   Spiel selbst funktioniert ohne diese Migration vollständig; nur die globale
+--   Liste kennt die zwei neuen Buckets dann nicht.
+--
+--     -- in BEIDEN Funktionen (submit_score und submit_score_v2) die Zeile
+--     -- `if p_size < 5 or p_size > 12 ...` auf 14 anheben; am einfachsten
+--     -- durch erneutes Ausführen des gesamten Abschnitts 3 dieser Datei.
 --
 --   2026-07: Zeit-Untergrenze gelockert. Vorher `greatest(3, p_size)`, was echte
 --   schnelle Läufe mit "implausible time" (Fehlercode P0001, HTTP 400) abwies –

@@ -164,7 +164,9 @@ export const I18N_FR = {
   'settings.title': 'Réglages',
   'settings.size': 'Taille de la grille',
   'settings.difficulty': 'Difficulté',
-  'settings.difficulty.hardOnly': 'En taille 12, seules les grilles difficiles sont possibles.',
+  'settings.difficulty.hardOnly': 'À partir de la taille 12, seules les grilles difficiles sont possibles.',
+  'settings.size.tight': ({ px }) =>
+    `Sur cet écran, une case ferait environ ${px} px ; le jeu est plus confortable sur un appareil plus grand.`,
   'settings.language.label': 'Langue',
   'settings.language.auto': 'Automatique (navigateur)',
   'settings.language.hint':

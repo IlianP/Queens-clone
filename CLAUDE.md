@@ -42,6 +42,12 @@ before re-deriving how to drive things:
   is exactly the smoke test below: solve generated puzzles end-to-end by applying
   `computeHint` repeatedly and assert all `N` queens land on the `solution`. Run
   it after any `solver.js` / `generator.js` / `hint.js` / `game.js` change.
+- `tests/logic/strips-style.mjs` — the `strips` region-growth style: uniqueness,
+  fairness (hint-solvable), contiguity, the size floor, and the invariant the
+  style *is* — exactly one region is not a straight segment. Also that asking it
+  for `easy` comes back honestly rated one level up rather than mislabelled. Run
+  it after touching `growRegionsStrips` / `makeUniqueStrips` in `generator.js`.
+  It shares its board checks with `blocky-style.mjs` via `tests/logic/lib/board-checks.mjs`.
 - `tests/logic/leaderboard-period.mjs` — the read half of `leaderboard.js`: that a
   windowed read sends `p_since` and an all-time read does **not**, that
   `created_at` becomes `at` (and its absence reads as undated), and that every
@@ -163,9 +169,9 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `index.html` | Page skeleton |
 | `css/styles.css` | Layout, responsive/mobile design |
 | `js/solver.js` | Rules, unit lists, solution counting (uniqueness), human-style deduction solver + difficulty rating |
-| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds); two region-growth styles (`organic` / `blocky`), see below — mixing is a *pool*-level concern, the generator only ever grows one style per call |
+| `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds); three region-growth styles (`organic` / `blocky` / `strips`), see below — mixing is a *pool*-level concern, the generator only ever grows one style per call |
 | `js/levels.js` | Serves precomputed puzzles from `levels/` with a random D4 rotation/mirror per draw; session shuffle-bag; `drawLevel` resolves `null` on any failure |
-| `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`). Shipped pools are **mixed**: half organic, half blocky, each entry tagged `t` — see "Mixing the two styles" |
+| `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`). Shipped pools are **mixed**: an even split of the styles that bucket has, each entry tagged `t` — see "Mixing the styles" |
 | `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint penalty; mistakes are counted, not charged) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic. History entries are **dated** (`[score, at]`, or a bare `score` for the undated ones — see "Time in the score data") |
@@ -310,10 +316,10 @@ otherwise the puzzles shipped in `levels/` keep the old ratings.
 Difficulty is about techniques; **style is about geometry**, and the two are
 independent. `generatePuzzle(N, difficulty, { style })` takes:
 
-- **`organic`** (default, and what every pool in `levels/` was built with) —
-  `growRegions`, a multi-source flood fill claiming one cell per step. Amoeba-ish
-  regions with jagged borders. Its `balance` knob *equalises* region sizes and is
-  used only by hard, to suppress single-cell "free queen" regions.
+- **`organic`** (default) — `growRegions`, a multi-source flood fill claiming one
+  cell per step. Amoeba-ish regions with jagged borders. Its `balance` knob
+  *equalises* region sizes and is used only by hard, to suppress single-cell
+  "free queen" regions.
 - **`blocky`** — `growRegionsBlocky`, which annexes a straight **segment** of up
   to `maxRun` cells per step, so borders come out long and straight and regions
   read as rectangles. Instead of `balance` it has `minSize` (a size *floor*, not
@@ -321,42 +327,128 @@ independent. `generatePuzzle(N, difficulty, { style })` takes:
   `dominance`/`maxShare` (one designated background region grows to ~35–40% of
   the board on purpose). `makeUnique` takes `minSize` too — without it the
   uniqueness repair whittles a floor-sized region back down to one free cell.
+- **`strips`** — `growRegionsStrips`, which grows a straight, one-cell-wide
+  **segment through each queen** and hands everything left over to one background
+  region. See "The strips style" below; it is different enough in construction
+  that it needs its own uniqueness repair.
 
 Measured against boards from another Queens app (transcribed in
-`tools/compare-styles.mjs`), `blocky` matches their look closely — outline
-corners, background share, strip-shaped regions, zero single-cell regions — while
-`organic` essentially never produces it. Run `node tools/compare-styles.mjs` for
-the numbers, `--show <N> <difficulty>` for example boards.
+`tools/compare-styles.mjs` as `REFERENCE`), `blocky` matches screenshots A and B
+closely — outline corners, background share, strip-shaped regions, zero
+single-cell regions — while `organic` essentially never produces it; `strips`
+matches screenshot C, which neither of the others does (see below). Run
+`node tools/compare-styles.mjs` for the numbers, `--show <N> <difficulty>` for
+example boards. `shotLike` is the A/B signature, `stripLike` the C one.
 
-**The style does not make a board easier.** Both reference boards rate *hard*
-(level 2, naked-single reach 0) under our own solver, and blocky boards land at
-~75% hard / ~25% medium. **Easy is the exception**: with a size floor of 2 the
-easy yield collapses to ~0%, because easy *is* the naked single and needs the
-forced opening the floor removes — so easy keeps `minSize: 1` (see `BLOCKY_OPTS`)
-and gets only the straighter borders, not the no-freebies signature. Don't
-"fix" that by raising easy's floor; it silently converts easy into medium.
+**The style does not make a board easier.** All three reference boards rate
+*hard* (level 2, naked-single reach 0) under our own solver, and blocky boards
+land at ~75% hard / ~25% medium. **Easy is the exception, twice over**: for
+blocky, a size floor of 2 collapses the easy yield to ~0%, because easy *is* the
+naked single and needs the forced opening the floor removes — so blocky easy
+keeps `minSize: 1` (see `BLOCKY_OPTS`) and gets only the straighter borders, not
+the no-freebies signature. Don't "fix" that by raising easy's floor; it silently
+converts easy into medium. For strips the same mechanism has no escape hatch:
+its floor is what *makes* the look, so it has no easy boards at all.
 
-### Mixing the two styles (what the pools actually serve)
+### The strips style (screenshot C)
+
+A third screenshot showed something neither style produces: on an 8×8, **seven of
+the eight colours were straight one-cell-wide segments** (one 1×5, two 1×2, two
+1×3, two 1×4) and the eighth was a single amorphous background covering **64%**
+of the grid. That is not "blocky with longer runs" — scanned across the 1760
+boards the pools held before this style existed, "N-1 regions are strips" was
+true of **0.15% of blocky boards and of no organic board at all**, and the
+observed maximum strip share was 0.80·N against the screenshot's 0.875·N. A rare
+draw of an existing style is a tuning question; a shape that never appears is a
+construction question, which is why `growRegionsStrips` exists rather than
+another knob on `growRegionsBlocky`.
+
+It inverts the usual job. The other two decide where borders run; this one
+decides how much board is *not* a border:
+
+1. seed every region at its queen, pick one at random to be the background,
+2. grow each of the other N-1 into a straight segment along one axis, round-robin
+   to per-strip caps drawn around a mean (so lengths come out mixed, like the
+   screenshot's 2,2,3,3,4,4,5), and
+3. give every remaining cell to the background.
+
+**The invariant that makes it cheap**: the background is "every cell no strip
+claimed", so it is contiguous exactly when the still-free cells plus its own seed
+stay connected. Checking that after each single claim turns "grow a board, test
+it, throw it away" into a local veto — the build success rate goes from ~10% to
+~100%, and it is why this grower has no retry loop.
+
+**It needs its own uniqueness repair.** `makeUnique` buys uniqueness by moving a
+cell into an *arbitrary* neighbouring region, which bends a segment into an L and
+destroys the whole point. `makeUniqueStrips` kills an alternate solution the same
+way — every solution holds exactly one queen per region, so a second S2 queen in
+any region invalidates S2 — but only via two shape-preserving moves: **grow** (a
+background cell that continues a strip's line joins that strip; tried first
+because it makes the board tighter) and **shrink** (a strip's end cell goes to the
+background). Routing strips back through `makeUnique` would still produce valid,
+unique, fair boards — they would just quietly stop looking like this, which is
+exactly what `tests/logic/strips-style.mjs` fails on.
+
+Three consequences worth knowing before tuning anything:
+
+- **No easy boards, ever.** With a floor of 2 no colour is down to its last cell
+  at the start, so the opening is always a line↔region confinement (medium) and
+  the naked-single reach is 0. Not one easy board in ~60k sampled across every
+  size. `generatePuzzle` still answers an easy request — honestly rated one level
+  up — and the pool builder and `randomStyle()` simply don't ask.
+- **It shifts which technique a board runs on.** Driving 8×8 boards to completion
+  with `computeHint` and classifying each step: confinement is 37% of strips
+  steps against 20–26% for organic/blocky, while crowding drops to ~0%. The
+  style's geometry *is* "region = subset of a line", which is what that technique
+  reads.
+- **It is ~20× faster than the others at size 12** (~0.1 s per accepted hard
+  board against blocky's ~2 s), because so much of the board is one region that
+  uniqueness comes almost for free. That speed is what makes sizes above 12 exist
+  at all — see "Board sizes above 12".
+
+`stripCoverage(N)` tapers how much board the strips claim (0.55 at N≤9 down to
+0.36). It is a speed knob as much as a look one, and the taper is **not** what
+makes big boards look sparse — the construction is. Measured per accepted hard
+board:
+
+| N  | coverage 0.36 | 0.42 | 0.50 |
+|----|---------------|------|------|
+| 12 | 61 ms, share 0.73 | 118 ms, 0.71 | 240 ms, 0.70 |
+| 14 | 1.2 s, share 0.74 | 1.5 s, 0.73 | 3.0 s, 0.70 |
+
+Asking for more coverage buys ~4 points of background share for 3–4× the time,
+because 1-wide strips block each other and simply cannot cover much of a big
+board. Don't re-litigate it by raising the floor; a denser big board needs a
+different construction, not a bigger number. So the *look* is held (one dominant
+background, N-1 straight segments), not the screenshot's exact 64%, and a 14×14
+reads sparser than the 8×8 it came from.
+
+### Mixing the styles (what the pools actually serve)
 
 The styles are **not** an either/or: `generate-levels.mjs --style mixed` fills
-each bucket half organic, half blocky, so ONE pool file serves both looks. That
-is deliberately *not* a coin flip per game — `drawLevel`'s shuffle bag hands the
-pool out evenly and without repeats, so a session alternates instead of dealing
-five of one look in a row. Nothing in `js/levels.js` changed for this: a mixed
-pool is just a pool.
+each bucket with an even split of every style that bucket has (`mixFor`), so ONE
+pool file serves every look. That is deliberately *not* a coin flip per game —
+`drawLevel`'s shuffle bag hands the pool out evenly and without repeats, so a
+session alternates instead of dealing five of one look in a row. Nothing in
+`js/levels.js` changed for this: a mixed pool is just a pool.
 
-Each mixed entry carries a `"t": "organic" | "blocky"` tag. It is **provenance
-only** — `decodePuzzle` ignores unknown fields and the game never reads it;
-`verify-levels.mjs` uses it to print the real split per bucket, so "half and
-half" is checked rather than claimed. Untagged pools stay valid (format `v` is
-still 1), which is why the single-style trial pools need no rebuild.
+`mixFor` has exactly two exceptions, both facts about the styles rather than
+preferences: **easy** is organic + blocky (strips has no easy boards), and from
+**size 13** up it is strips alone (nothing else finishes in a sane time).
 
-Live generation mixes too: `randomStyle()` in `main.js` picks per game and the
-style rides along to the worker (`generator.worker.js` forwards it). Without
-that, the rare board that misses the pool would always arrive in one fixed look —
-the one moment a player would notice the inconsistency. `build-artifact.mjs`
-overrides exactly that one function for its single-style trial bundles, so a
-rename fails the build instead of silently shipping a mixed bundle.
+Each mixed entry carries a `"t": "organic" | "blocky" | "strips"` tag. It is
+**provenance only** — `decodePuzzle` ignores unknown fields and the game never
+reads it; `verify-levels.mjs` uses it to print the real split per bucket, so the
+even split is checked rather than claimed. Untagged pools stay valid (format `v`
+is still 1), which is why the single-style trial pools need no rebuild.
+
+Live generation mixes too: `randomStyle(N, difficulty)` in `main.js` draws from
+`stylesFor(...)`, the same rule `mixFor` applies, and the style rides along to the
+worker (`generator.worker.js` forwards it). Without that, the rare board that
+misses the pool would always arrive in one fixed look — the one moment a player
+would notice the inconsistency. `build-artifact.mjs` overrides exactly that one
+line (`const pool = stylesFor(N, difficulty);`) for its single-style trial
+bundles, so a rename fails the build instead of silently shipping a mixed bundle.
 
 **Easy is the asymmetric case.** Blocky easy is *not* visually distinctive (the
 size floor that creates the look is off there, see above) and carries ~50 % more
@@ -366,15 +458,17 @@ from the easy buckets is the first knob, not the region-growth parameters.
 
 The single-style pools (`levels/*-blocky.json`, 22 buckets × 30) stay around as
 the A/B reference and are inert: `drawLevel` only ever asks for
-`<N>-<difficulty>.json`. `tests/logic/blocky-style.mjs` guards uniqueness,
-fairness (hint-solvable), contiguity and the size floor for blocky generation;
-`tools/verify-levels.mjs` covers every pool file, since it reads each bucket's
-size/difficulty from the file rather than its name.
+`<N>-<difficulty>.json`. `tests/logic/blocky-style.mjs` and
+`tests/logic/strips-style.mjs` guard uniqueness, fairness (hint-solvable),
+contiguity and each style's own signature (blocky: the size floor; strips: that
+exactly one region is not a strip); they share their board checks via
+`tests/logic/lib/board-checks.mjs`. `tools/verify-levels.mjs` covers every pool file,
+since it reads each bucket's size/difficulty from the file rather than its name.
 
-Blocky generation is *faster* than organic at every size (12×12 hard: ~2 s per
-accepted board), so the mixed rebuild costs roughly half of a full organic one —
-the full 22-bucket mixed build measured ~51 min, almost all of it the organic
-halves.
+Blocky generation is faster than organic at every size (12×12 hard: ~2 s per
+accepted board) and strips is faster again (~0.1 s), so a mixed rebuild costs
+well under a full organic one — the 22-bucket organic+blocky build measured
+~51 min, almost all of it the organic halves, and those still dominate.
 
 A pool build is long enough to invite a background watchdog; if you write one,
 do **not** poll with `until ! pgrep -f "generate-levels"`. `pgrep -f` matches
@@ -383,6 +477,85 @@ matches itself and the loop never exits. It leaves a task "running" for hours
 after the build finished. Match on the output file instead (e.g. `until grep -q
 "done in" out.log`), or just read the file when the build's own task notifies.
 
+### Board sizes above 12
+
+`MAX_SIZE` is 14. Two independent questions, and they get opposite answers:
+
+- **Can we build one?** Only because of the strips style. Per accepted hard board
+  at 13×13: strips ~0.3 s, organic ~12 s, blocky worse. `stylesFor` / `mixFor`
+  therefore pin sizes ≥ 13 to strips, and `generate-levels.mjs` builds
+  `13-hard` / `14-hard` as strips-only buckets. `HARD_ONLY_FROM` already covered
+  them: like 12, an easy/medium board that size essentially doesn't exist.
+- **Should we stop someone picking one?** **No.** Every size is pickable on every
+  screen. The app measures what a cell would render at and *says so*
+  (`updateSizeHint` → `settings.size.tight`, below `TIGHT_CELL_PX` = 28 px);
+  it does not decide.
+
+That second answer is a deliberate reversal, and the reasoning is worth keeping
+because the first instinct is to cap:
+
+- **A cap here is a judgement the code cannot make.** "Too small" depends on
+  eyesight, thumbs, whether someone zooms, and whether they're using a mouse on a
+  narrow window. None of that is measurable from `offsetWidth`.
+- **It was also hiding the feature.** A capped slider just stops, with no
+  explanation — so a phone player would never learn that 13 and 14 exist, and
+  someone who plays on both phone and laptop sees the option silently vanish.
+- **It isn't protecting anything.** Measured on a 390×844 phone at 14×14: cells
+  render at 25.8 px, the page has no sideways overflow, the board sits clear of
+  the top bar and fully on screen, and a single tap marks exactly one cell. It is
+  small, not broken. `tests/browser/board-size-hint.mjs` pins all of that, so the
+  evidence stays checkable rather than remembered.
+- **The old cap contradicted the app's own precedent anyway.** 12×12 on a 320 px
+  phone has always rendered at 24 px, below the 36 px floor the cap enforced for
+  the new sizes only. A rule you have to exempt your own shipped defaults from is
+  the wrong rule.
+
+`TIGHT_CELL_PX` is 28 because 24 px is the smallest cell this app has ever
+shipped, so the hint fires a little above what the game already asks of people.
+It therefore *also* fires for a few pre-existing small-screen combinations
+(11×11 and up on a 320 px phone). That is intentional: the sentence is true
+there too, and it is a hint, not a limit. Measured, with `.board-xl`:
+
+| screen | 12 | 13 | 14 |
+|---|---|---|---|
+| 320×568 | 24.5 px ⚠ | 23.2 px ⚠ | 21.5 px ⚠ |
+| 390×844 | 29.9 px | 28.2 px | 26.2 px ⚠ |
+| 430×932 | 33.0 px | 31.1 px | 28.9 px |
+| iPad / laptop / desktop | 46.7 px | 49.2 px | 45.7 px |
+
+(13 is *larger* than 12 on a roomy screen: `.board-xl` gives boards above 12
+columns `min(94vw, 78vh, 640px)` instead of `min(92vw, 70vh, 560px)`.)
+
+Two traps:
+
+- **`offsetWidth`, never `getBoundingClientRect()`.** The board carries the intro
+  animation's `rotate`/`scale` transform, and a rect read mid-intro comes back
+  scaled (0.71× at its smallest) — which would make every size look cramped and
+  fire the hint everywhere. This cost a debugging round.
+- **`cellPxFor` measures the real element**, toggling `.board-xl` on and off
+  around the read, rather than restating the CSS formula in JS. Keep it that way:
+  the two would drift the first time either cap moves.
+
+`MAX_SIZE` is the single source for both size sliders' `max` (set from JS at
+boot; the `max="14"` in `index.html` is only the no-JS baseline). Two more things
+are sized by it and would fail silently if they fell behind: `PALETTE` in
+`main.js` (one colour per region — the two entries added for 13/14 were picked by
+measuring ΔE, see the comment there), and **Voice Mode's grammar** —
+`VOICE_COL_WORDS` / `VOICE_NUM_WORDS` in `js/voice.js` have to name every column
+and row, or the far edge of a big board is simply unsayable. Nothing at runtime
+compares those, so `tests/logic/voice-parse.mjs` asserts
+`VOICE_MAX_SIZE >= MAX_SIZE` and that every column up to `MAX_SIZE` parses.
+
+The **Bestenliste** size slider goes to `MAX_SIZE` too: it browses results,
+including the global list, so a phone should be able to look at a 14×14 board
+someone else played.
+
+`docs/leaderboard-setup.sql` had `p_size ... > 12` in both submit functions and
+rejects 13/14 with `bad size` until the project owner re-runs the file — the
+2026-09 entry in its `MIGRATION` block. Until then a big-board result is reported
+as *refused* (not "unreachable" — `rejectionCopy` gets that right) and still
+lands in the local list.
+
 ### Precomputed level pools
 
 `newGame()` tries `drawLevel(N, difficulty)` from `js/levels.js` first: a
@@ -390,12 +563,12 @@ random pool entry with a random D4 symmetry applied — all 8 rotations/mirrors
 preserve the rules, uniqueness, and difficulty rating, and colours are shuffled
 at render time anyway, so stored shapes aren't recognisable. Live worker
 generation stays as the fallback whenever `drawLevel` resolves `null` (missing
-or invalid pool), so the game never depends on the pools existing. **Size 12 is
-hard-only**: an easy/medium 12×12 (solvable by naked-single / line↔region
-techniques) is vanishingly rare, so the UI locks difficulty to *Schwer* at size
-12 (`applyDifficultyConstraint` in `main.js`), `generate-levels.mjs` builds only
-the `12-hard` bucket (`difficultiesFor`), and no `12-easy`/`12-medium` pools
-exist. The
+or invalid pool), so the game never depends on the pools existing. **Sizes 12 and
+up are hard-only**: an easy/medium board that size (solvable by naked-single /
+line↔region techniques) is vanishingly rare, so the UI locks difficulty to
+*Schwer* from 12 up (`applyDifficultyConstraint` in `main.js`),
+`generate-levels.mjs` builds only the `<N>-hard` bucket there (`difficultiesFor`
+/ `HARD_ONLY_FROM`), and no `12-easy`/`12-medium` pools exist. The
 in-session no-repeat shuffle-bag is memory-only by design — this project
 persists preferences, never game state. Constraints on `js/levels.js` (it is
 concatenated into the classic-script Artifact bundle): **no `import.meta`**

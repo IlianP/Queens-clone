@@ -160,7 +160,9 @@ export const I18N_EN = {
   'settings.title': 'Settings',
   'settings.size': 'Board size',
   'settings.difficulty': 'Difficulty',
-  'settings.difficulty.hardOnly': 'At board size 12 only hard puzzles are possible.',
+  'settings.difficulty.hardOnly': 'From board size 12 up, only hard puzzles are possible.',
+  'settings.size.tight': ({ px }) =>
+    `A cell would be only about ${px} px on this screen – it plays more comfortably on a larger device.`,
   'settings.language.label': 'Language',
   'settings.language.auto': 'Automatic (browser)',
   'settings.language.hint':

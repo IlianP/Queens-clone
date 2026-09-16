@@ -44,9 +44,14 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
   available translation, **English** is used.
   Switching the language reloads the page (you are asked first if a game is in
   progress); a solved but not-yet-submitted result is not lost in the process.
-- **Board size:** 5 to 12. At **12** only hard puzzles are possible – a 12×12
-  board is inherently hard and “easy”/“medium” puzzles of that size essentially
-  don't exist – so the difficulty is fixed to *Hard* there.
+- **Board size:** 5 to 14, on every screen. From **12** up only hard puzzles are
+  possible – a board that size is inherently hard and “easy”/“medium” puzzles of
+  it essentially don't exist – so the difficulty is fixed to *Hard* there.
+  A large board on a small screen is not blocked, just flagged: the settings
+  measure what a cell would actually render at on **your** screen and say so
+  when it gets cramped (below 28 px), e.g. “a cell would be only about 26 px”.
+  Whether that is too small is your call, not the game's – above 12 columns the
+  board also claims a bit more of the window to help.
 - **Difficulty:**
   - *Easy* – solvable with “only one cell left” deductions alone.
   - *Medium* – additionally needs row/column ↔ region deductions.
@@ -213,27 +218,34 @@ sent at all.
 
 “New game” starts instantly: puzzles aren't computed live but drawn from
 precomputed pools in `levels/` – one JSON file per combination of board size and
-difficulty, 50 puzzles each. That is **22 pools holding 1100 puzzles** in total
-(board size 12 only has a `hard` pool, see above). So that nothing becomes
+difficulty, 50 puzzles each. That is **24 pools holding 1200 puzzles** in total
+(board sizes 12 to 14 only have a `hard` pool, see above). So that nothing becomes
 familiar, every drawn puzzle is randomly **rotated or mirrored** (8 symmetries)
 and gets random colours as before – 50 stored shapes thus turn into hundreds of
 distinguishable boards. Within a session no shape repeats until every one has had
 its turn (in memory only, nothing is persisted).
 
-### Two shape languages
+### Three shape languages
 
-The colour regions are built in **two different styles**, and every pool holds
-half of each:
+The colour regions are built in **three different styles**, and every pool holds
+an even share of each:
 
 - **organic** – amoeba-like regions with ragged borders.
 - **blocky** – regions grow in straight strips, giving long straight borders,
   rectangular shapes and one large background colour.
+- **strips** – every colour but one is a straight, one-cell-wide segment, and
+  the one that isn't is a single background covering most of the board.
 
-Because every puzzle in a pool comes up once before anything repeats, the two
-looks alternate evenly while playing. **The style changes nothing about the
+Because every puzzle in a pool comes up once before anything repeats, the looks
+alternate evenly while playing. **The style changes nothing about the
 difficulty** – that depends solely on which thinking techniques a board demands.
-Only at *Easy* is the difference barely noticeable: that level needs the small
-“gifted” regions that would be what makes the blocky look in the first place.
+Two levels are exceptions, both for the same kind of reason: at *Easy* the
+blocky difference is barely noticeable (that level needs the small “gifted”
+regions that would be what makes the blocky look in the first place), and
+*Easy* has no **strips** puzzles at all, because the size floor that creates
+that look is exactly what removes easy's forced opening. Above size 12, strips
+is the only style – it is the one that generates a board of that size fast
+enough to exist at all.
 
 If loading a pool fails (e.g. files changed offline), the game generates the
 puzzle live in the background as it used to – so there is always a board, then

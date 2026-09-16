@@ -6,12 +6,16 @@
 //   node tools/compare-styles.mjs --ms 20000      # longer sampling per cell
 //   node tools/compare-styles.mjs --show 8 hard   # print example boards
 //
-// Background: two screenshots from another Queens app showed a level style with
-// visibly straighter borders, one big "background" colour and a few tiny compact
-// ones. Transcribed and fed through our own solver, both rate level 2 (hard) with
-// a naked-single reach of 0 — so the difference is geometry, not difficulty. The
-// metrics below are the ones that actually separate the two styles; REFERENCE
-// holds the transcribed screenshots so the comparison has a fixed target.
+// Background: screenshots from another Queens app showed level styles our own
+// generator did not produce. A and B have visibly straighter borders, one big
+// "background" colour and a few tiny compact ones — that pair is what the
+// 'blocky' style was built from. C is a further step: SEVEN of its eight colours
+// are straight one-cell-wide segments around a single 64% background, which is
+// what the 'strips' style was built from. Transcribed and fed through our own
+// solver, all three rate level 2 (hard) with a naked-single reach of 0 — so the
+// difference is geometry, not difficulty. The metrics below are the ones that
+// actually separate the styles; REFERENCE holds the transcribed screenshots so
+// the comparison has a fixed target.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
@@ -51,6 +55,24 @@ export const REFERENCE = [
       [5, 5, 4, 4, 4, 4, 4],
     ],
     solution: [6, 3, 5, 1, 4, 2, 0],
+  },
+  {
+    // Region 0 is the background (41 of 64 cells). Every other colour is a
+    // straight segment: 1 is a 1x5 column, 2/3 are 1x2 rows, 4/5 are 1x3
+    // columns, 6/7 are 1x4 rows.
+    name: 'Screenshot C',
+    N: 8,
+    region: [
+      [1, 2, 2, 0, 0, 0, 0, 0],
+      [1, 0, 3, 3, 0, 0, 0, 4],
+      [1, 0, 0, 0, 0, 0, 5, 4],
+      [1, 0, 0, 0, 0, 0, 5, 4],
+      [1, 0, 0, 0, 0, 0, 5, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 6, 6, 6, 6, 0, 0],
+      [0, 0, 0, 7, 7, 7, 7, 0],
+    ],
+    solution: [1, 3, 7, 0, 6, 4, 2, 5],
   },
 ];
 
@@ -107,13 +129,22 @@ export function boardMetrics(N, region) {
   };
 }
 
-// The signature both screenshots share, and the thing to measure a style by:
-// no free single-cell colour, but small ones exist; one dominant background
+// The signature screenshots A and B share, and the thing 'blocky' is measured
+// by: no free single-cell colour, but small ones exist; one dominant background
 // colour; at least two strip-shaped regions.
 export const shotLike = (m) =>
   m.ones === 0 && m.sizeMin <= 3 && m.sizeMaxShare >= 0.3 && m.flatRegions >= 2;
 
-const LETTERS = 'ABCDEFGHIJKL';
+// Screenshot C's much stricter signature, and what 'strips' is measured by:
+// every colour but one is a strip, and the one that isn't dominates the board.
+// Scanned over the 1760 boards the pools held before the strips style existed,
+// this was true of 0.15% of blocky boards and of no organic board at all — which
+// is why it needed a grower of its own rather than a tweak to the other two.
+export const stripLike = (m, N) => m.ones === 0 && m.flatRegions >= N - 1 && m.sizeMaxShare >= 0.5;
+
+const STYLES = ['organic', 'blocky', 'strips'];
+
+const LETTERS = 'ABCDEFGHIJKLMN';
 export function ascii(N, region) {
   return Array.from({ length: N }, (_, r) =>
     Array.from({ length: N }, (_, c) => LETTERS[region[r][c]]).join(' ')
@@ -142,12 +173,12 @@ function runCli() {
     `${(m.sizeMaxShare * 100).toFixed(0).padStart(7)}% | ${m.ones.toFixed(2).padStart(4)} | ` +
     `${m.flatRegions.toFixed(1).padStart(4)} |${extra}`;
   const HEAD =
-    'Quelle                     | Ecken | maxShare |  1er | flat |  reach | shot-like';
+    'Quelle                     | Ecken | maxShare |  1er | flat |  reach | A/B-like | C-like';
 
   if (showIdx >= 0) {
     const N = Number(args[showIdx + 1] || 8);
     const difficulty = args[showIdx + 2] || 'hard';
-    for (const style of ['organic', 'blocky']) {
+    for (const style of STYLES) {
       for (let i = 0; i < 2; i++) {
         const p = generatePuzzle(N, difficulty, { style, budgetMs: 3000 });
         const m = boardMetrics(N, p.region);
@@ -168,8 +199,11 @@ function runCli() {
     const lvl = difficultyLevel(ref.N, ref.region);
     const reach = nakedSingleReach(ref.N, ref.region);
     console.log(
-      fmtRow(`${ref.name} (${ref.N}x${ref.N})`, m, ` ${String(reach).padStart(6)} | ${shotLike(m) ? 'ja' : 'nein'}`) +
-        `   [Rating ${lvl} = ${['easy', 'medium', 'hard', '>hard'][lvl]}, Größen ${m.sizes.join(',')}]`
+      fmtRow(
+        `${ref.name} (${ref.N}x${ref.N})`,
+        m,
+        ` ${String(reach).padStart(6)} | ${(shotLike(m) ? 'ja' : 'nein').padStart(8)} | ${stripLike(m, ref.N) ? 'ja' : 'nein'}`
+      ) + `   [Rating ${lvl} = ${['easy', 'medium', 'hard', '>hard'][lvl]}, Größen ${m.sizes.join(',')}]`
     );
   }
 
@@ -189,7 +223,7 @@ function runCli() {
       }
       if (pool) rows.push(['Pool', pool.puzzles.map((e) => decodePuzzle(N, e).region)]);
 
-      for (const style of ['organic', 'blocky']) {
+      for (const style of STYLES) {
         const boards = [];
         const t0 = Date.now();
         while (Date.now() - t0 < sampleMs) {
@@ -208,11 +242,13 @@ function runCli() {
         const acc = { corners: 0, sizeMaxShare: 0, ones: 0, flatRegions: 0 };
         let reach = 0;
         let shot = 0;
+        let strip = 0;
         for (const region of boards) {
           const m = boardMetrics(N, region);
           for (const k of Object.keys(acc)) acc[k] += m[k];
           reach += nakedSingleReach(N, region);
           if (shotLike(m)) shot++;
+          if (stripLike(m, N)) strip++;
         }
         const k = boards.length;
         for (const key of Object.keys(acc)) acc[key] /= k;
@@ -220,7 +256,8 @@ function runCli() {
           fmtRow(
             `${N}-${difficulty} ${label}`,
             acc,
-            ` ${(reach / k).toFixed(1).padStart(6)} | ${`${Math.round((100 * shot) / k)}%`.padStart(4)} (n=${k})`
+            ` ${(reach / k).toFixed(1).padStart(6)} | ${`${Math.round((100 * shot) / k)}%`.padStart(8)} | ` +
+              `${`${Math.round((100 * strip) / k)}%`.padStart(4)} (n=${k})`
           )
         );
       }

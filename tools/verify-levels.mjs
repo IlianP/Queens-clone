@@ -132,8 +132,8 @@ for (const file of files) {
     solveByHints(N, tp.region, tp.solution, `${label} (hint solve, t=${t})`);
   }
   // Optional per-entry style tag (see generate-levels.mjs --style mixed). The
-  // game ignores it, but a "half and half" pool is a claim worth checking: an
-  // unknown tag, or a lopsided split, means the mix is not what it says.
+  // game ignores it, but an even split is a claim worth checking: an unknown
+  // tag, or a lopsided split, means the mix is not what it says.
   const tags = puzzles.map((p) => p.t).filter((t) => t !== undefined);
   let mix = '';
   if (tags.length) {
@@ -142,7 +142,7 @@ for (const file of files) {
     const counts = {};
     for (const t of tags) counts[t] = (counts[t] || 0) + 1;
     for (const t of Object.keys(counts))
-      if (!['organic', 'blocky'].includes(t)) fail(`${label}: unknown style tag "${t}"`);
+      if (!['organic', 'blocky', 'strips'].includes(t)) fail(`${label}: unknown style tag "${t}"`);
     mix = ` (${Object.entries(counts).map(([t, n]) => `${n} ${t}`).join(', ')})`;
   }
 

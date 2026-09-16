@@ -221,7 +221,9 @@ export const I18N_RU = {
   'settings.title': 'Настройки',
   'settings.size': 'Размер поля',
   'settings.difficulty': 'Сложность',
-  'settings.difficulty.hardOnly': 'При размере поля 12 возможны только сложные головоломки.',
+  'settings.difficulty.hardOnly': 'При размере поля от 12 возможны только сложные головоломки.',
+  'settings.size.tight': ({ px }) =>
+    `На этом экране клетка будет всего около ${px} px — на устройстве побольше играть удобнее.`,
   'settings.language.label': 'Язык',
   'settings.language.auto': 'Автоматически (браузер)',
   'settings.language.hint':
