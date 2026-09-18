@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { statsSource, bumpStat, statsEnabled, STAT_KINDS, STAT_SOURCES } from '../../js/stats.js';
+import { MIN_SIZE, MAX_SIZE } from '../../js/settings.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -94,6 +95,26 @@ eq(JSON.stringify(sqlSources), JSON.stringify([...STAT_SOURCES].sort()),
 // that can disagree.
 ok(!STAT_KINDS.includes('submit') && !STAT_KINDS.includes('submission'),
   'there is no submit ping — that number lives in the scores table');
+
+// The size bound is the third list bump_stat validates, and the only one that
+// fails INVISIBLY: an out-of-range size is dropped with a bare `return`, so a
+// board size the client can play but the server won't count simply produces no
+// counter at all — no error, no log, just a hole in the weekly report. That is
+// exactly how sizes 13/14 were first shipped. Both bounds are read out of the
+// SQL so they cannot drift from MAX_SIZE again.
+const sizeBound = /if v_size <> 0 and \(v_size < (\d+) or v_size > (\d+)\)/.exec(sql);
+ok(sizeBound, 'bump_stat still validates the board size in docs/leaderboard-setup.sql');
+eq(Number(sizeBound[1]), MIN_SIZE, 'bump_stat accepts down to MIN_SIZE');
+eq(Number(sizeBound[2]), MAX_SIZE, 'bump_stat accepts up to MAX_SIZE');
+
+// submit_score and submit_score_v2 carry the same bound, and there it is loud
+// (P0001 'bad size', HTTP 400) rather than silent. Both must move together.
+const submitBounds = [...sql.matchAll(/if p_size < (\d+) or p_size > (\d+) then raise exception 'bad size'/g)];
+eq(submitBounds.length, 2, 'both submit functions still bound the board size');
+for (const [i, m] of submitBounds.entries()) {
+  eq(Number(m[1]), MIN_SIZE, `submit function ${i + 1} accepts down to MIN_SIZE`);
+  eq(Number(m[2]), MAX_SIZE, `submit function ${i + 1} accepts up to MAX_SIZE`);
+}
 
 // --- 3) a counter can never break or delay a move ----------------------------
 

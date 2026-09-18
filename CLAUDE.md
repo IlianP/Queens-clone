@@ -550,11 +550,24 @@ The **Bestenliste** size slider goes to `MAX_SIZE` too: it browses results,
 including the global list, so a phone should be able to look at a 14×14 board
 someone else played.
 
-`docs/leaderboard-setup.sql` had `p_size ... > 12` in both submit functions and
-rejects 13/14 with `bad size` until the project owner re-runs the file — the
-2026-09 entry in its `MIGRATION` block. Until then a big-board result is reported
-as *refused* (not "unreachable" — `rejectionCopy` gets that right) and still
-lands in the local list.
+`docs/leaderboard-setup.sql` bounds the board size in **three** places, and they
+do not fail the same way — which is why the third one was missed once already:
+
+- `submit_score` and `submit_score_v2` raise `bad size` (P0001 → HTTP 400). That
+  is **loud**: `submitScore` reports it as *refused* rather than "unreachable"
+  (`rejectionCopy` maps it and offers no pointless retry), the result still
+  lands in the local list, and Debug mode drops the whole thing in the clipboard.
+- `bump_stat` drops the ping with a bare `return`. That is **silent** by design —
+  a counter can't usefully answer an error — so a size the client can play but
+  the server won't count produces no counter at all: no error anywhere, just a
+  hole in the weekly report. Sizes 13/14 shipped that way for one commit.
+
+All three must move with `MAX_SIZE`. `tests/logic/stats.mjs` now reads all three
+bounds out of the SQL and compares them against `MIN_SIZE`/`MAX_SIZE`, so the
+silent one cannot drift again. Everything stays optional at runtime as usual: the
+project owner re-runs the file (2026-09 entry in its `MIGRATION` block), and until
+they do, the game is fully playable and only the global list and the play
+counters miss the two new buckets.
 
 ### Precomputed level pools
 
