@@ -479,7 +479,7 @@ begin
   if p_kind   not in ('app_open', 'game_start', 'game_win') then return; end if;
   if p_source not in ('web', 'test', 'dev')                 then return; end if;
   v_size := coalesce(p_size, 0);
-  if v_size <> 0 and (v_size < 5 or v_size > 12) then return; end if;
+  if v_size <> 0 and (v_size < 5 or v_size > 14) then return; end if;
   v_diff := coalesce(p_difficulty, '');
   if v_diff <> '' and v_diff not in ('easy', 'medium', 'hard') then return; end if;
 
@@ -525,9 +525,15 @@ grant select on public.play_stats to service_role;
 --   Spiel selbst funktioniert ohne diese Migration vollständig; nur die globale
 --   Liste kennt die zwei neuen Buckets dann nicht.
 --
---     -- in BEIDEN Funktionen (submit_score und submit_score_v2) die Zeile
---     -- `if p_size < 5 or p_size > 12 ...` auf 14 anheben; am einfachsten
---     -- durch erneutes Ausführen des gesamten Abschnitts 3 dieser Datei.
+--     -- in submit_score, submit_score_v2 UND bump_stat die Grenze `> 12`
+--     -- auf `> 14` anheben; am einfachsten durch erneutes Ausführen der
+--     -- ganzen Datei (Abschnitt 3 und 8).
+--
+--   Die drei Stellen verhalten sich unterschiedlich, wenn sie alt bleiben:
+--   submit_score und submit_score_v2 LEHNEN ab (P0001 „bad size", HTTP 400,
+--   im Debug-Export als submitFailure sichtbar), bump_stat verwirft den Ping
+--   dagegen STILL – die Spielzähler für 13×13/14×14 fehlen dann im
+--   Wochenbericht, ohne dass irgendwo ein Fehler auftaucht.
 --
 --   2026-07: Zeit-Untergrenze gelockert. Vorher `greatest(3, p_size)`, was echte
 --   schnelle Läufe mit "implausible time" (Fehlercode P0001, HTTP 400) abwies –
