@@ -16,14 +16,23 @@ name: SQL ausrollen
 # unverändert da — geprüft, inklusive absichtlich kaputter Datei.
 #
 # EINRICHTUNG: ein Repository-Secret, SUPABASE_DB_URL.
-#   Supabase → Project Settings → Database → Connection string → "Session pooler"
-#   Beispiel: postgresql://postgres.<ref>:<passwort>@aws-0-<region>.pooler.supabase.com:5432/postgres
+#   Im Supabase-Dashboard oben auf "Connect" (Kopfzeile neben dem Projektnamen,
+#   NICHT unter Database → Settings — dort stand es früher) → "Session pooler".
+#   Form: postgresql://postgres.<ref>:<passwort>@<pooler-host>:5432/postgres
+#
+#   Den String KOPIEREN, nicht zusammenbauen: der Pooler-Host lässt sich nicht
+#   aus der Region ableiten, und der Benutzername ist bei Pooler-Verbindungen ein
+#   anderer als bei der direkten (postgres.<ref> statt postgres).
 #
 #   Den SESSION-Pooler nehmen (Port 5432), nicht den Transaction-Pooler (6543):
 #   der hält keine Sitzung über mehrere Anweisungen und kann deshalb keine
 #   Transaktion über die ganze Datei. Die direkte Verbindung (db.<ref>.supabase.co)
-#   ist bei neueren Projekten nur über IPv6 erreichbar, GitHub-Runner sind IPv4 —
-#   deshalb der Pooler.
+#   läuft über IPv6, solange das IPv4-Add-on nicht gebucht ist; GitHub-Runner sind
+#   IPv4 — deshalb der Pooler.
+#
+#   Sonderzeichen im Passwort müssen URL-kodiert werden, sonst zerbricht die URI:
+#   @ → %40, / → %2F, # → %23, : → %3A, ? → %3F. Das ist der wahrscheinlichste
+#   Grund, wenn der Lauf mit einem Verbindungsfehler abbricht.
 #
 #   Dieses Secret ist NICHT dasselbe wie SUPABASE_SERVICE_KEY (den benutzt der
 #   Wochenbericht über die REST-Schnittstelle). Es ist das Datenbankpasswort und

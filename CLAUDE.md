@@ -1278,12 +1278,16 @@ Three mechanics worth keeping:
   `bump_stat`. A write-based check would have to insert a fake score into the
   live leaderboard, which is exactly what it must not do.
 
-Setup is one repository secret, `SUPABASE_DB_URL`, from Supabase → Project
-Settings → Database → Connection string → **Session pooler**. Not the
-transaction pooler (port 6543: no session, so no transaction across the file),
-and not the direct connection (IPv6-only on newer projects, GitHub runners are
-IPv4). It is the database password and is *not* `SUPABASE_SERVICE_KEY`, which is
-a PostgREST key the weekly report uses.
+Setup is one repository secret, `SUPABASE_DB_URL`, from the **Connect** button
+in the dashboard header → **Session pooler**. (It used to live under Project
+Settings → Database; Supabase moved it, so check the current docs rather than
+this file if it isn't there.) Not the transaction pooler (port 6543: no session,
+so no transaction across the file), and not the direct connection (IPv6 unless
+the IPv4 add-on is booked, and GitHub runners are IPv4). Copy the string rather
+than composing it — the pooler host doesn't follow from the region and pooled
+connections use a different username — and URL-encode any special characters in
+the password. It is the database password and is *not* `SUPABASE_SERVICE_KEY`,
+which is a PostgREST key the weekly report uses.
 
 The manual fallback, if the workflow can't run, is a section list in the SQL
 file's own `AUSROLLEN` block rather than the whole file.
