@@ -512,6 +512,23 @@ grant execute on function public.bump_stat(text, text, int, text) to anon;
 -- Gelesen wird nur vom Wochenbericht (tools/weekly-report.mjs), wie `scores`.
 grant select on public.play_stats to service_role;
 
+-- AUSROLLEN ---------------------------------------------------------------------
+-- Diese Datei wird von .github/workflows/deploy-sql.yml automatisch angewendet,
+-- sobald sie auf `main` landet (Secret: SUPABASE_DB_URL). Von Hand kopieren ist
+-- also nur noch der Notnagel, wenn der Workflow nicht laufen kann.
+--
+-- Muss es doch von Hand sein, reichen die geänderten Abschnitte. Sie sind in
+-- sich abgeschlossen und in dieser Reihenfolge ausführbar:
+--
+--   Abschnitt 3   (Zeilen  63–99)   Score-Formel + einmaliger Backfill
+--   Abschnitt 4+4b (Zeilen 100–226) submit_score – Größengrenze
+--   Abschnitt 5c+6 (Zeilen 273–390) player_rank + Ausführrechte
+--   Abschnitt 8   (Zeilen 409–514)  bump_stat – Größengrenze
+--
+-- Die Zeilennummern verschieben sich, sobald jemand oberhalb etwas einfügt —
+-- deshalb stehen die Abschnittsnummern daneben, und deshalb ist der Workflow
+-- der eigentliche Weg.
+
 -- MIGRATION für bereits eingerichtete Projekte ---------------------------------
 -- Die ganze Datei erneut auszuführen ist immer sicher (alles ist `if not exists`
 -- bzw. `create or replace`, keine Daten werden angefasst). Wer nur die Änderung
