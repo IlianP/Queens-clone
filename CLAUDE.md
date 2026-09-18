@@ -565,9 +565,9 @@ do not fail the same way — which is why the third one was missed once already:
 All three must move with `MAX_SIZE`. `tests/logic/stats.mjs` now reads all three
 bounds out of the SQL and compares them against `MIN_SIZE`/`MAX_SIZE`, so the
 silent one cannot drift again. Everything stays optional at runtime as usual: the
-project owner re-runs the file (2026-09 entry in its `MIGRATION` block), and until
-they do, the game is fully playable and only the global list and the play
-counters miss the two new buckets.
+game is fully playable against an un-migrated server, and only the global list
+and the play counters miss the two new buckets until the file is applied — see
+"Rolling the SQL out" below for how that now happens.
 
 ### Precomputed level pools
 
@@ -1081,6 +1081,46 @@ funnel ending in the submission count. Rules that must not erode:
   here: `bump_stat` 404s until the owner re-runs the file, `js/stats.js`
   swallows that (and stops asking for the rest of the page's life), the report
   drops the section, and nothing else changes.
+
+### Rolling the SQL out
+
+`.github/workflows/deploy-sql.yml` applies `docs/leaderboard-setup.sql` to
+Supabase on every push to `main` that touches it. It replaced copying 650 lines
+into the SQL editor by hand, which had already gone wrong once: the file grew
+past what anyone wants to paste, so a re-run got skipped and sizes 13/14 shipped
+against a server that refused them.
+
+**What makes it safe is a property of the file, not of the workflow**: it is
+repeatable by construction (`create or replace` / `if not exists`, no one-shot
+migration steps, no `drop table`), so applying it again is a no-op. A file with
+genuine one-way migrations could not be deployed this way — keep new sections
+repeatable or this workflow becomes a liability.
+
+Three mechanics worth keeping:
+
+- **All-or-nothing.** `--single-transaction` plus `ON_ERROR_STOP=1`. PostgreSQL
+  does DDL transactionally and the file contains nothing that forbids it (no
+  `CREATE INDEX CONCURRENTLY`, no `VACUUM`) — verified by appending a deliberate
+  syntax error and confirming the database came back untouched. If you ever add
+  something non-transactional, this workflow has to change with it.
+- **A rollback probe runs first**: the whole file inside `BEGIN … ROLLBACK`
+  against the real database. The transaction below would catch the same failure,
+  but the probe isolates the error in its own step rather than burying it.
+- **The check afterwards writes nothing.** It reads the *installed* functions'
+  source out of `pg_proc` and compares the size bounds against `MAX_SIZE` from
+  `js/settings.js`. Verified it catches drift by deploying a deliberately stale
+  `bump_stat`. A write-based check would have to insert a fake score into the
+  live leaderboard, which is exactly what it must not do.
+
+Setup is one repository secret, `SUPABASE_DB_URL`, from Supabase → Project
+Settings → Database → Connection string → **Session pooler**. Not the
+transaction pooler (port 6543: no session, so no transaction across the file),
+and not the direct connection (IPv6-only on newer projects, GitHub runners are
+IPv4). It is the database password and is *not* `SUPABASE_SERVICE_KEY`, which is
+a PostgREST key the weekly report uses.
+
+The manual fallback, if the workflow can't run, is a section list in the SQL
+file's own `AUSROLLEN` block rather than the whole file.
 
 ## Git / workflow
 
