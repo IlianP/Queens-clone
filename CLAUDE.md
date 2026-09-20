@@ -370,14 +370,26 @@ a candidate. Three things in it are load-bearing and easy to skip:
   `--pools`: a look an existing style already produces in >5% of boards is a
   knob, one it produces in <1% needs its own grower. Screenshot D scored 0% of
   430 organic boards.
+- **A sample can contain the wrong style.** `generatePuzzle` puts fairness above
+  style: when the budget runs out its last-resort loop grows *organic* whatever
+  was asked for, and at N >= 12 with a small budget that path is reached
+  constantly. It therefore returns `grownWith` — the style that actually grew
+  the board — and `sampleStyle` drops those rather than averaging them in,
+  counting them as `offStyle`. The first 12x12 measurement of `frame` reported
+  edgeBound 0.85 for a construction whose raw growth delivers 0.42; it was
+  almost entirely organic boards under the wrong name.
 
 `quilt`, `voronoi` and `frame` are **evaluated but not shipped**: reachable via
 `generatePuzzle(N, d, { style })` and listed in `EXPERIMENTAL_GROWERS`, but
 `mixFor` / `randomStyle()` never draw them and no pool is built from them. Only
-`frame` (the screenshot-D look) survived evaluation; the other two are kept as
-the worked examples behind the erosion rule. `growStyleRaw` is the tooling hook
-that hands back a grower's output before the repair touches it — the game never
-calls it.
+`frame` (the screenshot-D look) survived evaluation, and only up to **N = 10** —
+at 11 it costs 20 s per board against organic's 4 s, and at 12 it delivers
+nothing at all. That is the same wall organic hits, and the reason sizes from 13
+are pinned to `strips` already. The other two are kept as the worked examples
+behind the erosion rule: `quilt` was distinct and lost it to the repair (81% of
+its distance gone), `voronoi` was never distinct to begin with (0.32 raw).
+`growStyleRaw` is the tooling hook that hands back a grower's output before the
+repair touches it — the game never calls it.
 
 **The style does not make a board easier.** All three reference boards rate
 *hard* (level 2, naked-single reach 0) under our own solver, and blocky boards

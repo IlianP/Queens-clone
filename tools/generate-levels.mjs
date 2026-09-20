@@ -132,7 +132,14 @@ function fillBucket(N, difficulty, rng, growStyle, want, puzzles, seen) {
     seen.add(key);
     // The style tag is provenance, not something the game reads: drawLevel
     // ignores it, verify-levels.mjs uses it to report the actual mix.
-    puzzles.push({ ...encodePuzzle(N, p.region, p.solution), t: growStyle });
+    //
+    // Tag what GREW the board, not what was asked for. `generatePuzzle` puts
+    // fairness above style — when its budget runs out the last-resort loop
+    // grows organic whatever the request was — so tagging `growStyle` would
+    // file those boards under a style that never touched them, and the "even
+    // split per bucket" verify-levels reports would be measuring the request
+    // rather than the pool. Rare at these budgets, and silent when it happens.
+    puzzles.push({ ...encodePuzzle(N, p.region, p.solution), t: p.grownWith ?? growStyle });
 
     const nowMs = Date.now();
     if (nowMs - lastLog > 5000 || puzzles.length === goal) {

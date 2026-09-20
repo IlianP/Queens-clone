@@ -47,8 +47,15 @@ export function playProfile(N, region, solution) {
  * @returns {{shape:object, level:number, reach:number, msPerBoard:number,
  *   yield:number, steps:number, tech:object, shapes:object[], boards:object[]}}
  */
-export function sampleStyle(N, difficulty, style, { ms = 6000, rng, play = true } = {}) {
+export function sampleStyle(N, difficulty, style, { ms = 6000, rng, play = true, budgetMs } = {}) {
   const want = LEVEL_OF[difficulty];
+  // The per-board budget has to grow with N or the measurement quietly measures
+  // something else: `generatePuzzle` abandons the requested style on its
+  // last-resort path, and at N >= 12 a flat 1.5 s reaches that path most of the
+  // time. Boards that came back from it are dropped below rather than averaged
+  // in — a sample of 'frame' padded with organic boards reported edgeBound 0.85
+  // for a construction that actually delivers 0.42.
+  const perBoard = budgetMs ?? (N <= 9 ? 1500 : N <= 11 ? 4000 : 20000);
   const shapes = [];
   const boards = [];
   let reach = 0;
@@ -56,10 +63,15 @@ export function sampleStyle(N, difficulty, style, { ms = 6000, rng, play = true 
   const tech = {};
   let techTotal = 0;
   let tries = 0;
+  let offStyle = 0;
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     tries++;
-    const p = generatePuzzle(N, difficulty, { style, budgetMs: 1500, rng });
+    const p = generatePuzzle(N, difficulty, { style, budgetMs: perBoard, rng });
+    if (p.grownWith && p.grownWith !== style) {
+      offStyle++;
+      continue;
+    }
     if (p.level !== want) continue;
     shapes.push(boardShape(N, p.region));
     boards.push(p);
@@ -75,10 +87,12 @@ export function sampleStyle(N, difficulty, style, { ms = 6000, rng, play = true 
   }
   const elapsed = Date.now() - t0;
   const n = shapes.length;
-  if (!n) return { n: 0, msPerBoard: Infinity, yield: 0, shape: null, tech: {}, boards: [] };
+  if (!n)
+    return { n: 0, offStyle, msPerBoard: Infinity, yield: 0, shape: null, tech: {}, boards: [] };
   for (const k of Object.keys(tech)) tech[k] /= techTotal;
   return {
     n,
+    offStyle, // boards generatePuzzle grew with a different style, and we dropped
     shape: meanShape(shapes),
     shapes,
     boards,

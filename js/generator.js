@@ -966,6 +966,10 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   // comes back one level up, honestly rated.
   const strips = opts.style === 'strips';
   const experimental = EXPERIMENTAL_GROWERS[opts.style] || null;
+  // Which grower actually produced the board comes back on the result as
+  // `grownWith`. It matches opts.style everywhere except the last-resort loop
+  // at the very bottom, which switches to organic on purpose.
+  const styleName = blocky || strips || experimental ? opts.style : 'organic';
   const blockyOpts = BLOCKY_OPTS[target] ?? BLOCKY_OPTS[1];
   // Same reasoning as blocky's floor, applied to the two experimental styles
   // that have no opinion about tiny regions: above easy a one-cell colour is a
@@ -1034,7 +1038,7 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     // `best` only ever holds a fair (logic-solvable) board.
     if (level >= 3) continue;
     const reach = nakedSingleReach(N, region);
-    const result = { region, solution: cols.slice(), level, attempts };
+    const result = { region, solution: cols.slice(), level, attempts, grownWith: styleName };
     const dist = scoreOf(level, reach);
     if (best === null || dist < best._dist) {
       best = result;
@@ -1086,7 +1090,7 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     if (level >= 3) continue; // never hand back a board the hints can't explain
     const dist = Math.abs(level - target);
     if (fair === null || dist < fair._dist) {
-      fair = { region, solution: cols.slice(), level, attempts };
+      fair = { region, solution: cols.slice(), level, attempts, grownWith: styleName };
       fair._dist = dist;
     }
     if (dist === 0) break; // exact difficulty match — done
@@ -1115,11 +1119,24 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     // make the repair fail.
     if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
     const level = difficultyLevel(N, region);
-    const result = { region, solution: cols.slice(), level, attempts };
+    // `grownWith` is 'organic' here even when another style was asked for: this
+    // path deliberately abandons the requested style to guarantee a fair board.
+    // Saying so in the result is what keeps a style MEASUREMENT honest — a
+    // sample of "style X" silently padded with organic boards is worse than no
+    // sample, and at N >= 12 with a small budget this path is reached often.
+    const result = { region, solution: cols.slice(), level, attempts, grownWith: 'organic' };
     if (level <= 2) return result; // fair AND unique
     lastUnique = result;
   }
-  return lastUnique || { region: trivialRegions(N), solution: defaultPlacement(N), level: 0, attempts };
+  return (
+    lastUnique || {
+      region: trivialRegions(N),
+      solution: defaultPlacement(N),
+      level: 0,
+      attempts,
+      grownWith: 'organic',
+    }
+  );
 }
 
 function now() {

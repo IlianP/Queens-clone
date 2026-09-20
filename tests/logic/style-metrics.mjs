@@ -183,6 +183,27 @@ for (const [style, bands] of Object.entries(BANDS_BY_STYLE)) {
   for (const [k, [lo, hi]] of Object.entries(bands)) between(mean(k), lo, hi, `${style} ${k}`);
 }
 
+// `grownWith` is what keeps every measurement in docs/board-styles.md honest:
+// generatePuzzle abandons the requested style on its last-resort path, so a
+// sample that trusts `opts.style` can be full of organic boards under another
+// name (it reported edgeBound 0.85 for a construction that delivers 0.42). It
+// also tags the pool entries in tools/generate-levels.mjs, so a wrong value
+// would misreport the shipped mix.
+{
+  let bad = 0;
+  for (const style of ['organic', 'blocky', 'strips', 'quilt', 'voronoi', 'frame']) {
+    for (let i = 0; i < 3; i++) {
+      const p = generatePuzzle(7, 'hard', { style, budgetMs: 2000 });
+      if (typeof p.grownWith !== 'string') bad++;
+      // At 7x7 with a 2s budget the last-resort path is not reached, so the
+      // style asked for is the style grown. The contract that matters is that
+      // the field is present and names a real grower either way.
+      else if (p.grownWith !== style && p.grownWith !== 'organic') bad++;
+    }
+  }
+  check(bad === 0, `every generatePuzzle result reports a real grower in grownWith (${bad} bad)`);
+}
+
 // The separations the doc's whole argument rests on: strips must stay far from
 // the other two, and the two "looks like a screenshot" styles must keep beating
 // organic at their own signature.

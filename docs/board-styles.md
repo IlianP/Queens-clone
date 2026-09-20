@@ -90,9 +90,13 @@ machen — der Maßstab muss stillstehen, sonst ist er keiner.
 | > 1,0 | andere Konstruktion. Rechtfertigt einen eigenen Grower. |
 
 Die Bänder sind an dem geeicht, was wir schon wissen: `organic` ↔ `blocky`
-liegen bei **0,5 – 0,6** (zwei Varianten desselben Flood-Fill-Gedankens),
-`strips` liegt **1,5 – 2,1** von beiden entfernt (und brauchte tatsächlich eine
-eigene Konstruktion *und* eine eigene Reparatur).
+liegen bei **0,3 – 0,6** (zwei Varianten desselben Flood-Fill-Gedankens),
+`strips` liegt **1,3 – 1,5** vom nächsten anderen Stil entfernt und brauchte
+tatsächlich eine eigene Konstruktion *und* eine eigene Reparatur. Was ein
+Vorbild reproduzieren soll, wird zusätzlich gegen das Vorbild selbst gemessen:
+`blocky` liegt **0,14 – 0,27** von Shot A, `strips` **0,15 – 0,22** von Shot C,
+`frame` **0,16 – 0,26** von Shot D. Ein Stil, der weiter von seinem eigenen
+Vorbild entfernt ist als von einem fremden, hat sein Ziel verfehlt.
 
 ## Referenztabelle
 
@@ -120,21 +124,59 @@ Wort. `makeUnique` erkauft Eindeutigkeit, indem es eine Zelle in eine
 einem L. `--erosion` misst genau das: dieselbe Signatur vor und nach der
 Reparatur.
 
-Gemessen bei 8×8 hard:
+Gemessen bei 8×8 hard (`node tools/compare-styles.mjs --erosion`); die
+Verschleißspalte zusätzlich für 7×7 medium / 7×7 hard / 8×8 medium:
 
-| Stil | Ecken roh → fertig | Füllung roh → fertig | gerade roh → fertig | **Verschleiß** |
-|------|--------------------|----------------------|---------------------|----------------|
-| `organic` | 8,0 → 9,2 | 0,70 → 0,67 | 1,86 → 1,66 | 0,52 |
-| `blocky` | 7,8 → 8,4 | 0,76 → 0,75 | 1,89 → 1,75 | **0,23** |
-| `strips` | 6,6 → 6,7 | 0,95 → 0,96 | 2,74 → 2,43 | **0,21** |
-| `quilt` | **4,0 → 8,3** | **1,00 → 0,75** | **5,72 → 1,85** | **1,52** |
-| `voronoi` | 9,7 → 8,5 | 0,67 → 0,73 | 1,40 → 1,65 | 0,61 |
-| `frame` | 8,5 → 8,9 | 0,69 → 0,70 | 1,95 → 1,83 | **0,21** |
+| Stil | Ecken roh → fertig | Füllung roh → fertig | gerade roh → fertig | **Verschleiß** (7m/7h/8m/**8h**) |
+|------|--------------------|----------------------|---------------------|----------------------------------|
+| `organic` | 8,1 → 9,1 | 0,71 → 0,68 | 1,84 → 1,66 | 0,37 / 0,46 / 0,43 / **0,52** |
+| `blocky` | 7,7 → 8,3 | 0,75 → 0,75 | 1,91 → 1,76 | 0,31 / 0,23 / 0,33 / **0,23** |
+| `strips` | 6,6 → 6,7 | 0,95 → 0,96 | 2,74 → 2,42 | 0,25 / 0,15 / 0,30 / **0,26** |
+| `quilt` | **4,00 → 8,4** | **1,00 → 0,74** | **5,71 → 1,80** | 1,39 / 1,36 / 1,58 / **1,53** |
+| `voronoi` | 9,7 → 8,7 | 0,67 → 0,72 | 1,41 → 1,63 | 0,73 / 0,60 / 0,60 / **0,55** |
+| `frame` | 8,5 → 8,9 | 0,69 → 0,69 | 1,97 → 1,85 | 0,43 / 0,29 / 0,26 / **0,23** |
 
-**Die Regel, die daraus folgt:** ist der Verschleiß eines Stils größer als sein
-Abstand zu den Stilen, die wir schon haben, liefert er seinen eigenen Look
-nicht aus — egal wie gut der Rohwuchs aussieht. `strips` hat deshalb
-`makeUniqueStrips` bekommen; `quilt` scheitert genau daran.
+`organic` ist der Sonderfall, der zeigt, dass Verschleiß **allein** nicht
+reicht: mit 0,37 – 0,52 ist er hoch, aber organic hat keine Signatur zu
+verlieren — der Stil *ist* zufälliges Wachstum, und die Reparatur ist mehr
+davon. (Lehrreich trotzdem: bei organic erzeugt die **Reparatur** die
+geschenkten Ein-Zellen-Regionen, `ones` 0,00 roh → 0,39 fertig bei 8×8 hard,
+nicht das Wachstum.)
+
+### Die Regel: wie viel Eigenständigkeit die Reparatur frisst
+
+Die Frage ist enger als „wie stark ändert sich das Brett". Sie lautet: **wie
+weit war die Konstruktion von den ausgelieferten Stilen entfernt, bevor
+repariert wurde — und wie viel davon ist danach übrig?** `--erosion` gibt das
+unter „Eigenständigkeit" mit aus (8×8 hard):
+
+| Stil | roh → ausgeliefert | fertig → ausgeliefert | **Lücke geschlossen** |
+|------|--------------------|-----------------------|------------------------|
+| `organic` | 0,88 | 0,58 | 33 % |
+| `blocky` | 0,52 | 0,58 | −13 % |
+| `strips` | 1,42 | 1,50 | −6 % |
+| `quilt` | **1,66** | **0,31** | **81 %** |
+| `voronoi` | 0,32 | 0,28 | 13 % |
+| `frame` | 0,59 | 0,61 | −3 % |
+
+Negative Werte sind kein Fehler: die Reparatur kann einen Stil auch *weiter*
+von den anderen wegschieben, und bei `blocky`, `strips` und `frame` tut sie
+genau das — deren Signatur wird von `makeUnique(Strips)` eher geschärft als
+angegriffen.
+
+Das trennt die **zwei verschiedenen Arten zu scheitern**, die der reine
+Verschleiß in einen Topf wirft:
+
+- **`quilt` war eigenständig und hat es verloren** (1,66 → 0,31, 81 % weg). Das
+  ist reparierbar — mit einer formerhaltenden Reparatur, so wie `strips`
+  `makeUniqueStrips` bekommen hat.
+- **`voronoi` war nie eigenständig** (0,32 roh, also schon vor der Reparatur
+  innerhalb des Bandes „gleicher Look"). Keine Reparatur der Welt hilft da; die
+  Konstruktion ist schlicht nicht anders.
+
+Ohne diese Aufschlüsselung hätten beide dasselbe Urteil bekommen und `quilt`
+wäre als hoffnungslos abgelegt worden, obwohl sein Rohwuchs die
+rechteckigsten Bretter im ganzen Repo sind.
 
 ## Die drei Look-Signaturen
 
@@ -174,16 +216,24 @@ Konstruktion ein Rechteck mit genau einer Dame, die Rekursion kann nicht
 fehlschlagen, es braucht **keine Wiederholungsschleife**.
 
 Der Rohwuchs ist das rechteckigste, was dieses Repo je erzeugt hat — `corners`
-exakt **4,00**, `bboxFill` exakt **1,00**, `straight` **5,7**. Und davon bleibt
-nichts übrig: `makeUnique` biegt die Rechtecke in Verschleiß **1,52** zu
-gewöhnlichen Klecksen, und das fertige Brett liegt **0,20** von `voronoi` und
-**0,43** von `blocky` entfernt — also mitten in dem, was wir schon ausliefern.
+exakt **4,00**, `bboxFill` exakt **1,00**, `straight` **5,7** gegen 1,4 – 2,7
+bei allem anderen. Und davon bleibt nichts übrig: `makeUnique` biegt die
+Rechtecke mit Verschleiß **1,36 – 1,58** zu gewöhnlichen Klecksen (Ecken
+4,00 → 8,4, gerade 5,71 → 1,80), und das fertige Brett liegt **0,19 – 0,34**
+vom nächsten vorhandenen Stil entfernt — also mitten in dem, was wir schon
+ausliefern. Dazu kostet es auf 8×8 easy **342 ms/Brett** gegen 45 ms bei
+organic: ohne Ein-Zellen-Regionen fehlt easy die erzwungene Eröffnung, genau
+wie bei blocky mit Größenboden.
 
-Abgelehnt, aber nicht wertlos: das ist der sauberste vorhandene Beleg für die
-Verschleißregel. Wer ihn wiederbeleben will, braucht ein `makeUniqueQuilt` mit
-formerhaltenden Zügen (nur ganze Kantenreihen zwischen zwei Rechtecken
-verschieben) — genau der Schritt, den `strips` gegangen ist. Ob das genug
-Freiheitsgrade für Eindeutigkeit lässt, ist offen.
+Abgelehnt **wegen der Reparatur, nicht wegen der Konstruktion**: roh liegt es
+1,66 von allem Ausgelieferten entfernt, fertig 0,31 — 81 % der
+Eigenständigkeit frisst `makeUnique`. Damit ist es der sauberste vorhandene
+Beleg für die Regel oben, und der einzige Kandidat, den ein zweiter Anlauf
+retten könnte: ein `makeUniqueQuilt` mit formerhaltenden Zügen (nur ganze
+Kantenreihen zwischen zwei Rechtecken verschieben), genau der Schritt, den
+`strips` gegangen ist. Ob das genug Freiheitsgrade für Eindeutigkeit lässt,
+ist offen — und die ehrliche Antwort ist, dass ein 1-Zellen-Streifen dort mehr
+Spielraum hatte als ein Rechteck haben wird.
 
 ### `voronoi` — Wachstum nach Entfernung ❌ abgelehnt
 
@@ -194,10 +244,19 @@ nach Entfernung.
 
 Die Hypothese „glatte Fronten, gleichmäßige Flächen" stimmte nur zur Hälfte:
 die Flächen kommen tatsächlich sehr gleich heraus (`gini` **0,18** roh, der
-niedrigste Wert im ganzen Feld) und Streifen gibt es exakt keine, aber die
-Ränder sind mit `corners` **9,7** *zackiger* als bei organic, nicht glatter.
-Nach der Reparatur (Verschleiß 0,61) ist auch das weg: das fertige Brett liegt
-**0,19** von `blocky` und **0,30** von `organic` entfernt — derselbe Look.
+niedrigste Wert im ganzen Feld) und Streifen gibt es exakt keine
+(`stripShare` **0,00**), aber die Ränder sind mit `corners` **9,7** *zackiger*
+als bei organic, nicht glatter — die Priorität nach Entfernung glättet die
+Front nicht, sie lässt die Fronten nur gleichzeitig ankommen. Nach der
+Reparatur (Verschleiß 0,55 – 0,73) ist auch das weg: das fertige Brett liegt
+**0,18 – 0,24** vom nächsten vorhandenen Stil entfernt — derselbe Look. Bei
+8×8 easy kostet es dieselben **338 ms/Brett** wie `quilt`, aus demselben Grund.
+
+Abgelehnt **wegen der Konstruktion, nicht wegen der Reparatur** — der
+Gegenfall zu `quilt`: schon der Rohwuchs liegt nur **0,32** von den
+ausgelieferten Stilen entfernt, also bereits innerhalb des Bandes „gleicher
+Look". Eine formerhaltende Reparatur würde hier nichts retten, weil es nichts
+zu retten gibt.
 
 ### `frame` — Rand außen, Kleinkram eingeschlossen ✅ trägt
 
@@ -209,26 +268,102 @@ des Bretts halten. Der Rest flutet von den übrigen Damen aus zufällig nach —
 und bleibt dabei klein und eingeschlossen, gelegentlich bis auf eine einzelne
 Zelle, die Screenshot D auch hat.
 
-| | 7×7 medium | 7×7 hard | Abstand zu Shot D |
-|---|---|---|---|
-| `edgeBound` | 0,53 | 0,55 | Shot D: 0,43 |
-| `gini` | 0,34 | 0,29 | Shot D: 0,32 |
-| `maxShare` | 0,25 | 0,25 | Shot D: 0,24 |
-| `frameLike`-Trefferquote | ja | ja | — |
-| Signaturabstand | — | — | **0,23 / 0,29** |
+`frameLike`-Trefferquote, live erzeugt, je 8 s Stichprobe:
 
-Verschleiß **0,21** — so niedrig wie `blocky` und `strips`, die Signatur
-übersteht die Reparatur also. Der nächste andere Stil ist **0,37 – 0,50**
-entfernt, also eine klar erkennbare **Variante**, keine Dublette und keine
-eigene Familie. Kosten 5 – 15 ms/Brett, in derselben Größenordnung wie organic.
-Anders als `strips` hat `frame` **easy-Bretter** (die eingeschlossene
-Ein-Zellen-Region liefert genau die erzwungene Eröffnung, die easy braucht).
+| Stil | 7×7 easy | 7×7 med | 7×7 hard | 8×8 easy | 8×8 med | 8×8 hard |
+|---|---|---|---|---|---|---|
+| **`frame`** | **58 %** | **43 %** | **30 %** | **99 %** | **97 %** | **92 %** |
+| `organic` | 0 % | 0 % | 0 % | 0 % | 0 % | 0 % |
+| `blocky` | 0 % | 0 % | 0 % | 1 % | 2 % | 1 % |
+| `strips` | – | 0 % | 0 % | – | 0 % | 0 % |
+| `quilt` | 0 % | 0 % | 0 % | 0 % | 0 % | 5 % |
+| `voronoi` | 0 % | 0 % | 0 % | 0 % | 0 % | 0 % |
+
+Signaturabstand zu Shot D **0,16 – 0,26**, zum nächsten anderen Stil
+**0,45 – 0,72** — also eine klar erkennbare **Variante**, keine Dublette und
+keine eigene Familie. Verschleiß **0,23 – 0,43**, im Bereich der ausgelieferten
+Stile. Kosten 4 – 12 ms/Brett auf medium/hard und 10 – 55 ms auf easy, in
+derselben Größenordnung wie organic. Anders als `strips` hat `frame`
+**easy-Bretter** (die eingeschlossene Ein-Zellen-Region liefert genau die
+erzwungene Eröffnung, die easy braucht).
+
+Zwei Dinge hat die Konstruktion erst getroffen, nachdem sie gemessen war — und
+beide sind der Grund, warum Schritt 4 und 5 des Rezepts unten nicht optional
+sind. Vorher lag die Trefferquote bei **15 %** statt bei 30 – 99 %:
+
+- **Der Ring muss ganz vergeben werden, bevor das Flächenbudget zählt.** Liefen
+  beide Phasen gegen ein Budget, blieben Ringzellen frei, die Nachflut der
+  Innenregionen nahm sie mit, und `edgeBound` landete bei 0,54 statt bei 0,43.
+- **Eine Region, deren Dame auf dem Ring sitzt, hält eine Ringzelle — immer.**
+  Sie muss also Außenregion sein, und sitzen mehr Damen auf dem Ring als
+  Außenregionen vorgesehen sind, kann diese Platzierung den Look nicht
+  erzeugen. `growRegionsFrame` gibt dann `null` zurück und `generatePuzzle`
+  zieht die nächste Platzierung.
+
+**Die 7×7-Schwäche ist echt, und sie liegt an `gini`.** Bei 7×7 hard sitzt
+`gini` mit 0,28 exakt auf der Schwelle der Signatur: hard unterdrückt kleine
+Regionen, und auf 49 Feldern bleibt für eine Größenhierarchie wenig Platz. Bei
+8×8 ist das weg (92 – 99 %). Eine Eigenschaft des Schwierigkeitsgrads, kein
+Fehler des Growers.
+
+**Die harte Grenze ist die Brettgröße.** Pro akzeptiertem hard-Brett:
+
+| N | `frame` | `organic` | `strips` | D-Quote `frame` |
+|---|---------|-----------|----------|------------------|
+| 8 | **11 ms** | 17 ms | 3 ms | 92 % |
+| 9 | 227 ms | 178 ms | — | 55 % |
+| 10 | **1,9 s** | 2,6 s | — | 100 % |
+| 11 | 20 s | 4,1 s | — | 100 % |
+| 12 | **kein Brett** | 62 s | 0,14 s | — |
+| 14 | **kein Brett** | 248 s | 1,4 s | — |
+
+Bis N = 10 ist `frame` schneller als organic, ab N = 11 dreht sich das, und ab
+N = 12 liefert es innerhalb eines vernünftigen Budgets gar nichts mehr. Das ist
+dieselbe Wand, an der organic steht, und der Grund, warum `stylesFor` /
+`mixFor` Größen ab 13 ohnehin auf `strips` festnageln. Ausliefern hieße also:
+`frame` in die Mischung für **N ≤ 10** — genau der Bereich, in dem heute
+organic und blocky gemischt werden.
+
+Wichtig dabei: die Konstruktion selbst hält bei jeder Größe durch — der
+Rohwuchs liefert `edgeBound` 0,38 – 0,43 und 44 – 51 % D-Look auch bei N = 12
+und N = 14. Was ab N = 11 versagt, ist nicht das Wachstum, sondern die
+**Eindeutigkeitsreparatur**, die auf einem Brett mit vielen eingeschlossenen
+Kleinregionen zu lange braucht.
 
 **Offen, bevor das ausgeliefert werden könnte:** der Technikmix ist von organic
-praktisch nicht zu unterscheiden (naked 51 % / conf 27 % / dead 18 %), es ist
-also rein eine Optik-Erweiterung; und `ones` liegt bei medium/hard mit 0,9 – 1,4
-höher als bei organic (0,2 – 1,0), was auf hard mehr geschenkte Damen bedeutet
-als dort bisher üblich. Beides sind Entscheidungen, keine Fehler.
+praktisch nicht zu unterscheiden (naked 50 % / conf 28 % / dead 18 %), es ist
+also rein eine Optik-Erweiterung; und `ones` liegt auf hard mit 0,45 (7×7) bzw.
+0,71 (8×8) über organic (0,26 / 0,41) — etwas mehr geschenkte Damen, als dort
+bisher üblich ist. Beides sind Entscheidungen, keine Fehler.
+
+## Die Messfalle: Stichproben, die den falschen Stil enthalten
+
+Das hier hätte die ganze Bewertung von `frame` gekippt und ist in keiner Zahl
+sichtbar, wenn man nicht danach sucht.
+
+`generatePuzzle` gibt **Fairness den Vorrang vor dem Stil**: läuft das Budget
+ab, ohne dass ein logisch lösbares Brett im gewünschten Stil zustande kam,
+fällt der letzte Rettungspfad auf `growRegions` (organic) zurück — bewusst, denn
+ein Brett, dessen Hinweise zur „Hier gehört die nächste Dame hin"-Notlösung
+degradieren, ist schlimmer als eines im falschen Look. Bei N ≥ 12 und einem
+Budget von 1,5 s wird dieser Pfad ständig erreicht.
+
+Die erste Messung von `frame` bei 12×12 meldete daraufhin `edgeBound` **0,85**
+— für eine Konstruktion, die roh 0,42 liefert. Die Stichprobe bestand fast nur
+aus organic-Brettern unter falschem Namen. Zwei Gegenmittel, beide jetzt
+eingebaut:
+
+- `generatePuzzle` gibt **`grownWith`** zurück: den Stil, der das Brett
+  tatsächlich gewachsen hat. Er weicht nur auf genau diesem Rettungspfad von
+  `opts.style` ab. `sampleStyle` wirft solche Bretter weg und zählt sie als
+  `offStyle`, statt sie einzumitteln.
+- Das Budget pro Brett **skaliert mit N** (1,5 s bis N = 9, 4 s bis N = 11,
+  20 s darüber). Ohne das misst die Stichprobe bei großen Brettern hauptsächlich
+  den Rettungspfad.
+
+Merksatz: **eine Stichprobe mit `offStyle > 0` ist keine Messung dieses Stils.**
+Steht da eine große Zahl, ist die Frage nicht „wie sieht der Stil aus", sondern
+„warum kommt er bei dieser Größe nicht durch".
 
 ## Was die Suite *nicht* misst
 
@@ -265,17 +400,21 @@ Reihenfolge ist bewusst so: die billigen Ausschlusskriterien zuerst.
    Rating ≤ 2, mit Hinweisen allein lösbar. Ein hübscheres Brett, das diese
    Zusagen bricht, ist wertlos. `tests/logic/style-metrics.mjs` und die
    Helfer in `tests/logic/lib/board-checks.mjs` machen das fertig.
-4. **`--erosion` laufen lassen.** Ist der Verschleiß größer als der Abstand zu
-   den vorhandenen Stilen, liefert der Stil seinen Look nicht aus. Dann
-   entweder eine formerhaltende Reparatur schreiben (wie `makeUniqueStrips`)
-   oder verwerfen. Diesen Schritt nicht überspringen: der Rohwuchs sieht
-   *immer* überzeugender aus als das Ergebnis.
+4. **`--erosion` laufen lassen** und die Zeile „Eigenständigkeit" lesen. Ist
+   der Rohwuchs schon unter 0,5 von den vorhandenen Stilen entfernt, ist die
+   *Konstruktion* nicht anders — verwerfen. War er weiter weg und die Reparatur
+   schließt die Lücke (grob: mehr als die Hälfte), ist die *Reparatur* das
+   Problem: eine formerhaltende schreiben, wie `makeUniqueStrips`. Diesen
+   Schritt nicht überspringen — der Rohwuchs sieht **immer** überzeugender aus
+   als das Ergebnis.
 5. **`node tools/compare-styles.mjs` laufen lassen.** Signaturabstand zum
    nächsten vorhandenen Stil: unter 0,5 ist es kein eigener Stil.
 6. **Spiel- und Kostenebene ansehen.** Verschiebt der Stil den Technikmix
    (dann ist er mehr als Optik)? Gibt es alle drei Schwierigkeitsgrade, oder
    verbietet die Konstruktion einen — und ist das ein Fakt oder ein Knopf?
-   Wie viele ms kostet ein akzeptiertes Brett bei N = 12 und N = 14?
+   Wie viele ms kostet ein akzeptiertes Brett bei N = 10, 12, 14 — und **wie
+   groß ist `offStyle` dabei?** Eine Stichprobe mit vielen verworfenen Brettern
+   misst den Rettungspfad, nicht den Stil (siehe „Die Messfalle").
 7. **Auf dem Handy ansehen.** Einzelstil-Bundle bauen und veröffentlichen
    (CLAUDE.md, „Testing a branch on mobile"). Alles darüber ist eine Zahl; das
    hier ist das Spiel.

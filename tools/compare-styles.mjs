@@ -246,10 +246,16 @@ function measurePools() {
 // that disqualified `quilt`.
 function measureErosion(sizes, styles, perCell = 120) {
   console.log('\n=== Reparaturverschleiß: Rohwuchs vs. fertiges Brett ===');
-  console.log('Stil/Phase'.padEnd(24) + COLS.map(([, l, w]) => l.padStart(w + 1)).join('') + ' | Abstand roh→fertig');
+  console.log(
+    'Stil/Phase'.padEnd(24) +
+      COLS.map(([, l, w]) => l.padStart(w + 1)).join('') +
+      ' | roh→fertig'
+  );
   for (const N of sizes) {
     for (const difficulty of ['medium', 'hard']) {
       console.log(`--- ${N}x${N} ${difficulty} ---`);
+      const rawMean = {};
+      const finMean = {};
       for (const style of styles) {
         const raw = [];
         for (let i = 0; i < perCell; i++) {
@@ -261,14 +267,44 @@ function measureErosion(sizes, styles, perCell = 120) {
           console.log(`${style.padEnd(24)} (kein Brett)`);
           continue;
         }
-        const rawMean = meanShape(raw);
-        console.log(shapeRow(`${style} roh`, rawMean, ''));
+        rawMean[style] = meanShape(raw);
+        finMean[style] = done.shape;
+        console.log(shapeRow(`${style} roh`, rawMean[style], ''));
         console.log(
-          shapeRow(`${style} fertig`, done.shape, '') +
-            ` ${signatureDistance(rawMean, done.shape).toFixed(2)}`
+          shapeRow(`${style} fertig`, finMean[style], '') +
+            ` ${signatureDistance(rawMean[style], finMean[style]).toFixed(2)}`
         );
       }
+      distinctnessLost(rawMean, finMean);
     }
+  }
+}
+
+// The reading that actually generalises, and the one the verdicts rest on.
+// Erosion alone misfires: `organic` erodes a lot and that is fine, because it
+// has no signature to lose. The question is narrower — how much of the
+// DISTANCE TO THE SHIPPED STYLES did the construction have before the repair,
+// and how much is left after?
+//
+// It separates the two ways a candidate fails, which erosion lumps together:
+// `quilt` starts far away (1.7) and the repair closes ~80% of it, so it needs a
+// shape-preserving repair; `voronoi` was never far away to begin with (0.3), so
+// no repair would rescue it — the construction simply is not different.
+function distinctnessLost(rawMean, finMean) {
+  const shipped = SHIPPED_STYLES.filter((o) => finMean[o]);
+  console.log(
+    '  Eigenständigkeit'.padEnd(26) + 'roh→ausgeliefert  fertig→ausgeliefert  Lücke geschlossen'
+  );
+  for (const style of Object.keys(finMean)) {
+    const others = shipped.filter((o) => o !== style);
+    if (!others.length) continue;
+    const dRaw = Math.min(...others.map((o) => signatureDistance(rawMean[style], finMean[o])));
+    const dFin = Math.min(...others.map((o) => signatureDistance(finMean[style], finMean[o])));
+    const closed = dRaw > 0 ? Math.round(100 * (1 - dFin / dRaw)) : 0;
+    console.log(
+      `  ${style}`.padEnd(26) +
+        `${dRaw.toFixed(2).padStart(16)}${dFin.toFixed(2).padStart(21)}${`${closed}%`.padStart(19)}`
+    );
   }
 }
 
