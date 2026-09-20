@@ -19,15 +19,35 @@
 //      THIS screen, and says the measured figure;
 //   3. it follows a resize, because the figure stops being true when the window
 //      changes;
-//   4. a 14x14 really is playable on a phone.
+//   4. a 14x14 really is playable on a phone;
+//   5. the threshold follows the POINTER, not just the screen — see below.
+//
+// Invariant 5 is the reason this file runs the same viewport under two pointer
+// types. A thumb needs more room than a cursor, and above HARD_ONLY_SIZE
+// columns on touch it needs more room than the measurement can be trusted to
+// have found: CSS pixels are a vendor calibration, not a physical size, so a
+// generously calibrated phone clears the plain touch threshold at 13x13 while
+// the cells sit under exactly the same thumb. Nothing at runtime compares these
+// numbers, which is why they are restated and checked here.
 import { boardSettled, stubStats } from './board-helpers.mjs';
 
 const PLAYWRIGHT = '/opt/node22/lib/node_modules/playwright/index.js';
 const CHROMIUM = '/opt/pw-browsers/chromium';
 const BASE = process.env.BASE_URL || 'http://localhost:8000';
-// Keep in step with TIGHT_CELL_PX / MAX_SIZE in js/main.js + js/settings.js.
+// Keep in step with js/main.js + js/settings.js.
 const TIGHT_CELL_PX = 28;
+const TIGHT_CELL_PX_TOUCH = 32;
+const TIGHT_CELL_PX_TOUCH_BIG = 40;
+const HARD_ONLY_SIZE = 12;
 const MAX_SIZE = 14;
+
+// The rule under test, restated: tightCellLimit() in js/main.js.
+const limitFor = (n, touch) =>
+  !touch ? TIGHT_CELL_PX : n > HARD_ONLY_SIZE ? TIGHT_CELL_PX_TOUCH_BIG : TIGHT_CELL_PX_TOUCH;
+
+// A phone is a touch device; a narrow desktop window is not. Playwright only
+// reports '(pointer: coarse)' when the context says hasTouch.
+const TOUCH_CTX = { hasTouch: true, isMobile: true, deviceScaleFactor: 3 };
 
 let failed = 0;
 const check = (name, cond, extra = '') => {
@@ -72,25 +92,33 @@ const probe = (page, size) =>
     return { shown: !hint.hidden, text: hint.textContent, px };
   }, size);
 
-// ---------- 1 + 2: the slider reaches MAX_SIZE, and the hint tracks the screen
-for (const [label, viewport] of [
-  ['phone', { width: 390, height: 844 }],
-  ['desktop', { width: 1440, height: 900 }],
+// ---------- 1 + 2 + 5: the slider reaches MAX_SIZE, and the hint tracks both
+// the screen and the pointer. The same 390px viewport appears twice on purpose:
+// under a thumb and under a cursor it is not the same question.
+for (const { label, viewport, touch, sees } of [
+  { label: 'phone', viewport: { width: 390, height: 844 }, touch: true, sees: true },
+  { label: 'narrow window', viewport: { width: 390, height: 844 }, touch: false, sees: true },
+  { label: 'desktop', viewport: { width: 1440, height: 900 }, touch: false, sees: false },
 ]) {
-  const { page, errors } = await open(viewport);
+  const { page, errors } = await open(viewport, { ctx: touch ? TOUCH_CTX : {} });
   await page.locator('#open-settings').click();
   await page.waitForSelector('#size-range', { state: 'visible' });
 
   const max = await page.evaluate(() => Number(document.getElementById('size-range').max));
   check(`[${label}] the slider reaches ${MAX_SIZE}`, max === MAX_SIZE, `(got ${max})`);
 
+  // If this drifts, every expectation below would silently test the other
+  // branch and still pass.
+  const coarse = await page.evaluate(() => matchMedia('(pointer: coarse)').matches);
+  check(`[${label}] the browser reports pointer: ${touch ? 'coarse' : 'fine'}`, coarse === touch);
+
   let mismatches = 0;
   let everShown = false;
   for (let n = 5; n <= MAX_SIZE; n++) {
     const r = await probe(page, n);
-    if (r.shown !== r.px < TIGHT_CELL_PX) {
+    if (r.shown !== r.px < limitFor(n, touch)) {
       mismatches++;
-      console.log(`      size ${n}: ${r.px.toFixed(1)}px but shown=${r.shown}`);
+      console.log(`      size ${n}: ${r.px.toFixed(1)}px vs limit ${limitFor(n, touch)} but shown=${r.shown}`);
     }
     if (r.shown) {
       everShown = true;
@@ -102,11 +130,59 @@ for (const [label, viewport] of [
     }
   }
   check(`[${label}] the hint matches the measured cell size at every size`, mismatches === 0);
-  check(
-    `[${label}] ${label === 'phone' ? 'a phone sees it at least once' : 'a desktop never sees it'}`,
-    label === 'phone' ? everShown : !everShown
-  );
+  check(`[${label}] ${sees ? 'sees it at least once' : 'never sees it'}`, everShown === sees);
   check(`[${label}] no console errors`, errors.length === 0, errors[0] || '');
+  await page.close();
+}
+
+// ---------- 5: the case the touch thresholds exist for
+// A big phone whose 14x14 measures ABOVE the plain touch figure. Before the
+// pointer-aware thresholds this screen saw nothing at all at 13/14 — the
+// reported symptom — because the measurement is in CSS pixels, which a
+// generously calibrated device hands out more of across the same glass.
+{
+  const { page, errors } = await open({ width: 500, height: 980 }, { ctx: TOUCH_CTX });
+  await page.locator('#open-settings').click();
+  await page.waitForSelector('#size-range', { state: 'visible' });
+
+  for (const n of [13, MAX_SIZE]) {
+    const r = await probe(page, n);
+    const between = r.px > TIGHT_CELL_PX_TOUCH && r.px < TIGHT_CELL_PX_TOUCH_BIG;
+    check(
+      `[big phone] ${n}x${n} measures past the plain touch figure and is hinted anyway`,
+      between && r.shown,
+      `(${r.px.toFixed(1)}px, shown=${r.shown})`
+    );
+  }
+
+  // ...and the wider figure is scoped to boards above HARD_ONLY_SIZE, not a
+  // blanket 40px for touch: 12x12 measures below 40 here and must stay silent.
+  const r12 = await probe(page, HARD_ONLY_SIZE);
+  check(
+    `[big phone] ${HARD_ONLY_SIZE}x${HARD_ONLY_SIZE} keeps the plain touch figure`,
+    r12.px > TIGHT_CELL_PX_TOUCH && r12.px < TIGHT_CELL_PX_TOUCH_BIG && !r12.shown,
+    `(${r12.px.toFixed(1)}px, shown=${r12.shown})`
+  );
+  check('[big phone] no console errors', errors.length === 0, errors[0] || '');
+  await page.close();
+}
+
+// A tablet is the case the wider figure must NOT reach: it renders 45-49px at
+// these sizes, which is genuinely roomy, and a hint there would be the false
+// positive that teaches players to ignore the real ones.
+{
+  const { page } = await open({ width: 820, height: 1180 }, { ctx: { hasTouch: true } });
+  await page.locator('#open-settings').click();
+  await page.waitForSelector('#size-range', { state: 'visible' });
+  let shown = 0;
+  let worst = 0;
+  for (let n = 5; n <= MAX_SIZE; n++) {
+    const r = await probe(page, n);
+    if (r.shown) shown++;
+    worst = worst === 0 ? r.px : Math.min(worst, r.px);
+  }
+  check('[tablet] a roomy touch screen is never hinted at any size', shown === 0,
+    `(smallest cell ${worst.toFixed(1)}px, hinted ${shown}x)`);
   await page.close();
 }
 
