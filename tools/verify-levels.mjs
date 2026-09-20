@@ -149,6 +149,19 @@ for (const file of files) {
     for (const t of Object.keys(counts))
       if (!SHIPPED_STYLES.includes(t)) fail(`${label}: unknown style tag "${t}"`);
     mix = ` (${Object.entries(counts).map(([t, n]) => `${n} ${t}`).join(', ')})`;
+    // An even split is the claim a mixed pool makes, so check it rather than
+    // print it and hope someone reads. `generate-levels.mjs` hands each style
+    // count/styles entries (the remainder to the first ones), so the largest
+    // and smallest group can differ by at most one. Anything wider means boards
+    // were filed under a style that did not grow them — which is precisely what
+    // happened while a fallback board could still fill another style's quota.
+    const groups = Object.values(counts);
+    const spread = Math.max(...groups) - Math.min(...groups);
+    if (groups.length > 1 && spread > 1)
+      fail(
+        `${label}: uneven style split (${Object.entries(counts).map(([t, n]) => `${n} ${t}`).join(', ')}) — ` +
+          `largest and smallest differ by ${spread}, expected at most 1`
+      );
   }
 
   if (failures === failuresBefore) console.log(`ok   ${label}: ${puzzles.length} puzzles${mix}`);

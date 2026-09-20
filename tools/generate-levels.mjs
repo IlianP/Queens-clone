@@ -139,6 +139,7 @@ function fillBucket(N, difficulty, rng, growStyle, want, puzzles, seen) {
   // bucket's mix is wrong, not that the machine is slow.
   const STALL_MS = 10 * 60 * 1000;
   let lastKeep = start;
+  let fallbacks = 0;
 
   while (puzzles.length < goal) {
     attempts++;
@@ -152,6 +153,20 @@ function fillBucket(N, difficulty, rng, growStyle, want, puzzles, seen) {
       process.exit(1);
     }
     const p = generatePuzzle(N, difficulty, { budgetMs: 4000, rng, style: growStyle });
+    // A board the requested grower did not produce cannot count towards its
+    // quota. `generatePuzzle` puts fairness above style — when its budget runs
+    // out the last-resort loop grows organic whatever was asked for — and
+    // keeping one here would fill a `frame` slot with an organic board: the
+    // bucket still holds `count` puzzles, but one style ends up short and
+    // organic oversized, permanently, because the interleave below groups by
+    // the (truthful) tag. Rare at a 4 s budget and silent when it happens, so
+    // reject it here rather than hope. A style that can only ever come back
+    // this way now trips the stall guard above, which is the honest outcome:
+    // the bucket's mix is wrong.
+    if (p.grownWith && p.grownWith !== growStyle) {
+      fallbacks++;
+      continue;
+    }
     if (p.level !== target) continue; // exact level only — no near misses in the pool
     const key = canonicalKey(N, p.region);
     if (seen.has(key)) continue; // a rotation/mirror of a kept puzzle
@@ -161,21 +176,18 @@ function fillBucket(N, difficulty, rng, growStyle, want, puzzles, seen) {
     seen.add(key);
     lastKeep = Date.now();
     // The style tag is provenance, not something the game reads: drawLevel
-    // ignores it, verify-levels.mjs uses it to report the actual mix.
-    //
-    // Tag what GREW the board, not what was asked for. `generatePuzzle` puts
-    // fairness above style — when its budget runs out the last-resort loop
-    // grows organic whatever the request was — so tagging `growStyle` would
-    // file those boards under a style that never touched them, and the "even
-    // split per bucket" verify-levels reports would be measuring the request
-    // rather than the pool. Rare at these budgets, and silent when it happens.
+    // ignores it, verify-levels.mjs uses it to check the actual mix. It records
+    // what GREW the board, which after the rejection above is necessarily the
+    // style that was asked for — `?? growStyle` only covers an older generator
+    // that does not report `grownWith` at all.
     puzzles.push({ ...encodePuzzle(N, p.region, p.solution), t: p.grownWith ?? growStyle });
 
     const nowMs = Date.now();
     if (nowMs - lastLog > 5000 || puzzles.length === goal) {
       console.log(
         `  ${N}-${difficulty} [${growStyle}]: ${puzzles.length}/${count} ` +
-          `(${attempts} generator runs, ${((nowMs - start) / 1000).toFixed(1)}s)`
+          `(${attempts} generator runs, ${((nowMs - start) / 1000).toFixed(1)}s` +
+          `${fallbacks ? `, ${fallbacks} off-style rejected` : ''})`
       );
       lastLog = nowMs;
     }
