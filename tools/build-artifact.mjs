@@ -31,8 +31,8 @@ const style = styleIdx >= 0 ? argv[styleIdx + 1] : 'mixed';
 // The experimental styles (docs/board-styles.md) can be trialled too — that is
 // step 7 of the evaluation recipe, and the only step a number cannot do. They
 // have no pools by design, which is handled below.
-const EXPERIMENTAL = ['quilt', 'voronoi', 'frame'];
-const SHIPPED = ['organic', 'blocky', 'strips'];
+const EXPERIMENTAL = ['quilt', 'voronoi'];
+const SHIPPED = ['organic', 'blocky', 'strips', 'frame'];
 if (![...SHIPPED, ...EXPERIMENTAL, 'mixed'].includes(style)) {
   console.error(`--style must be one of: ${[...SHIPPED, ...EXPERIMENTAL, 'mixed'].join(', ')}`);
   process.exit(1);
@@ -110,11 +110,8 @@ if (Object.keys(pools).length === 0 && SHIPPED.includes(style)) {
 // the style is slow enough to be felt.
 if (EXPERIMENTAL.includes(style)) {
   console.warn(
-    `note: '${style}' is experimental and has no pools — every board is generated
-` +
-      `live. Check docs/board-styles.md for the sizes where that is fast enough
-` +
-      `(for 'frame': comfortable to N=10, slow at 11, unusable from 12).`
+    `note: '${style}' is experimental and has no pools, so every board is ` +
+      `generated live. docs/board-styles.md has the sizes where that is fast enough.`
   );
 }
 if (Object.keys(pools).length === 0) {

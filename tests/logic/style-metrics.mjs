@@ -18,8 +18,10 @@
 //      They are wide enough to survive noise and narrow enough that swapping two
 //      styles' growers, or routing one through the wrong repair, fails here.
 //
-// It deliberately does NOT pin the experimental styles' numbers. They exist to
-// be re-measured, not preserved — see the doc's "Kandidaten" section.
+// It deliberately does NOT pin the two remaining experimental styles' numbers
+// (`quilt`, `voronoi`). They exist to be re-measured, not preserved — see the
+// doc's "Kandidaten" section. `frame` left that group once it shipped, so it is
+// held to a band like every other drawn style.
 import { generatePuzzle } from '../../js/generator.js';
 import { countSolutions, difficultyLevel } from '../../js/solver.js';
 import { boardShape, signatureDistance, gini, borderStraightness } from '../../tools/lib/board-metrics.mjs';
@@ -162,6 +164,12 @@ const BANDS_BY_STYLE = {
   organic: { maxShare: [0.15, 0.32], stripShare: [0.0, 0.2], edgeBound: [0.75, 1.0], bboxFill: [0.58, 0.8] },
   blocky: { maxShare: [0.26, 0.5], stripShare: [0.1, 0.45], edgeBound: [0.7, 1.0], bboxFill: [0.65, 0.88] },
   strips: { maxShare: [0.5, 0.82], stripShare: [0.75, 1.0], edgeBound: [0.4, 0.85], bboxFill: [0.86, 1.0] },
+  // frame's band on edgeBound is the tight one and deliberately so: it is the
+  // axis the style exists for, it does not overlap organic's or blocky's, and
+  // the two details that produce it (claim the whole ring before the area
+  // budget; reject a placement with more ring queens than outer regions) are
+  // both easy to lose in a refactor without anything else noticing.
+  frame: { maxShare: [0.15, 0.35], stripShare: [0.0, 0.3], edgeBound: [0.3, 0.6], bboxFill: [0.58, 0.82] },
 };
 const SAMPLE = 14;
 
@@ -224,6 +232,7 @@ for (const [style, bands] of Object.entries(BANDS_BY_STYLE)) {
   const org = meanOf('organic');
   const blk = meanOf('blocky');
   const str = meanOf('strips');
+  const frm = meanOf('frame');
   check(
     signatureDistance(str, org) > 1 && signatureDistance(str, blk) > 1,
     `strips is a different construction from both (organic ${signatureDistance(str, org).toFixed(2)}, blocky ${signatureDistance(str, blk).toFixed(2)})`
@@ -231,6 +240,16 @@ for (const [style, bands] of Object.entries(BANDS_BY_STYLE)) {
   check(
     signatureDistance(org, blk) < 1,
     `organic and blocky remain variants of one look (${signatureDistance(org, blk).toFixed(2)})`
+  );
+  // frame earns its place in the mix by being a VARIANT — far enough from the
+  // others to be recognisable, near enough that it is not a third family. If it
+  // ever collapses under 0.3 it has stopped adding a look and is just costing
+  // generation time.
+  const dOrg = signatureDistance(frm, org);
+  const dBlk = signatureDistance(frm, blk);
+  check(
+    Math.min(dOrg, dBlk) > 0.3,
+    `frame stays visibly apart from the older styles (organic ${dOrg.toFixed(2)}, blocky ${dBlk.toFixed(2)})`
   );
 }
 

@@ -198,14 +198,19 @@ gerechtfertigt wurde (0,15 % bei blocky, 0 % bei organic). Für Screenshot D:
 blocky. Ein neuer Grower ist damit gerechtfertigt, ein Knopf an `growRegions`
 nicht.
 
-## Die Kandidaten (Stand: bewertet, nicht ausgeliefert)
+## Die Bewertungsrunde
 
-Drei neue Konstruktionen, bewusst in drei verschiedene Richtungen gezielt.
-Alle drei sind über `generatePuzzle(N, d, { style })` erreichbar und laufen
-durch die echte Reparatur und die echte Bewertung — ein Stil, den nur ein
-Skript erzeugt hat, ist nicht bewertet. **Keiner ist verdrahtet**: `mixFor` und
-`randomStyle()` ziehen sie nicht, es wird kein Pool aus ihnen gebaut, kein
-Spieler sieht sie.
+Drei neue Konstruktionen, bewusst in drei verschiedene Richtungen gezielt. Alle
+drei sind über `generatePuzzle(N, d, { style })` erreichbar und laufen durch die
+echte Reparatur und die echte Bewertung — ein Stil, den nur ein Skript erzeugt
+hat, ist nicht bewertet.
+
+**Ergebnis: einer trägt.** `frame` wird ausgeliefert (siehe unten, samt seiner
+Größengrenze), `quilt` und `voronoi` nicht. Die beiden abgelehnten bleiben im
+Repo: sie sind die durchgerechneten Beispiele, an denen die Verschleißregel
+oben hängt, und sie scheitern auf **entgegengesetzte** Weise — was sich lohnt zu
+merken, weil die Gegenmittel entgegengesetzt sind.
+
 
 ### `quilt` — rekursive Guillotine-Schnitte ❌ abgelehnt
 
@@ -258,7 +263,7 @@ ausgelieferten Stilen entfernt, also bereits innerhalb des Bandes „gleicher
 Look". Eine formerhaltende Reparatur würde hier nichts retten, weil es nichts
 zu retten gibt.
 
-### `frame` — Rand außen, Kleinkram eingeschlossen ✅ trägt
+### `frame` — Rand außen, Kleinkram eingeschlossen ✅ **ausgeliefert**
 
 Der Look von Screenshot D. Die `round(N/2,5)` Regionen, deren Dame dem Rand am
 nächsten sitzt, werden zu „Außenregionen": sie beanspruchen zuerst freie
@@ -320,9 +325,33 @@ Fehler des Growers.
 Bis N = 10 ist `frame` schneller als organic, ab N = 11 dreht sich das, und ab
 N = 12 liefert es innerhalb eines vernünftigen Budgets gar nichts mehr. Das ist
 dieselbe Wand, an der organic steht, und der Grund, warum `stylesFor` /
-`mixFor` Größen ab 13 ohnehin auf `strips` festnageln. Ausliefern hieße also:
-`frame` in die Mischung für **N ≤ 10** — genau der Bereich, in dem heute
-organic und blocky gemischt werden.
+`mixFor` Größen ab 13 ohnehin auf `strips` festnageln.
+
+**Ausgeliefert wird es deshalb für N ≤ 10** — genau der Bereich, in dem heute
+organic und blocky gemischt werden. `FRAME_MAX_SIZE` in `js/main.js`,
+`FRAME_MAX_FROM` in `tools/generate-levels.mjs`; `tests/logic/frame-style.mjs`
+liest beide aus den Quellen und schlägt an, wenn sie auseinanderlaufen.
+
+**Easy hört eine Größe früher auf (N ≤ 9), aus einem anderen Grund.** Nicht die
+Reparatur, sondern die Verfügbarkeit: easy *ist* die erzwungene
+Naked-Single-Eröffnung, und die großen Außenregionen lassen davon wenig übrig.
+Gemessen, ein easy-Brett:
+
+| N | easy-Bretter in 90 s | pro Brett |
+|---|----------------------|-----------|
+| 8 | 3677 | < 25 ms |
+| 9 | 45 | ~2 s |
+| 10 | **2** | ~47 s |
+
+Bei N = 10 wäre das zu langsam, um einen Pool-Bucket zu füllen — deshalb fällt
+`frame` dort aus dem easy-Mix. Das ist dieselbe Art von Aussage wie „strips hat
+überhaupt keine easy-Bretter", nur eine Stufe milder: eine Kostengrenze, keine
+Unmöglichkeit.
+
+Damit so etwas nicht wieder still passiert, gibt `fillBucket` in
+`generate-levels.mjs` jetzt **laut auf**: wird zehn Minuten lang kein Brett
+behalten, bricht der Build mit einem Hinweis auf `mixFor` ab, statt ewig
+weiterzuzählen und dabei beschäftigt auszusehen.
 
 Wichtig dabei: die Konstruktion selbst hält bei jeder Größe durch — der
 Rohwuchs liefert `edgeBound` 0,38 – 0,43 und 44 – 51 % D-Look auch bei N = 12
@@ -330,11 +359,14 @@ und N = 14. Was ab N = 11 versagt, ist nicht das Wachstum, sondern die
 **Eindeutigkeitsreparatur**, die auf einem Brett mit vielen eingeschlossenen
 Kleinregionen zu lange braucht.
 
-**Offen, bevor das ausgeliefert werden könnte:** der Technikmix ist von organic
+**Zwei bewusst in Kauf genommene Punkte:** der Technikmix ist von organic
 praktisch nicht zu unterscheiden (naked 50 % / conf 28 % / dead 18 %), es ist
-also rein eine Optik-Erweiterung; und `ones` liegt auf hard mit 0,45 (7×7) bzw.
-0,71 (8×8) über organic (0,26 / 0,41) — etwas mehr geschenkte Damen, als dort
-bisher üblich ist. Beides sind Entscheidungen, keine Fehler.
+also rein eine Optik-Erweiterung und macht kein Brett schwerer oder leichter;
+und `ones` liegt auf hard mit 0,45 (7×7) bzw. 0,71 (8×8) über organic
+(0,26 / 0,41) — etwas mehr geschenkte Damen, als dort bisher üblich war. Falls
+sich hard dadurch je zu großzügig anfühlt, ist der erste Knopf `frame` aus den
+hard-Buckets zu nehmen, nicht an `growRegionsFrame` zu drehen — dieselbe
+Reihenfolge wie bei blocky auf easy.
 
 ## Die Messfalle: Stichproben, die den falschen Stil enthalten
 
@@ -418,6 +450,27 @@ Reihenfolge ist bewusst so: die billigen Ausschlusskriterien zuerst.
 7. **Auf dem Handy ansehen.** Einzelstil-Bundle bauen und veröffentlichen
    (CLAUDE.md, „Testing a branch on mobile"). Alles darüber ist eine Zahl; das
    hier ist das Spiel.
-8. **Erst dann verdrahten**: `stylesFor` / `mixFor`, Pools neu bauen
-   (`tools/generate-levels.mjs`, dann `tools/verify-levels.mjs`), Bänder in
-   `tests/logic/style-metrics.mjs` eintragen und dieses Dokument nachziehen.
+8. **Erst dann verdrahten.** Die Liste ist länger, als sie aussieht — beim
+   Ausliefern von `frame` waren es acht Stellen:
+   - `stylesFor` in `js/main.js` und `mixFor` in `tools/generate-levels.mjs`
+     (dieselbe Regel, zwei Dateien — und ein Test, der prüft, dass sie
+     übereinstimmen);
+   - der Grower raus aus `EXPERIMENTAL_GROWERS`;
+   - `SHIPPED_STYLES` in `tools/verify-levels.mjs`, sonst weist der Verifier
+     den neuen Stil-Tag ab (er hat genau das getan — die Liste ist bewusst
+     eine Bremse);
+   - `SHIPPED` in `tools/build-artifact.mjs` und `SHIPPED_STYLES` in
+     `tools/compare-styles.mjs`;
+   - ein eigener Stil-Test (`tests/logic/<stil>-style.mjs`) für die
+     Invarianten **und** für das eine Merkmal, das der Stil *ist*;
+   - Bänder in `tests/logic/style-metrics.mjs`;
+   - Pools neu bauen (`tools/generate-levels.mjs --style mixed` je betroffenem
+     Bucket, dann `tools/verify-levels.mjs`) — nur die Buckets, deren Mischung
+     sich wirklich ändert;
+   - CLAUDE.md und dieses Dokument nachziehen.
+
+   Und **eine Größengrenze ist eine eigene Messung**, keine Ableitung aus der
+   Schwierigkeit: `frame` hört auf medium/hard bei 10 auf, auf easy schon bei 9,
+   und die zwei Zahlen haben verschiedene Ursachen (Reparaturkosten vs.
+   Verfügbarkeit der Eröffnung). Wer nur eine davon misst, baut einen
+   Pool-Build, der nie fertig wird.

@@ -48,6 +48,17 @@ before re-deriving how to drive things:
   for `easy` comes back honestly rated one level up rather than mislabelled. Run
   it after touching `growRegionsStrips` / `makeUniqueStrips` in `generator.js`.
   It shares its board checks with `blocky-style.mjs` via `tests/logic/lib/board-checks.mjs`.
+- `tests/logic/frame-style.mjs` — the `frame` style, the newest shipped one: the
+  usual invariants (unique, contiguous, rated below level 3, hint-solvable) plus
+  the two things specific to it. First the look — asserted on the sample's **mean
+  `edgeBound`** rather than per board, because the signature is a per-board
+  yes/no that a single board may legitimately miss (hit rates run 30–99 %), while
+  the mean must stay nowhere near organic's 0.86–0.90. Second, that
+  `FRAME_MAX_SIZE` / `FRAME_MAX_EASY_SIZE` in `main.js` still equal
+  `FRAME_MAX_FROM` / `FRAME_MAX_EASY_FROM` in `generate-levels.mjs` — it reads
+  both out of the sources rather than restating them, since the whole point is
+  that live generation and the pool builder agree. It also fails a board whose
+  `grownWith` isn't `frame`, so a fallback board can't be mistaken for the style.
 - `tests/logic/style-metrics.mjs` — the board-shape yardstick behind
   `docs/board-styles.md`: that each metric scores what its definition promises
   (hand-built boards with a known shape — a rectangular partition must read
@@ -340,6 +351,17 @@ independent. `generatePuzzle(N, difficulty, { style })` takes:
   **segment through each queen** and hands everything left over to one background
   region. See "The strips style" below; it is different enough in construction
   that it needs its own uniqueness repair.
+- **`frame`** — `growRegionsFrame`, which hands the board's **outer ring** to a
+  few regions and lets the rest sit landlocked in the middle (screenshot D). It
+  inverts blocky's idea of dominance: not one background, but three or four
+  peripheral colours with a hierarchy of small ones inside. Two details make the
+  look and both are easy to lose — the outer regions claim the **whole ring
+  before** the area budget applies, and a placement with more queens on the ring
+  than outer regions is **rejected** so `generatePuzzle` draws another. Drop
+  either and the boards stay valid, unique and contiguous while quietly ceasing
+  to look like anything (`edgeBound` drifts 0.43 → 0.54 and the hit rate falls
+  from ~90 % to 15 %). Unlike the others it carries a **size ceiling**: drawn up
+  to 10, and only to 9 on easy — see "Mixing the styles".
 
 Measured against boards from another Queens app (transcribed in
 `tools/lib/references.mjs` as `REFERENCE`), `blocky` matches screenshots A and B
@@ -379,17 +401,18 @@ a candidate. Three things in it are load-bearing and easy to skip:
   edgeBound 0.85 for a construction whose raw growth delivers 0.42; it was
   almost entirely organic boards under the wrong name.
 
-`quilt`, `voronoi` and `frame` are **evaluated but not shipped**: reachable via
+`quilt` and `voronoi` are **evaluated but not shipped**: reachable via
 `generatePuzzle(N, d, { style })` and listed in `EXPERIMENTAL_GROWERS`, but
-`mixFor` / `randomStyle()` never draw them and no pool is built from them. Only
-`frame` (the screenshot-D look) survived evaluation, and only up to **N = 10** —
-at 11 it costs 20 s per board against organic's 4 s, and at 12 it delivers
-nothing at all. That is the same wall organic hits, and the reason sizes from 13
-are pinned to `strips` already. The other two are kept as the worked examples
-behind the erosion rule: `quilt` was distinct and lost it to the repair (81% of
-its distance gone), `voronoi` was never distinct to begin with (0.32 raw).
-`growStyleRaw` is the tooling hook that hands back a grower's output before the
-repair touches it — the game never calls it.
+`mixFor` / `randomStyle()` never draw them and no pool is built from them. They
+are kept as the worked examples behind the erosion rule, and the two ways a
+candidate fails are worth remembering because they need opposite fixes: `quilt`
+**was** distinct and lost it to `makeUnique` (1.66 raw → 0.31 finished, 81 %
+gone), so only a shape-preserving repair like `makeUniqueStrips` could rescue
+it; `voronoi` was **never** distinct (0.32 even raw), so no repair would help.
+`frame` came out of the same round and passed, so it left that group and is
+drawn by the game — see "Region-growth styles" above for the look and "Mixing
+the styles" for its size ceiling. `growStyleRaw` is the tooling hook that hands
+back a grower's output before the repair touches it — the game never calls it.
 
 **The style does not make a board easier.** All three reference boards rate
 *hard* (level 2, naked-single reach 0) under our own solver, and blocky boards
@@ -483,11 +506,32 @@ pool file serves every look. That is deliberately *not* a coin flip per game —
 session alternates instead of dealing five of one look in a row. Nothing in
 `js/levels.js` changed for this: a mixed pool is just a pool.
 
-`mixFor` has exactly two exceptions, both facts about the styles rather than
-preferences: **easy** is organic + blocky (strips has no easy boards), and from
-**size 13** up it is strips alone (nothing else finishes in a sane time).
+`mixFor` has three exceptions, all facts about the styles rather than
+preferences: **easy** has no strips (strips has no easy boards), from **size 13**
+up it is strips alone (nothing else finishes in a sane time), and **`frame` stops
+at size 10 — 9 on easy**.
 
-Each mixed entry carries a `"t": "organic" | "blocky" | "strips"` tag. It is
+That last ceiling is a *cost* ceiling, not a shape one, and the distinction
+matters if you ever want to raise it. The construction keeps delivering the look
+at every size (raw growth gives `edgeBound` 0.38–0.43 even at 14×14); what gives
+out is the **uniqueness repair** on a board full of landlocked small regions.
+Measured per accepted hard board: 11 ms at 8, 1.0 s at 10, 15 s at 11, nothing
+inside a sane budget from 12. Easy stops a size earlier again for a different
+reason — easy *is* the forced naked-single opening and frame's big outer regions
+leave few of them, so an easy board costs ~2 s at 9×9 but ~47 s at 10×10 (2
+boards in 94 s), far too slow to fill a bucket. The constants are
+`FRAME_MAX_SIZE` / `FRAME_MAX_EASY_SIZE` in `main.js` and `FRAME_MAX_FROM` /
+`FRAME_MAX_EASY_FROM` in `generate-levels.mjs`; `tests/logic/frame-style.mjs`
+reads both out of the sources and fails if they drift apart.
+
+**The pool builder now gives up loudly rather than spinning.** A style that
+cannot produce its share of a bucket used to loop forever, printing the same
+count — the build looks busy rather than stuck. With a fourth style whose
+viability depends on size that stopped being hypothetical, so `fillBucket` exits
+non-zero when nothing has been kept for ten minutes and says to fix `mixFor`
+rather than wait it out.
+
+Each mixed entry carries a `"t": "organic" | "blocky" | "strips" | "frame"` tag. It is
 **provenance only** — `decodePuzzle` ignores unknown fields and the game never
 reads it; `verify-levels.mjs` uses it to print the real split per bucket, so the
 even split is checked rather than claimed. Untagged pools stay valid (format `v`

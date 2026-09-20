@@ -385,6 +385,21 @@ strips has no easy boards by construction. Both files share their board checks
 via `lib/board-checks.mjs`; `hint-solve.mjs` keeps its own drive loop on purpose
 (it is the CI smoke test and is written to read as "this is what a player does").
 
+`frame-style.mjs` is the third of the per-style tests, for the newest shipped
+style (`../CLAUDE.md` → "Region-growth styles"). Same invariants as its two
+siblings, plus two things only it can check. The look is asserted on the
+**sample's mean `edgeBound`**, not per board: the frame signature is a per-board
+yes/no that any single board may legitimately miss (measured hit rates run
+30–99 % depending on size and difficulty), so a per-board assertion would flap,
+while the mean has to stay nowhere near organic's 0.86–0.90. And the size rule —
+`frame` is drawn up to size 10, up to 9 on easy — is checked by reading the
+constants out of `js/main.js` **and** `tools/generate-levels.mjs` and comparing
+them, because the regression to fear is those two drifting apart: live
+generation would then offer a style the pools don't carry, or the pool builder
+would sit forever on a bucket the style cannot fill. It also rejects a board
+whose `grownWith` isn't `frame`, so a fallback board can never be mistaken for
+the style under test.
+
 `style-metrics.mjs` tests the *yardstick* rather than a style: the metric suite
 in `tools/lib/board-metrics.mjs` that `../docs/board-styles.md` uses to argue
 "this look is new" with numbers instead of screenshots. Three layers. First, the

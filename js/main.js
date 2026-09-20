@@ -240,6 +240,14 @@ const HARD_ONLY_SIZE = 12;
 // 13x13: strips ~0.3 s, organic ~12 s.
 const STRIPS_ONLY_SIZE = 13;
 
+// Up to here 'frame' is drawn too (the screenshot-D look: a few regions own the
+// outer ring, the rest sit landlocked in the middle). Above it the uniqueness
+// repair stops finishing in a usable time — see stylesFor below for the numbers
+// and docs/board-styles.md for how the style was evaluated. Keep these in step
+// with FRAME_MAX_* in tools/generate-levels.mjs, which splits the pools.
+const FRAME_MAX_SIZE = 10;
+const FRAME_MAX_EASY_SIZE = 9;
+
 // Below this rendered cell size a board is cramped enough to be worth saying so.
 // It is a HINT, never a limit: which board is too small is a question about the
 // player's eyes, their thumbs and whether they zoom, and none of those are
@@ -474,14 +482,24 @@ function freshWorker() {
 // misses the pool would always come back in one fixed look, which is exactly the
 // moment a player would notice the inconsistency.
 //
-// The two exceptions are properties of the styles, not preferences (see
+// The exceptions are properties of the styles, not preferences (see
 // js/generator.js and tools/generate-levels.mjs, which splits the pools the same
 // way): 'strips' has no easy boards at all, and above size 12 it is the only
 // style that produces a board inside a playable budget at all.
+//
+// 'frame' has a ceiling of its own, and it is a cost ceiling rather than a
+// shape one — the construction still delivers the look at every size, measured
+// per accepted hard board: 11 ms at 8, 1.0 s at 10, 15 s at 11, and nothing
+// inside a sane budget from 12. What gives out is the uniqueness repair on a
+// board full of landlocked small regions, not the growth. EASY stops a size
+// earlier again, because easy needs the forced naked-single opening and frame's
+// big outer regions produce few of them: 2 s per easy board at 9, but ~47 s at
+// 10 (2 boards in 94 s), which is too slow to fill a pool bucket.
 function stylesFor(N, difficulty) {
   if (N >= STRIPS_ONLY_SIZE) return ['strips'];
-  if (difficulty === 'easy') return ['organic', 'blocky'];
-  return ['organic', 'blocky', 'strips'];
+  const pool = difficulty === 'easy' ? ['organic', 'blocky'] : ['organic', 'blocky', 'strips'];
+  if (N <= (difficulty === 'easy' ? FRAME_MAX_EASY_SIZE : FRAME_MAX_SIZE)) pool.push('frame');
+  return pool;
 }
 function randomStyle(N, difficulty) {
   const pool = stylesFor(N, difficulty);

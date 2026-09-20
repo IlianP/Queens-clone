@@ -477,23 +477,27 @@ function makeUniqueStrips(N, region, S1, background, rng, deadline) {
 }
 
 // ---------------------------------------------------------------------------
-// Three EXPERIMENTAL region-growth styles. They exist to be measured against
-// the three shipped ones (see docs/board-styles.md and tools/style-lab.mjs);
-// nothing in the game asks for them — `mixFor` / `randomStyle` do not draw them
-// and no pool is built from them. Keeping them here rather than in a scratch
-// file is deliberate: a style that cannot be produced by the real generator,
-// repaired by the real uniqueness repair and rated by the real solver has not
-// actually been evaluated.
+// Three region-growth styles that were built as CANDIDATES and measured against
+// the shipped ones under docs/board-styles.md. Each attacks the partition from a
+// different direction, chosen to land in a part of the shape space the older
+// styles leave empty:
 //
-// Each one attacks the partition from a different direction, chosen to land in
-// a part of the shape space the shipped styles leave empty:
+//   frame   — let a few regions own the outer ring and reach inward, leaving the
+//             rest landlocked in the middle. The screenshot-D look. PASSED, and
+//             is now drawn by the game for sizes up to 10.
 //   quilt   — DIVIDE the board (recursive guillotine cuts) instead of growing
-//             it. The rectangularity extreme.
-//   voronoi — grow by DISTANCE from the queen rather than at random, so the
-//             fronts stay smooth and the areas come out even. The equality
-//             extreme, opposite strips.
-//   frame   — let a few regions own the outer ring and reach inward, leaving
-//             the rest landlocked in the middle. The screenshot-D look.
+//             it. The rectangularity extreme. Rejected: its raw output is a
+//             perfect rectangular partition and `makeUnique` eats 81% of that
+//             distinctiveness. Fixable only with a shape-preserving repair.
+//   voronoi — grow by DISTANCE from the queen rather than at random. Rejected
+//             for the opposite reason: even RAW it sits 0.32 from the shipped
+//             styles, so there was never a look to preserve.
+//
+// The two rejected ones stay here on purpose. They are the worked examples the
+// erosion rule in docs/board-styles.md is argued from, and a style that cannot
+// be produced by the real generator, repaired by the real uniqueness repair and
+// rated by the real solver has not actually been evaluated. `mixFor` /
+// `randomStyle` never draw them and no pool is built from them.
 // ---------------------------------------------------------------------------
 
 // 'quilt': recursive guillotine. Cut the board in two along a full-width or
@@ -915,8 +919,8 @@ export function growStyleRaw(N, difficulty, style, rng = Math.random) {
     region = grown && grown.region;
   } else if (style === 'blocky') {
     region = growRegionsBlocky(N, cols, rng, BLOCKY_OPTS[target] ?? BLOCKY_OPTS[1]);
-  } else if (EXPERIMENTAL_GROWERS[style]) {
-    region = EXPERIMENTAL_GROWERS[style](N, cols, rng);
+  } else if (GROWERS[style]) {
+    region = GROWERS[style](N, cols, rng);
   } else {
     region = growRegions(N, cols, rng, target >= 2 ? 0.85 : 0);
   }
@@ -930,8 +934,13 @@ export function growStyleRaw(N, difficulty, style, rng = Math.random) {
 const EXPERIMENTAL_GROWERS = {
   quilt: growRegionsQuilt,
   voronoi: growRegionsVoronoi,
-  frame: growRegionsFrame,
 };
+
+// 'frame' has left that group: it is a shipped style now (see docs/board-styles.md
+// → "frame"). It keeps its own entry rather than joining EXPERIMENTAL_GROWERS
+// because the two things that list means — not drawn by the game, not measured
+// against a band — are both false for it.
+const GROWERS = { ...EXPERIMENTAL_GROWERS, frame: growRegionsFrame };
 
 /**
  * Generate a puzzle.
@@ -943,8 +952,11 @@ const EXPERIMENTAL_GROWERS = {
  *            region, no single-cell freebies above easy)
  *          | 'strips' (N-1 straight one-wide segments plus one background
  *            region — has NO easy boards, see below)
- *          | 'quilt' | 'voronoi' | 'frame' — EXPERIMENTAL, measured but not
- *            shipped: nothing in the game draws them (see the note above
+ *          | 'frame' (a few regions own the outer ring and reach inward, the
+ *            rest landlocked in the middle — the screenshot-D look; drawn for
+ *            sizes up to 10, see stylesFor() in main.js)
+ *          | 'quilt' | 'voronoi' — EXPERIMENTAL, measured but not shipped:
+ *            nothing in the game draws them (see the note above
  *            growRegionsQuilt and docs/board-styles.md). They are reachable
  *            here on purpose, because a style is only evaluated once the real
  *            repair and the real rating have had a go at it.
@@ -965,31 +977,31 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   // and randomStyle() in main.js); asking for easy is not an error, it simply
   // comes back one level up, honestly rated.
   const strips = opts.style === 'strips';
-  const experimental = EXPERIMENTAL_GROWERS[opts.style] || null;
+  const grower = GROWERS[opts.style] || null;
   // Which grower actually produced the board comes back on the result as
   // `grownWith`. It matches opts.style everywhere except the last-resort loop
   // at the very bottom, which switches to organic on purpose.
-  const styleName = blocky || strips || experimental ? opts.style : 'organic';
+  const styleName = blocky || strips || grower ? opts.style : 'organic';
   const blockyOpts = BLOCKY_OPTS[target] ?? BLOCKY_OPTS[1];
-  // Same reasoning as blocky's floor, applied to the two experimental styles
-  // that have no opinion about tiny regions: above easy a one-cell colour is a
-  // free queen. 'frame' is the exception and passes 1, because a landlocked
-  // single IS part of the look it was built to reproduce.
-  const experimentalMinSize = opts.style === 'frame' ? 1 : target <= 0 ? 1 : 2;
+  // Same reasoning as blocky's floor, applied to the growers that have no
+  // opinion about tiny regions: above easy a one-cell colour is a free queen.
+  // 'frame' is the exception and passes 1, because a landlocked single IS part
+  // of the look it reproduces — screenshot D has one.
+  const growerMinSize = opts.style === 'frame' ? 1 : target <= 0 ? 1 : 2;
   const minSize = blocky
     ? blockyOpts.minSize
     : strips
       ? STRIP_MIN_LEN
-      : experimental
-        ? experimentalMinSize
+      : grower
+        ? growerMinSize
         : 1;
   const stripsOpts = { minLen: STRIP_MIN_LEN, coverage: stripCoverage(N), spread: 0.6 };
   // Growth returns the region grid plus, for strips, which id ended up as the
   // background — the repair below needs it, and only that grower decides it.
   const grow = (cols, balanceIn) => {
     if (strips) return growRegionsStrips(N, cols, rng, stripsOpts);
-    const region = experimental
-      ? experimental(N, cols, rng)
+    const region = grower
+      ? grower(N, cols, rng)
       : blocky
         ? growRegionsBlocky(N, cols, rng, blockyOpts)
         : growRegions(N, cols, rng, balanceIn);

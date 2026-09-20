@@ -19,6 +19,11 @@ import { countSolutions, difficultyLevel, logicSolves } from '../js/solver.js';
 import { computeHint } from '../js/hint.js';
 import { decodePuzzle, transformPuzzle, canonicalKey, isValidSolution } from '../js/levels.js';
 
+// The styles a pool entry may be tagged with. An entry tagged with anything else
+// is a bug in the builder, not a new style — this list is what makes adding one
+// a deliberate act rather than something that slips through in a rebuild.
+const SHIPPED_STYLES = ['organic', 'blocky', 'strips', 'frame'];
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const LEVELS_DIR = join(ROOT, 'levels');
 const LEVELS = { easy: 0, medium: 1, hard: 2 };
@@ -142,7 +147,7 @@ for (const file of files) {
     const counts = {};
     for (const t of tags) counts[t] = (counts[t] || 0) + 1;
     for (const t of Object.keys(counts))
-      if (!['organic', 'blocky', 'strips'].includes(t)) fail(`${label}: unknown style tag "${t}"`);
+      if (!SHIPPED_STYLES.includes(t)) fail(`${label}: unknown style tag "${t}"`);
     mix = ` (${Object.entries(counts).map(([t, n]) => `${n} ${t}`).join(', ')})`;
   }
 
