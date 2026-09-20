@@ -570,6 +570,16 @@ happens where the **cap** binds, though — 560→640 is +14 %, more than the 7.
 the extra column costs. On a phone the *viewport* binds, where the same bump is
 only 92vw→94vw, so 13 comes out smaller than 12 and the phone rows fall.)
 
+The hint is the one `.field-hint` in the settings card that is rendered in red
+(`.field-hint.warn` → `--danger-text`), because the card is otherwise a wall of
+grey explanatory hints and this is the only one that has to be *noticed* rather
+than read in passing. `--danger-text` is a second red on purpose: `--danger` is
+tuned to be seen as a shape (a conflict outline, a queen, a status pill) and as
+small text reaches only ~4.2:1 on the panel, under AA — the text variant is
+5.9:1 light / 6.9:1 dark and is redefined per theme, which `--danger` is not.
+Don't collapse them, and don't reach for weight instead: bolding it makes the
+card look like it has two headings.
+
 The pointer is read **live** (`matchMedia('(pointer: coarse)')` per call), not
 cached at boot: it reports the *primary* pointer, so a tablet that just gained a
 trackpad answers with the pointer it has now. A touchscreen laptop driven by its
