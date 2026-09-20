@@ -539,8 +539,8 @@ after the build finished. Match on the output file instead (e.g. `until grep -q
   them: like 12, an easy/medium board that size essentially doesn't exist.
 - **Should we stop someone picking one?** **No.** Every size is pickable on every
   screen. The app measures what a cell would render at and *says so*
-  (`updateSizeHint` → `settings.size.tight`, below `TIGHT_CELL_PX` = 28 px);
-  it does not decide.
+  (`updateSizeHint` → `settings.size.tight`, below the threshold `tightCellLimit`
+  picks for this pointer and size); it does not decide.
 
 That second answer is a deliberate reversal, and the reasoning is worth keeping
 because the first instinct is to cap:
@@ -561,21 +561,84 @@ because the first instinct is to cap:
   the new sizes only. A rule you have to exempt your own shipped defaults from is
   the wrong rule.
 
+#### The threshold follows the pointer, not just the screen
+
+There are **three** figures, and `tightCellLimit(N)` picks one per call. They are
+not one number with exceptions — each answers a different question:
+
+| constant | px | applies to |
+|---|---|---|
+| `TIGHT_CELL_PX` | 28 | a cursor, any size |
+| `TIGHT_CELL_PX_TOUCH` | 32 | touch, up to `HARD_ONLY_SIZE` columns |
+| `TIGHT_CELL_PX_TOUCH_BIG` | 40 | touch, above `HARD_ONLY_SIZE` columns |
+
 `TIGHT_CELL_PX` is 28 because 24 px is the smallest cell this app has ever
 shipped, so the hint fires a little above what the game already asks of people.
-It therefore *also* fires for a few pre-existing small-screen combinations
-(11×11 and up on a 320 px phone). That is intentional: the sentence is true
-there too, and it is a hint, not a limit. Measured, with `.board-xl`:
+It therefore *also* fires for a few pre-existing small-screen combinations. That
+is intentional: the sentence is true there too, and it is a hint, not a limit.
+
+**32 for touch** is the same reasoning applied to the right instrument: a
+fingertip's contact patch stays roughly constant however big the screen is,
+while a cursor is exact, so the measurement that reads comfortable under a mouse
+can be fiddly under a thumb. The visible consequence is that 12×12 — the default
+at the hard-only boundary — now gets hinted on a 390 px phone (29.9 px) where it
+didn't before. Accepted, same as above: it is true there.
+
+**40 above 12 columns on touch** is the one that is *not* about the threshold at
+all, and the distinction is the whole point. It exists because the **measurement**
+is the weak part: `cellPxFor` returns CSS pixels, and how many of those a device
+spreads across its glass is the vendor's density calibration, not a fact about
+the screen. A large Android flagship can report a wider viewport than an iPhone
+of similar physical size, so its 13×13 clears 32 px while the cells sit under
+exactly the same thumb — the reported symptom was the hint staying silent on a
+big phone where 13/14 genuinely play cramped. **No px threshold can detect that,
+because the distortion is in the unit itself**, and there is no browser API for
+physical size to escape to: `devicePixelRatio`, `screen.width` and
+`matchMedia('resolution')` are all defined against this same CSS reference pixel.
+So the only honest answer is a margin — 40 is 32 plus room for ~25 % of that
+drift, and it lands just under the platform touch-target minima (44 pt iOS,
+48 dp Android) while staying below what a tablet renders at these sizes.
+
+**The tablet is the case that must not fire**, and it is what bounds 40 from
+above: 45–49 px there is genuinely roomy, and a hint on it would be the false
+positive that teaches players to ignore the real ones. Don't raise 40 without
+re-checking that row.
+
+Measured, with `.board-xl` — ⚠ hinted under a cursor, ✱ additionally hinted
+under a thumb:
 
 | screen | 12 | 13 | 14 |
 |---|---|---|---|
 | 320×568 | 24.5 px ⚠ | 23.2 px ⚠ | 21.5 px ⚠ |
-| 390×844 | 29.9 px | 28.2 px | 26.2 px ⚠ |
-| 430×932 | 33.0 px | 31.1 px | 28.9 px |
+| 390×844 | 29.9 px ✱ | 28.2 px ✱ | 26.2 px ⚠ |
+| 430×932 | 33.0 px | 31.1 px ✱ | 28.9 px ✱ |
+| 500×980 (big phone) | 38.3 px | 36.2 px ✱ | 33.6 px ✱ |
 | iPad / laptop / desktop | 46.7 px | 49.2 px | 45.7 px |
 
 (13 is *larger* than 12 on a roomy screen: `.board-xl` gives boards above 12
-columns `min(94vw, 78vh, 640px)` instead of `min(92vw, 70vh, 560px)`.)
+columns `min(94vw, 78vh, 640px)` instead of `min(92vw, 70vh, 560px)`. That only
+happens where the **cap** binds, though — 560→640 is +14 %, more than the 7.7 %
+the extra column costs. On a phone the *viewport* binds, where the same bump is
+only 92vw→94vw, so 13 comes out smaller than 12 and the phone rows fall.)
+
+The hint is the one `.field-hint` in the settings card that is rendered in red
+(`.field-hint.warn` → `--danger-text`), because the card is otherwise a wall of
+grey explanatory hints and this is the only one that has to be *noticed* rather
+than read in passing. `--danger-text` is a second red on purpose: `--danger` is
+tuned to be seen as a shape (a conflict outline, a queen, a status pill) and as
+small text reaches only ~4.2:1 on the panel, under AA — the text variant is
+5.9:1 light / 6.9:1 dark and is redefined per theme, which `--danger` is not.
+Don't collapse them, and don't reach for weight instead: bolding it makes the
+card look like it has two headings.
+
+The pointer is read **live** (`matchMedia('(pointer: coarse)')` per call), not
+cached at boot: it reports the *primary* pointer, so a tablet that just gained a
+trackpad answers with the pointer it has now. A touchscreen laptop driven by its
+trackpad reports `fine` and gets 28, which is the right answer for a cursor.
+`tests/browser/board-size-hint.mjs` runs the same 390 px viewport under both
+pointer types for exactly this reason, and asserts the browser really reports
+the pointer each block assumes — without that, a block would silently test the
+other branch and still pass.
 
 Two traps:
 

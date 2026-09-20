@@ -250,7 +250,32 @@ const STRIPS_ONLY_SIZE = 13;
 // has ever shipped is 24px (12x12 on a 320px-wide phone). So the hint fires a
 // little above what the game already asks of people — including, deliberately,
 // for a few pre-existing small-screen combinations. It is true there too.
+// This is the figure for a CURSOR; touch gets the two below.
 const TIGHT_CELL_PX = 28;
+
+// A fingertip is not a mouse pointer. Its contact patch stays roughly the same
+// however big the screen is, while a cursor is exact — so the same measurement
+// that reads comfortable under a mouse can be fiddly under a thumb, and touch
+// compares against a higher figure.
+const TIGHT_CELL_PX_TOUCH = 32;
+
+// Above HARD_ONLY_SIZE columns on touch, the weak part is the MEASUREMENT, not
+// the number it gets compared against. cellPxFor returns CSS pixels, and how
+// many of those a device spreads across its glass is the vendor's density
+// calibration rather than a fact about the screen: a large Android flagship can
+// report a wider viewport than an iPhone of similar physical size, so its 13x13
+// clears 32px while the cells sit under exactly the same thumb. That is the
+// reported case — the hint staying silent on a big phone where 13/14 genuinely
+// play cramped — and no px threshold can detect it, because the distortion is
+// in the unit itself. There is no browser API for physical size: devicePixelRatio,
+// screen.width and matchMedia('resolution') are all defined against this same
+// CSS reference pixel, so the only honest answer is a margin.
+//
+// 40px is TIGHT_CELL_PX_TOUCH plus room for ~25% of that drift, and it lands
+// just under the platform touch-target minima (44pt iOS, 48dp Android) while
+// staying below what a tablet actually renders at these sizes (45-49px, see
+// CLAUDE.md) — a tablet is the case that must NOT fire, and it doesn't.
+const TIGHT_CELL_PX_TOUCH_BIG = 40;
 
 // Put the grid size on the board and pick the box it renders in. Above
 // HARD_ONLY_SIZE columns the cells would otherwise get cramped, so the board
@@ -2604,13 +2629,26 @@ function onLanguageChange() {
 }
 dom.languageSelect.addEventListener('change', onLanguageChange);
 
+// How much room a cell needs depends on what is pointing at it, and above
+// HARD_ONLY_SIZE columns also on how far the measurement itself can be trusted
+// (see the three constants). Read live rather than cached: matchMedia reports
+// the PRIMARY pointer, so a tablet that just gained a trackpad answers with the
+// pointer it has now, and a touchscreen laptop driven by its trackpad reports
+// 'fine' and gets the cursor figure — the right answer for a cursor.
+function tightCellLimit(N) {
+  const touch = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  if (!touch) return TIGHT_CELL_PX;
+  return N > HARD_ONLY_SIZE ? TIGHT_CELL_PX_TOUCH_BIG : TIGHT_CELL_PX_TOUCH;
+}
+
 // Say how small a cell would actually get, but only when that is worth saying.
 // The figure is measured on this screen at this size, so it stays true when the
 // window is resized or the device rotated — which is why the resize listener
 // below exists rather than a one-off reading at boot.
 function updateSizeHint(size) {
-  const px = cellPxFor(Number(size));
-  const tight = px > 0 && px < TIGHT_CELL_PX;
+  const N = Number(size);
+  const px = cellPxFor(N);
+  const tight = px > 0 && px < tightCellLimit(N);
   dom.sizeHint.textContent = tight ? t('settings.size.tight', { px: Math.round(px) }) : '';
   dom.sizeHint.hidden = !tight;
 }

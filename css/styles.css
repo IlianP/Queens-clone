@@ -8,6 +8,13 @@
   --accent: #2b3a67;
   --accent-ink: #ffffff;
   --danger: #e0405e;
+  /* --danger is tuned to be seen as a shape — a conflict outline, a queen, a
+     status pill — where it sits on 3-4px of border or a tinted plate. As small
+     TEXT on the panel it only reaches ~4.2:1, just under AA, so a warning that
+     has to be read rather than spotted uses this deeper red instead (5.9:1).
+     Don't collapse the two: the reason they differ is the contrast, and this
+     one is redefined per theme where --danger is not. */
+  --danger-text: #c0243f;
   --shadow: 0 10px 30px rgba(31, 37, 68, 0.14);
   --cell-line: rgba(31, 37, 68, 0.28);
   --cell-line-strong: #1f2544;
@@ -35,6 +42,8 @@
     --line: #cdd5f5;
     --accent: #6f8bff;
     --accent-ink: #0f1220;
+    /* The deep red goes the wrong way on a dark panel — lighten instead (6.9:1). */
+    --danger-text: #ff8fa0;
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
     --cell-line: rgba(0, 0, 0, 0.3);
     --cell-line-strong: #0f1220;
@@ -49,6 +58,7 @@
   --line: #cdd5f5;
   --accent: #6f8bff;
   --accent-ink: #0f1220;
+  --danger-text: #ff8fa0;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   --cell-line: rgba(0, 0, 0, 0.3);
   --cell-line-strong: #0f1220;
@@ -1391,6 +1401,14 @@ html[data-i18n-ready] .app {
   font-size: 0.82rem;
   font-weight: 400;
   margin-top: 2px;
+}
+/* The settings card is a wall of grey explanatory hints, and the size warning
+   is the one that has to be noticed rather than read in passing — it only
+   appears when it applies, so it is not competing for attention the rest of
+   the time. Colour, not weight: bolding it would make the card look like it
+   has two headings. */
+.field-hint.warn {
+  color: var(--danger-text);
 }
 /* Language picker. A native <select> rather than a segmented control: it stays
    usable when more languages join, and the OS picker is the better touch target
