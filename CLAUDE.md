@@ -48,6 +48,15 @@ before re-deriving how to drive things:
   for `easy` comes back honestly rated one level up rather than mislabelled. Run
   it after touching `growRegionsStrips` / `makeUniqueStrips` in `generator.js`.
   It shares its board checks with `blocky-style.mjs` via `tests/logic/lib/board-checks.mjs`.
+- `tests/logic/style-metrics.mjs` — the board-shape yardstick behind
+  `docs/board-styles.md`: that each metric scores what its definition promises
+  (hand-built boards with a known shape — a rectangular partition must read
+  corners 4.0 and bboxFill 1.0), that the four reference screenshots still parse
+  as unique, hint-solvable puzzles rated what the doc says and still match
+  exactly the signature credited to them, and that each *shipped* style sits in
+  its documented band. The bands are ranges, not fixed numbers — generation is
+  random. It deliberately pins nothing about the experimental styles. Run it
+  after touching any grower, `tools/lib/board-metrics.mjs`, or the references.
 - `tests/logic/leaderboard-period.mjs` — the read half of `leaderboard.js`: that a
   windowed read sends `p_since` and an all-time read does **not**, that
   `created_at` becomes `at` (and its absence reads as undated), and that every
@@ -333,12 +342,42 @@ independent. `generatePuzzle(N, difficulty, { style })` takes:
   that it needs its own uniqueness repair.
 
 Measured against boards from another Queens app (transcribed in
-`tools/compare-styles.mjs` as `REFERENCE`), `blocky` matches screenshots A and B
+`tools/lib/references.mjs` as `REFERENCE`), `blocky` matches screenshots A and B
 closely — outline corners, background share, strip-shaped regions, zero
 single-cell regions — while `organic` essentially never produces it; `strips`
 matches screenshot C, which neither of the others does (see below). Run
 `node tools/compare-styles.mjs` for the numbers, `--show <N> <difficulty>` for
-example boards. `shotLike` is the A/B signature, `stripLike` the C one.
+example boards. `shotLike` is the A/B signature, `stripLike` the C one,
+`frameLike` the D one.
+
+**Before arguing about a new look, read `docs/board-styles.md`.** It is the
+yardstick: nine shape metrics (`tools/lib/board-metrics.mjs`), a fixed-scale
+signature distance with bands (<0.5 same look, 0.5–1.0 variant, >1.0 different
+construction), the play and cost axes, and a step-by-step recipe for evaluating
+a candidate. Three things in it are load-bearing and easy to skip:
+
+- **A predicate belongs on a board, not on a mean.** `shotLike`/`stripLike`/
+  `frameLike` are per-board reads; the CLI reports hit *rates* over a sample,
+  because a style can average just outside a threshold while a third of its
+  boards sit inside it (`frame` does exactly that on hard).
+- **The repair gets the last word.** `--erosion` measures the signature before
+  and after `makeUnique`, and that number is what decides whether a
+  construction can deliver its own look. Raw `quilt` is a perfect rectangular
+  partition (corners exactly 4.00) and comes out of the repair indistinguishable
+  from `blocky`. This is the same wall `strips` hit, which is why
+  `makeUniqueStrips` exists.
+- **Pool hit rates decide construction vs. tuning.** Scan `levels/` with
+  `--pools`: a look an existing style already produces in >5% of boards is a
+  knob, one it produces in <1% needs its own grower. Screenshot D scored 0% of
+  430 organic boards.
+
+`quilt`, `voronoi` and `frame` are **evaluated but not shipped**: reachable via
+`generatePuzzle(N, d, { style })` and listed in `EXPERIMENTAL_GROWERS`, but
+`mixFor` / `randomStyle()` never draw them and no pool is built from them. Only
+`frame` (the screenshot-D look) survived evaluation; the other two are kept as
+the worked examples behind the erosion rule. `growStyleRaw` is the tooling hook
+that hands back a grower's output before the repair touches it — the game never
+calls it.
 
 **The style does not make a board easier.** All three reference boards rate
 *hard* (level 2, naked-single reach 0) under our own solver, and blocky boards
@@ -591,9 +630,13 @@ which `drawLevel` checks before fetching — keep that handshake in sync.
 
 ### Hint data shape
 
-`computeHint` returns `{ kind, title, text, targetCells, reasonCells,
+`computeHint` returns `{ kind, technique, title, text, targetCells, reasonCells,
 lineCells, excludedCells, applyLabel }`. `kind` is one of `place` /
-`eliminate` / `mistake` / `none`. The UI already loops over **all**
+`eliminate` / `mistake` / `none`. `technique` names the deduction that produced
+it (`naked-single` / `confinement` / `dead-end` / `crowding` / `reveal` /
+`mistake` / `solved`) — the UI ignores it, and it exists so tooling can ask
+which deductions a style's geometry actually runs on without branching on a
+translated title, which the i18n rules rightly forbid. The UI already loops over **all**
 `targetCells`, so a single `eliminate` hint may legitimately mark several cells
 at once (e.g. every cell that dead-ends the same unit) — plural copy and the
 apply-label plural are handled in `hint.js`/`elimHint`.

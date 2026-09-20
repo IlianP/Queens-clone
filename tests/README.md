@@ -385,6 +385,28 @@ strips has no easy boards by construction. Both files share their board checks
 via `lib/board-checks.mjs`; `hint-solve.mjs` keeps its own drive loop on purpose
 (it is the CI smoke test and is written to read as "this is what a player does").
 
+`style-metrics.mjs` tests the *yardstick* rather than a style: the metric suite
+in `tools/lib/board-metrics.mjs` that `../docs/board-styles.md` uses to argue
+"this look is new" with numbers instead of screenshots. Three layers. First, the
+metrics against hand-built boards with a known shape — four 2x2 blocks must read
+`corners` exactly 4.0, `bboxFill` exactly 1.0 and `gini` exactly 0; four bands
+must read `stripShare` 1.0. If those drift, every table in the doc is measuring
+something else and every conclusion drawn from it is void, which nothing else
+would notice. Second, the four reference screenshots: still exactly one
+solution, still contiguous, still hint-solvable, still rated what the doc claims,
+and still matching exactly the one signature credited to them — the screenshots
+are transcriptions, so a typo in one is a silently wrong reference for everything
+measured against it. Third, that each *shipped* style still sits in its
+documented band, and that the two separations the doc's argument rests on hold:
+`strips` more than 1.0 from both others (a different construction), `organic` and
+`blocky` under 1.0 from each other (variants of one look).
+
+The bands are deliberately **ranges**, wide enough that random generation doesn't
+flap them and narrow enough that swapping two growers, or routing one through the
+wrong repair, fails here. It pins nothing about the experimental styles
+(`quilt` / `voronoi` / `frame`) on purpose: those exist to be re-measured, not
+preserved. It runs in about a second.
+
 `board-size-hint.mjs` covers the board-size rule: every size is pickable on every
 screen, and the settings say how small a cell would render rather than deciding
 for the player. It checks the slider reaches `MAX_SIZE` on a phone, that the hint

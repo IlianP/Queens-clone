@@ -348,6 +348,7 @@ export function computeHint(N, region, solution, queens, marks) {
     if (solution[r] !== c) {
       return {
         kind: 'mistake',
+        technique: 'mistake',
         title: t('hint.mistake.queen.title'),
         text: t('hint.mistake.queen.text'),
         reasonCells: [],
@@ -386,6 +387,7 @@ export function computeHint(N, region, solution, queens, marks) {
           soleUnit === 'region' ? regionCells[reg] : soleUnit === 'row' ? rowCells(N, r) : colCells(N, c);
         return {
           kind: 'place',
+          technique: 'mistake',
           title: t('hint.markedSolution.place.title'),
           text: t('hint.markedSolution.place.text', { unit: unitWord(soleUnit) }),
           reasonCells: unitCells,
@@ -397,6 +399,7 @@ export function computeHint(N, region, solution, queens, marks) {
       }
       return {
         kind: 'mistake',
+        technique: 'mistake',
         title: t('hint.markedSolution.mistake.title'),
         text: t('hint.markedSolution.mistake.text'),
         reasonCells: [],
@@ -409,24 +412,39 @@ export function computeHint(N, region, solution, queens, marks) {
   }
 
   if (correct.length === N)
-    return { kind: 'none', title: t('hint.solved.title'), text: t('hint.solved.text') };
+    return {
+      kind: 'none',
+      technique: 'solved',
+      title: t('hint.solved.title'),
+      text: t('hint.solved.text'),
+    };
 
-  const simple =
-    findNakedSingle(st, N, regionCells) || findConfinement(st, N, region, regionCells);
-  if (simple) return simple;
+  const naked = findNakedSingle(st, N, regionCells);
+  if (naked) return tagged('naked-single', naked);
+  const confined = findConfinement(st, N, region, regionCells);
+  if (confined) return tagged('confinement', confined);
 
   // Crowding is ranked by set size against the dead-end look-ahead: a k=2 Hall
   // set is read straight off the board and is easier than "try a queen here and
   // see which unit collapses", so it comes first; larger sets (k>=3) are harder
   // to spot and stay after the dead-end step.
   const crowd = findCrowding(st, N, region, regionCells);
-  if (crowd && crowd.k === 2) return crowd.hint;
+  if (crowd && crowd.k === 2) return tagged('crowding', crowd.hint);
 
-  return (
-    findDeadEnd(st, N, region, regionCells) ||
-    (crowd && crowd.hint) ||
-    revealFallback(st, N, region, regionCells, solution)
-  );
+  const dead = findDeadEnd(st, N, region, regionCells);
+  if (dead) return tagged('dead-end', dead);
+  if (crowd) return tagged('crowding', crowd.hint);
+  return tagged('reveal', revealFallback(st, N, region, regionCells, solution));
+}
+
+// Which technique produced a hint, as a stable identifier rather than a
+// translated title. The UI ignores it; it exists so tooling can ask "which
+// deductions does this style's geometry actually run on" (tools/style-lab.mjs,
+// docs/board-styles.md) without branching on a language pack's strings, which
+// the i18n rules forbid for good reason.
+function tagged(technique, hint) {
+  hint.technique = technique;
+  return hint;
 }
 
 // Only reached for a puzzle that isn't solvable by the explainable techniques
