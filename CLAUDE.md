@@ -1186,7 +1186,11 @@ Four things that are load-bearing:
 - **It reads the table directly as `service_role`**, not through `top_scores()` —
   those functions deliberately never return `client_key`, which is exactly what
   the device count needs. That key bypasses RLS and belongs only in the
-  `SUPABASE_SERVICE_KEY` repo secret, never in `js/leaderboard.js`.
+  `SUPABASE_SERVICE_KEY` repo secret, never in `js/leaderboard.js`. Either kind
+  of key works: a new secret key (`sb_secret_…`, preferred — revocable on its
+  own) or the legacy `service_role` JWT. They need **different headers**, and
+  `supabaseHeaders` picks by prefix: a `sb_` key goes in `apikey` only, because
+  it is not a JWT and must never be sent as `Authorization: Bearer`.
   `docs/leaderboard-setup.sql` section 7 grants the read; without it the job
   gets a 401.
 - **Say what the numbers are.** A row exists only for a solved *and submitted*

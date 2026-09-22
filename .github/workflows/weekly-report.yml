@@ -18,8 +18,9 @@ name: Wochenbericht
 # ein Bericht auch wirklich zugestellt wurde: bricht ein Lauf vorher ab, deckt
 # der nächste beide Wochen ab statt eine zu verlieren.
 #
-# EINRICHTUNG: ein einziges Repository-Secret, SUPABASE_SERVICE_KEY (der
-# service_role-Key des Supabase-Projekts). Er umgeht RLS und darf deshalb NIE
+# EINRICHTUNG: ein einziges Repository-Secret, SUPABASE_SERVICE_KEY — ein
+# Secret key (`sb_secret_…`, bevorzugt) oder der Legacy-service_role-Key des
+# Supabase-Projekts; beide funktionieren. Er umgeht RLS und darf deshalb NIE
 # in den Browser — nur hier. Details in docs/weekly-report.md.
 
 on:

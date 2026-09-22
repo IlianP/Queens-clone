@@ -24,6 +24,7 @@ import {
   windowFor, parseStateMarker, renderStateMarker, statsWindowFor, summarizePlay, floorHour,
   fmtDuration, fmtNum, fmtPct, fmtDelta, fmtDate, dayKey, isoWeek,
   readSupabaseUrl, safeText,
+  supabaseHeaders,
 } from '../../tools/weekly-report.mjs';
 
 let failed = false;
@@ -404,6 +405,16 @@ ok(!url.endsWith('/'), 'the read URL carries no trailing slash');
 const nothing = buildReport([], { since: SINCE, until: UNTIL, continued: false });
 ok(!/NaN|undefined/.test(nothing.body), 'an empty database renders without NaN or undefined');
 eq(reportTitle(summarize([], { since: SINCE, until: UNTIL })), leaky.title, 'the title does not depend on the data');
+
+// --- the two kinds of Supabase key ------------------------------------------
+// A new secret key is not a JWT: sent as a Bearer token it would be checked as
+// one and fail. A legacy service_role key is a JWT and needs both headers.
+const secret = supabaseHeaders('sb_secret_abc123');
+eq(secret.apikey, 'sb_secret_abc123', 'a secret key travels in the apikey header');
+ok(!('Authorization' in secret), 'a secret key is never sent as a Bearer token');
+const legacy = supabaseHeaders('eyJhbGciOiJIUzI1NiJ9.x.y');
+eq(legacy.apikey, 'eyJhbGciOiJIUzI1NiJ9.x.y', 'a legacy key travels in the apikey header');
+eq(legacy.Authorization, 'Bearer eyJhbGciOiJIUzI1NiJ9.x.y', 'a legacy JWT key is also sent as Bearer');
 
 if (failed) {
   console.error('\nweekly-report: FAILED');
