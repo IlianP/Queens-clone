@@ -48,6 +48,26 @@ before re-deriving how to drive things:
   for `easy` comes back honestly rated one level up rather than mislabelled. Run
   it after touching `growRegionsStrips` / `makeUniqueStrips` in `generator.js`.
   It shares its board checks with `blocky-style.mjs` via `tests/logic/lib/board-checks.mjs`.
+- `tests/logic/frame-style.mjs` — the `frame` style, the newest shipped one: the
+  usual invariants (unique, contiguous, rated below level 3, hint-solvable) plus
+  the two things specific to it. First the look — asserted on the sample's **mean
+  `edgeBound`** rather than per board, because the signature is a per-board
+  yes/no that a single board may legitimately miss (hit rates run 30–99 %), while
+  the mean must stay nowhere near organic's 0.86–0.90. Second, that
+  `FRAME_MAX_SIZE` / `FRAME_MAX_EASY_SIZE` in `main.js` still equal
+  `FRAME_MAX_FROM` / `FRAME_MAX_EASY_FROM` in `generate-levels.mjs` — it reads
+  both out of the sources rather than restating them, since the whole point is
+  that live generation and the pool builder agree. It also fails a board whose
+  `grownWith` isn't `frame`, so a fallback board can't be mistaken for the style.
+- `tests/logic/style-metrics.mjs` — the board-shape yardstick behind
+  `docs/board-styles.md`: that each metric scores what its definition promises
+  (hand-built boards with a known shape — a rectangular partition must read
+  corners 4.0 and bboxFill 1.0), that the four reference screenshots still parse
+  as unique, hint-solvable puzzles rated what the doc says and still match
+  exactly the signature credited to them, and that each *shipped* style sits in
+  its documented band. The bands are ranges, not fixed numbers — generation is
+  random. It deliberately pins nothing about the experimental styles. Run it
+  after touching any grower, `tools/lib/board-metrics.mjs`, or the references.
 - `tests/logic/leaderboard-period.mjs` — the read half of `leaderboard.js`: that a
   windowed read sends `p_since` and an all-time read does **not**, that
   `created_at` becomes `at` (and its absence reads as undated), and that every
@@ -331,14 +351,68 @@ independent. `generatePuzzle(N, difficulty, { style })` takes:
   **segment through each queen** and hands everything left over to one background
   region. See "The strips style" below; it is different enough in construction
   that it needs its own uniqueness repair.
+- **`frame`** — `growRegionsFrame`, which hands the board's **outer ring** to a
+  few regions and lets the rest sit landlocked in the middle (screenshot D). It
+  inverts blocky's idea of dominance: not one background, but three or four
+  peripheral colours with a hierarchy of small ones inside. Two details make the
+  look and both are easy to lose — the outer regions claim the **whole ring
+  before** the area budget applies, and a placement with more queens on the ring
+  than outer regions is **rejected** so `generatePuzzle` draws another. Drop
+  either and the boards stay valid, unique and contiguous while quietly ceasing
+  to look like anything (`edgeBound` drifts 0.43 → 0.54 and the hit rate falls
+  from ~90 % to 15 %). Unlike the others it carries a **size ceiling**: drawn up
+  to 10, and only to 9 on easy — see "Mixing the styles".
 
 Measured against boards from another Queens app (transcribed in
-`tools/compare-styles.mjs` as `REFERENCE`), `blocky` matches screenshots A and B
+`tools/lib/references.mjs` as `REFERENCE`), `blocky` matches screenshots A and B
 closely — outline corners, background share, strip-shaped regions, zero
 single-cell regions — while `organic` essentially never produces it; `strips`
 matches screenshot C, which neither of the others does (see below). Run
 `node tools/compare-styles.mjs` for the numbers, `--show <N> <difficulty>` for
-example boards. `shotLike` is the A/B signature, `stripLike` the C one.
+example boards. `shotLike` is the A/B signature, `stripLike` the C one,
+`frameLike` the D one.
+
+**Before arguing about a new look, read `docs/board-styles.md`.** It is the
+yardstick: nine shape metrics (`tools/lib/board-metrics.mjs`), a fixed-scale
+signature distance with bands (<0.5 same look, 0.5–1.0 variant, >1.0 different
+construction), the play and cost axes, and a step-by-step recipe for evaluating
+a candidate. Three things in it are load-bearing and easy to skip:
+
+- **A predicate belongs on a board, not on a mean.** `shotLike`/`stripLike`/
+  `frameLike` are per-board reads; the CLI reports hit *rates* over a sample,
+  because a style can average just outside a threshold while a third of its
+  boards sit inside it (`frame` does exactly that on hard).
+- **The repair gets the last word.** `--erosion` measures the signature before
+  and after `makeUnique`, and that number is what decides whether a
+  construction can deliver its own look. Raw `quilt` is a perfect rectangular
+  partition (corners exactly 4.00) and comes out of the repair indistinguishable
+  from `blocky`. This is the same wall `strips` hit, which is why
+  `makeUniqueStrips` exists.
+- **Pool hit rates decide construction vs. tuning.** Scan `levels/` with
+  `--pools`: a look an existing style already produces in >5% of boards is a
+  knob, one it produces in <1% needs its own grower. Screenshot D scored 0% of
+  430 organic boards.
+- **A sample can contain the wrong style.** `generatePuzzle` puts fairness above
+  style: when the budget runs out its last-resort loop grows *organic* whatever
+  was asked for, and at N >= 12 with a small budget that path is reached
+  constantly. It therefore returns `grownWith` — the style that actually grew
+  the board — and `sampleStyle` drops those rather than averaging them in,
+  counting them as `offStyle`. The first 12x12 measurement of `frame` reported
+  edgeBound 0.85 for a construction whose raw growth delivers 0.42; it was
+  almost entirely organic boards under the wrong name.
+
+`quilt` and `voronoi` are **evaluated but not shipped**: reachable via
+`generatePuzzle(N, d, { style })` and listed in `EXPERIMENTAL_GROWERS`, but
+`mixFor` / `randomStyle()` never draw them and no pool is built from them. They
+are kept as the worked examples behind the erosion rule, and the two ways a
+candidate fails are worth remembering because they need opposite fixes: `quilt`
+**was** distinct and lost it to `makeUnique` (1.66 raw → 0.31 finished, 81 %
+gone), so only a shape-preserving repair like `makeUniqueStrips` could rescue
+it; `voronoi` was **never** distinct (0.32 even raw), so no repair would help.
+`frame` came out of the same round and passed, so it left that group and is
+drawn by the game — see "Region-growth styles" above for the look and "Mixing
+the styles" for its size ceiling. `growStyleRaw` is the tooling hook that hands
+back a grower's output before the repair touches it — the game never calls it.
 
 **The style does not make a board easier.** All three reference boards rate
 *hard* (level 2, naked-single reach 0) under our own solver, and blocky boards
@@ -432,11 +506,32 @@ pool file serves every look. That is deliberately *not* a coin flip per game —
 session alternates instead of dealing five of one look in a row. Nothing in
 `js/levels.js` changed for this: a mixed pool is just a pool.
 
-`mixFor` has exactly two exceptions, both facts about the styles rather than
-preferences: **easy** is organic + blocky (strips has no easy boards), and from
-**size 13** up it is strips alone (nothing else finishes in a sane time).
+`mixFor` has three exceptions, all facts about the styles rather than
+preferences: **easy** has no strips (strips has no easy boards), from **size 13**
+up it is strips alone (nothing else finishes in a sane time), and **`frame` stops
+at size 10 — 9 on easy**.
 
-Each mixed entry carries a `"t": "organic" | "blocky" | "strips"` tag. It is
+That last ceiling is a *cost* ceiling, not a shape one, and the distinction
+matters if you ever want to raise it. The construction keeps delivering the look
+at every size (raw growth gives `edgeBound` 0.38–0.43 even at 14×14); what gives
+out is the **uniqueness repair** on a board full of landlocked small regions.
+Measured per accepted hard board: 11 ms at 8, 1.0 s at 10, 15 s at 11, nothing
+inside a sane budget from 12. Easy stops a size earlier again for a different
+reason — easy *is* the forced naked-single opening and frame's big outer regions
+leave few of them, so an easy board costs ~2 s at 9×9 but ~47 s at 10×10 (2
+boards in 94 s), far too slow to fill a bucket. The constants are
+`FRAME_MAX_SIZE` / `FRAME_MAX_EASY_SIZE` in `main.js` and `FRAME_MAX_FROM` /
+`FRAME_MAX_EASY_FROM` in `generate-levels.mjs`; `tests/logic/frame-style.mjs`
+reads both out of the sources and fails if they drift apart.
+
+**The pool builder now gives up loudly rather than spinning.** A style that
+cannot produce its share of a bucket used to loop forever, printing the same
+count — the build looks busy rather than stuck. With a fourth style whose
+viability depends on size that stopped being hypothetical, so `fillBucket` exits
+non-zero when nothing has been kept for ten minutes and says to fix `mixFor`
+rather than wait it out.
+
+Each mixed entry carries a `"t": "organic" | "blocky" | "strips" | "frame"` tag. It is
 **provenance only** — `decodePuzzle` ignores unknown fields and the game never
 reads it; `verify-levels.mjs` uses it to print the real split per bucket, so the
 even split is checked rather than claimed. Untagged pools stay valid (format `v`
@@ -654,9 +749,13 @@ which `drawLevel` checks before fetching — keep that handshake in sync.
 
 ### Hint data shape
 
-`computeHint` returns `{ kind, title, text, targetCells, reasonCells,
+`computeHint` returns `{ kind, technique, title, text, targetCells, reasonCells,
 lineCells, excludedCells, applyLabel }`. `kind` is one of `place` /
-`eliminate` / `mistake` / `none`. The UI already loops over **all**
+`eliminate` / `mistake` / `none`. `technique` names the deduction that produced
+it (`naked-single` / `confinement` / `dead-end` / `crowding` / `reveal` /
+`mistake` / `solved`) — the UI ignores it, and it exists so tooling can ask
+which deductions a style's geometry actually runs on without branching on a
+translated title, which the i18n rules rightly forbid. The UI already loops over **all**
 `targetCells`, so a single `eliminate` hint may legitimately mark several cells
 at once (e.g. every cell that dead-ends the same unit) — plural copy and the
 apply-label plural are handled in `hint.js`/`elimHint`.

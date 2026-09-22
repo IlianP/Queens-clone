@@ -28,8 +28,13 @@ const css = read('css/styles.css');
 const argv = process.argv.slice(2);
 const styleIdx = argv.indexOf('--style');
 const style = styleIdx >= 0 ? argv[styleIdx + 1] : 'mixed';
-if (!['organic', 'blocky', 'strips', 'mixed'].includes(style)) {
-  console.error("--style must be 'organic', 'blocky', 'strips' or 'mixed'");
+// The experimental styles (docs/board-styles.md) can be trialled too — that is
+// step 7 of the evaluation recipe, and the only step a number cannot do. They
+// have no pools by design, which is handled below.
+const EXPERIMENTAL = ['quilt', 'voronoi'];
+const SHIPPED = ['organic', 'blocky', 'strips', 'frame'];
+if (![...SHIPPED, ...EXPERIMENTAL, 'mixed'].includes(style)) {
+  console.error(`--style must be one of: ${[...SHIPPED, ...EXPERIMENTAL, 'mixed'].join(', ')}`);
   process.exit(1);
 }
 // 'mixed' is what the app itself does — the shipped pools already hold both
@@ -87,16 +92,27 @@ if (existsSync(levelsDir)) {
     if (m) pools[m[1]] = JSON.parse(readFileSync(join(levelsDir, f), 'utf8'));
   }
 }
-// A single-style build with no matching pools is a mistake, not a fallback: the
+// For a SHIPPED style, no matching pools is a mistake, not a fallback: the
 // bundle would silently generate every board live (slow, and no pool means no
 // difficulty guarantee up front). Say which command produces them and stop.
-if (Object.keys(pools).length === 0 && style !== 'mixed') {
+if (Object.keys(pools).length === 0 && SHIPPED.includes(style)) {
   console.error(
     `no levels/*${POOL_SUFFIX}.json pools found.\n` +
       `Build them first:\n` +
       `  node tools/generate-levels.mjs --style ${style} --out-suffix ${POOL_SUFFIX}`
   );
   process.exit(1);
+}
+// An EXPERIMENTAL style has no pools on purpose — it is not shipped, so there
+// is nothing to build them from, and live generation is what a trial should be
+// exercising anyway (it guarantees every board really is that style rather than
+// a pool entry). Warn about the one thing that actually bites: the sizes where
+// the style is slow enough to be felt.
+if (EXPERIMENTAL.includes(style)) {
+  console.warn(
+    `note: '${style}' is experimental and has no pools, so every board is ` +
+      `generated live. docs/board-styles.md has the sizes where that is fast enough.`
+  );
 }
 if (Object.keys(pools).length === 0) {
   console.warn(

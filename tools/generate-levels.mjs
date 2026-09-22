@@ -51,14 +51,25 @@ const difficultiesFor = (N) => (N >= HARD_ONLY_FROM ? ['hard'] : DIFFICULTIES);
 // all, so it is a fact about the styles, not a shortcut.
 const STRIPS_ONLY_FROM = 13;
 
+// Up to here a mixed bucket also draws 'frame'. Above it the style's uniqueness
+// repair stops finishing in a usable time, and EASY gives out a size earlier
+// again because easy needs the forced naked-single opening that frame's big
+// outer regions rarely leave: ~2 s per easy board at 9 against ~47 s at 10, far
+// too slow to fill a bucket. Keep in step with FRAME_MAX_* in js/main.js, which
+// makes the same choice for live generation.
+const FRAME_MAX_FROM = 10;
+const FRAME_MAX_EASY_FROM = 9;
+
 // Which styles a mixed bucket is filled from. Easy has no strips boards at all
 // (the size floor removes the forced naked-single opening easy IS — see
 // js/generator.js), so an easy bucket stays organic + blocky; everything else
-// gets all three, in as even a split as `count` allows.
+// gets all three, in as even a split as `count` allows. 'frame' joins both up to
+// its own ceilings above.
 function mixFor(N, difficulty) {
   if (N >= STRIPS_ONLY_FROM) return ['strips'];
-  if (difficulty === 'easy') return ['organic', 'blocky'];
-  return ['organic', 'blocky', 'strips'];
+  const pool = difficulty === 'easy' ? ['organic', 'blocky'] : ['organic', 'blocky', 'strips'];
+  if (N <= (difficulty === 'easy' ? FRAME_MAX_EASY_FROM : FRAME_MAX_FROM)) pool.push('frame');
+  return pool;
 }
 
 // ---------- CLI ----------
@@ -74,8 +85,8 @@ const seed = argValue('--seed') ? Number(argValue('--seed')) : (Math.random() * 
 const style = argValue('--style') || 'organic';
 const outSuffix = argValue('--out-suffix') || '';
 
-if (!['organic', 'blocky', 'strips', 'mixed'].includes(style)) {
-  console.error("--style must be 'organic', 'blocky', 'strips' or 'mixed'");
+if (!['organic', 'blocky', 'strips', 'frame', 'mixed'].includes(style)) {
+  console.error("--style must be 'organic', 'blocky', 'strips', 'frame' or 'mixed'");
   process.exit(1);
 }
 
@@ -111,7 +122,7 @@ function fillBucket(N, difficulty, rng, growStyle, want, puzzles, seen) {
   if (growStyle === 'strips' && target === 0) {
     console.error(
       `${N}-${difficulty}: the 'strips' style has no easy boards — build easy with ` +
-        "'organic', 'blocky' or 'mixed'."
+        "'organic', 'blocky', 'strips', 'frame' or 'mixed'."
     );
     process.exit(1);
   }
@@ -119,10 +130,43 @@ function fillBucket(N, difficulty, rng, growStyle, want, puzzles, seen) {
   let attempts = 0;
   let lastLog = start;
   const goal = puzzles.length + want;
+  // A style whose share of a bucket it cannot actually produce would spin here
+  // forever, and the log would just keep printing the same count — the build
+  // looks busy rather than stuck. That stopped being hypothetical once a fourth
+  // style joined the mix with size-dependent viability ('frame' needs ~2 s per
+  // easy board at 9x9 and ~47 s at 10x10, which is why mixFor drops it from easy
+  // there). So give up loudly instead: no board kept for this long means the
+  // bucket's mix is wrong, not that the machine is slow.
+  const STALL_MS = 10 * 60 * 1000;
+  let lastKeep = start;
+  let fallbacks = 0;
 
   while (puzzles.length < goal) {
     attempts++;
+    if (Date.now() - lastKeep > STALL_MS) {
+      console.error(
+        `\n${N}-${difficulty} [${growStyle}]: no board kept in ${STALL_MS / 60000} min ` +
+          `(${attempts} generator runs, ${puzzles.length}/${goal} done).\n` +
+          `That style cannot fill its share of this bucket — fix mixFor() rather ` +
+          `than waiting it out.`
+      );
+      process.exit(1);
+    }
     const p = generatePuzzle(N, difficulty, { budgetMs: 4000, rng, style: growStyle });
+    // A board the requested grower did not produce cannot count towards its
+    // quota. `generatePuzzle` puts fairness above style — when its budget runs
+    // out the last-resort loop grows organic whatever was asked for — and
+    // keeping one here would fill a `frame` slot with an organic board: the
+    // bucket still holds `count` puzzles, but one style ends up short and
+    // organic oversized, permanently, because the interleave below groups by
+    // the (truthful) tag. Rare at a 4 s budget and silent when it happens, so
+    // reject it here rather than hope. A style that can only ever come back
+    // this way now trips the stall guard above, which is the honest outcome:
+    // the bucket's mix is wrong.
+    if (p.grownWith && p.grownWith !== growStyle) {
+      fallbacks++;
+      continue;
+    }
     if (p.level !== target) continue; // exact level only — no near misses in the pool
     const key = canonicalKey(N, p.region);
     if (seen.has(key)) continue; // a rotation/mirror of a kept puzzle
@@ -130,15 +174,20 @@ function fillBucket(N, difficulty, rng, growStyle, want, puzzles, seen) {
     if (countSolutions(N, p.region, 2) !== 1) continue;
     if (difficultyLevel(N, p.region) !== target) continue;
     seen.add(key);
+    lastKeep = Date.now();
     // The style tag is provenance, not something the game reads: drawLevel
-    // ignores it, verify-levels.mjs uses it to report the actual mix.
-    puzzles.push({ ...encodePuzzle(N, p.region, p.solution), t: growStyle });
+    // ignores it, verify-levels.mjs uses it to check the actual mix. It records
+    // what GREW the board, which after the rejection above is necessarily the
+    // style that was asked for — `?? growStyle` only covers an older generator
+    // that does not report `grownWith` at all.
+    puzzles.push({ ...encodePuzzle(N, p.region, p.solution), t: p.grownWith ?? growStyle });
 
     const nowMs = Date.now();
     if (nowMs - lastLog > 5000 || puzzles.length === goal) {
       console.log(
         `  ${N}-${difficulty} [${growStyle}]: ${puzzles.length}/${count} ` +
-          `(${attempts} generator runs, ${((nowMs - start) / 1000).toFixed(1)}s)`
+          `(${attempts} generator runs, ${((nowMs - start) / 1000).toFixed(1)}s` +
+          `${fallbacks ? `, ${fallbacks} off-style rejected` : ''})`
       );
       lastLog = nowMs;
     }

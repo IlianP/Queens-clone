@@ -476,6 +476,277 @@ function makeUniqueStrips(N, region, S1, background, rng, deadline) {
   return !res.aborted && res.count < 2;
 }
 
+// ---------------------------------------------------------------------------
+// Three region-growth styles that were built as CANDIDATES and measured against
+// the shipped ones under docs/board-styles.md. Each attacks the partition from a
+// different direction, chosen to land in a part of the shape space the older
+// styles leave empty:
+//
+//   frame   — let a few regions own the outer ring and reach inward, leaving the
+//             rest landlocked in the middle. The screenshot-D look. PASSED, and
+//             is now drawn by the game for sizes up to 10.
+//   quilt   — DIVIDE the board (recursive guillotine cuts) instead of growing
+//             it. The rectangularity extreme. Rejected: its raw output is a
+//             perfect rectangular partition and `makeUnique` eats 81% of that
+//             distinctiveness. Fixable only with a shape-preserving repair.
+//   voronoi — grow by DISTANCE from the queen rather than at random. Rejected
+//             for the opposite reason: even RAW it sits 0.32 from the shipped
+//             styles, so there was never a look to preserve.
+//
+// The two rejected ones stay here on purpose. They are the worked examples the
+// erosion rule in docs/board-styles.md is argued from, and a style that cannot
+// be produced by the real generator, repaired by the real uniqueness repair and
+// rated by the real solver has not actually been evaluated. `mixFor` /
+// `randomStyle` never draw them and no pool is built from them.
+// ---------------------------------------------------------------------------
+
+// 'quilt': recursive guillotine. Cut the board in two along a full-width or
+// full-height line so that each side keeps at least one queen, and recurse until
+// a piece holds exactly one queen — that piece becomes its colour. Every region
+// is a rectangle by construction, every region holds exactly one queen, and the
+// recursion cannot fail (with two or more queens in a rectangle there is always
+// a valid cut in both orientations, because their rows and their columns are all
+// distinct). So unlike the growers this one needs no retry loop at all.
+//
+// `slack` is how often a cut is chosen at random rather than proportionally to
+// the queens on each side. At 0 the pieces come out area-balanced and dull; the
+// randomness is what produces the mix of big and small panels.
+function growRegionsQuilt(N, cols, rng, { slack = 0.35 } = {}) {
+  const region = Array.from({ length: N }, () => new Array(N).fill(-1));
+
+  const fill = (r0, r1, c0, c1, g) => {
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) region[r][c] = g;
+  };
+
+  // `rows` holds the queen rows inside this rectangle (a queen's column is
+  // cols[r]); after a vertical cut that is a strict subset of r0..r1.
+  const split = (r0, r1, c0, c1, rows) => {
+    if (rows.length === 1) {
+      fill(r0, r1, c0, c1, rows[0]);
+      return;
+    }
+    const h = r1 - r0 + 1;
+    const w = c1 - c0 + 1;
+    const cuts = [];
+    for (let m = r0 + 1; m <= r1; m++) {
+      const a = rows.filter((r) => r < m);
+      if (a.length && a.length < rows.length) cuts.push({ horiz: true, m, a });
+    }
+    for (let m = c0 + 1; m <= c1; m++) {
+      const a = rows.filter((r) => cols[r] < m);
+      if (a.length && a.length < rows.length) cuts.push({ horiz: false, m, a });
+    }
+    // Prefer cutting the longer side, so pieces stay panel-shaped instead of
+    // degenerating into a stack of full-width bands.
+    const longer = h >= w;
+    const preferred = cuts.filter((x) => x.horiz === longer);
+    const pool = preferred.length ? preferred : cuts;
+    let cut;
+    if (rng() < slack) {
+      cut = pool[Math.floor(rng() * pool.length)];
+    } else {
+      // Area in proportion to queens: the piece with a third of the queens
+      // should get about a third of the area. This is what keeps a one-queen
+      // piece from being shaved down to a single free cell.
+      let bestErr = Infinity;
+      for (const x of pool) {
+        const share = x.horiz ? (x.m - r0) / h : (x.m - c0) / w;
+        const err = Math.abs(share - x.a.length / rows.length);
+        if (err < bestErr) {
+          bestErr = err;
+          cut = x;
+        }
+      }
+    }
+    const b = rows.filter((r) => !cut.a.includes(r));
+    if (cut.horiz) {
+      split(r0, cut.m - 1, c0, c1, cut.a);
+      split(cut.m, r1, c0, c1, b);
+    } else {
+      split(r0, r1, c0, cut.m - 1, cut.a);
+      split(r0, r1, cut.m, c1, b);
+    }
+  };
+
+  split(0, N - 1, 0, N - 1, [...Array(N).keys()]);
+  return region;
+}
+
+// 'voronoi': every cell goes to the queen it is closest to, measured as steps
+// through already-claimed ground rather than as the crow flies — a priority
+// flood, so contiguity is guaranteed the same way the other growers get it.
+//
+// The difference to `growRegions` is only the order the frontier is served in,
+// and that is the whole point: growRegions pops a RANDOM frontier cell, which is
+// what makes its borders amoeba-jagged, while serving the nearest cell first
+// keeps each front a smooth ring and the areas close to equal. `jitter` gives
+// each queen a slightly different step cost so the areas are not suspiciously
+// uniform; without it the boards read as a machine-drawn diagram.
+function growRegionsVoronoi(N, cols, rng, { jitter = 0.35 } = {}) {
+  const region = Array.from({ length: N }, () => new Array(N).fill(-1));
+  const weight = Array.from({ length: N }, () => 1 + (rng() * 2 - 1) * jitter);
+  // N*N is at most 196 cells, so a linear scan for the cheapest frontier entry
+  // is faster in practice than maintaining a heap, and much easier to read.
+  const frontier = [];
+  const push = (r, c, g, cost) => {
+    if (r < 0 || r >= N || c < 0 || c >= N || region[r][c] !== -1) return;
+    frontier.push({ r, c, g, cost });
+  };
+  for (let i = 0; i < N; i++) {
+    region[i][cols[i]] = i;
+    for (const [dr, dc] of ORTHO) push(i + dr, cols[i] + dc, i, weight[i]);
+  }
+  let remaining = N * N - N;
+  while (remaining > 0 && frontier.length) {
+    let k = 0;
+    for (let i = 1; i < frontier.length; i++) if (frontier[i].cost < frontier[k].cost) k = i;
+    const f = frontier[k];
+    frontier[k] = frontier[frontier.length - 1];
+    frontier.pop();
+    if (region[f.r][f.c] !== -1) continue;
+    region[f.r][f.c] = f.g;
+    remaining--;
+    for (const [dr, dc] of ORTHO) push(f.r + dr, f.c + dc, f.g, f.cost + weight[f.g]);
+  }
+  return remaining === 0 ? region : null;
+}
+
+// 'frame': a few regions own the outer ring and reach inward; the rest stay
+// landlocked in the middle. This is the shape of the fourth reference
+// screenshot, and the one thing the shipped styles do not produce — measured
+// over the 1860 boards in levels/, NO organic board has it at all (see
+// docs/board-styles.md).
+//
+// `outerCount` regions are chosen by how close their queen already sits to the
+// ring, because a region can only own ring cells it can actually reach. They
+// then grow with two priorities in order: free ring cells first (that is what
+// hands the whole border to a handful of colours), then anything, until they
+// hold `share` of the board. Everything left is flooded from the remaining
+// queens, so the interior colours come out small — including, sometimes, a
+// single-cell one, which the reference screenshot has too.
+function growRegionsFrame(N, cols, rng, { share = 0.62 } = {}) {
+  const region = Array.from({ length: N }, () => new Array(N).fill(-1));
+  for (let i = 0; i < N; i++) region[i][cols[i]] = i;
+  const isRing = (r, c) => r === 0 || c === 0 || r === N - 1 || c === N - 1;
+
+  const outerCount = Math.max(3, Math.min(N - 2, Math.round(N / 2.5)));
+  const byEdge = [...Array(N).keys()]
+    .map((g) => ({ g, d: Math.min(g, cols[g], N - 1 - g, N - 1 - cols[g]), tie: rng() }))
+    .sort((a, b) => a.d - b.d || a.tie - b.tie);
+  // A region whose QUEEN sits on the ring owns a ring cell no matter what the
+  // growth does, so it has to be one of the outer regions — and if more queens
+  // sit on the ring than we want outer regions, this placement simply cannot
+  // produce the look. Rejecting it is cheap: `generatePuzzle` draws a new
+  // placement on the next attempt, and rows 0 and N-1 alone already put two
+  // queens on the ring, so the odds are workable rather than lucky.
+  //
+  // Without this the inner regions kept a foothold on the border and the
+  // finished boards sat at edgeBound ~0.54 against the ~0.43 the construction
+  // aims at — the signature was hit by 15% of boards instead of most of them.
+  const onRing = byEdge.filter((x) => x.d === 0);
+  if (onRing.length > outerCount) return null;
+  // `byEdge` is sorted by distance, so the ring queens ARE the first entries —
+  // the check above is therefore also what guarantees they all end up outer.
+  const outer = new Set(byEdge.slice(0, outerCount).map((x) => x.g));
+
+  const size = new Array(N).fill(1);
+  // A cell holding another region's queen is never claimable.
+  const claimable = (r, c) => region[r][c] === -1;
+
+  // Phase A: the outer regions grow, in two stages. Stage one takes every free
+  // ring cell it can reach and ignores the area budget while doing it — that is
+  // what actually hands the border to a handful of colours. Running both stages
+  // against one budget looks equivalent and is not: the budget ran out while
+  // ring cells were still free, the leftover flood in phase B picked them up,
+  // and the finished boards came out with `edgeBound` around 0.54 instead of the
+  // ~0.43 the construction is aiming at — only 15% of them had the look.
+  // Stage two then grows inward to the share.
+  const budget = Math.round(share * N * N);
+  let claimed = N;
+  let ringOnly = true;
+  for (let guard = 0; guard < N * N * 4; guard++) {
+    if (ringOnly === false && claimed >= budget) break;
+    let best = null;
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        if (!claimable(r, c)) continue;
+        if (ringOnly && !isRing(r, c)) continue;
+        let g = -1;
+        for (const [dr, dc] of ORTHO) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
+          const ng = region[nr][nc];
+          if (ng >= 0 && outer.has(ng) && (g < 0 || size[ng] < size[g])) g = ng;
+        }
+        if (g < 0) continue;
+        // Smallest outer region first, ties by coin toss. Whether a cell is on
+        // the ring is not part of the key: the stage flag above has already
+        // narrowed the candidates to one kind or the other.
+        const key = size[g] + rng();
+        if (!best || key < best.key) best = { r, c, g, key };
+      }
+    if (!best) {
+      if (ringOnly) {
+        // The ring is done (or the rest of it is unreachable). Switch to
+        // growing inward for whatever budget is left.
+        ringOnly = false;
+        continue;
+      }
+      break;
+    }
+    region[best.r][best.c] = best.g;
+    size[best.g]++;
+    claimed++;
+  }
+
+  // Phase B: the inner regions flood the leftovers at random, which is what
+  // keeps their outlines irregular rather than turning the middle into a second
+  // tidy grid.
+  const frontier = [];
+  const addN = (r, c, g) => {
+    for (const [dr, dc] of ORTHO) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr >= 0 && nr < N && nc >= 0 && nc < N && region[nr][nc] === -1)
+        frontier.push({ r: nr, c: nc, g });
+    }
+  };
+  for (let g = 0; g < N; g++) if (!outer.has(g)) addN(g, cols[g], g);
+  while (frontier.length) {
+    const k = Math.floor(rng() * frontier.length);
+    const f = frontier[k];
+    frontier[k] = frontier[frontier.length - 1];
+    frontier.pop();
+    if (region[f.r][f.c] !== -1) continue;
+    region[f.r][f.c] = f.g;
+    addN(f.r, f.c, f.g);
+  }
+
+  // Phase C: anything the inner regions could not reach (the outer ones may have
+  // walled it off) joins a neighbour that already exists, which keeps that
+  // neighbour contiguous. The board is connected, so this always terminates.
+  for (let pass = 0; pass < N * N; pass++) {
+    let left = 0;
+    for (let r = 0; r < N; r++)
+      for (let c = 0; c < N; c++) {
+        if (region[r][c] !== -1) continue;
+        const opts = [];
+        for (const [dr, dc] of ORTHO) {
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr >= 0 && nr < N && nc >= 0 && nc < N && region[nr][nc] >= 0)
+            opts.push(region[nr][nc]);
+        }
+        if (opts.length) region[r][c] = opts[Math.floor(rng() * opts.length)];
+        else left++;
+      }
+    if (!left) break;
+  }
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (region[r][c] === -1) return null;
+  return region;
+}
+
 function sameSolution(a, b, N) {
   for (let r = 0; r < N; r++) if (a[r] !== b[r]) return false;
   return true;
@@ -623,6 +894,55 @@ function stripCoverage(N) {
 }
 
 /**
+ * TOOLING HOOK: the raw region grid a style produces BEFORE `makeUnique` (or
+ * `makeUniqueStrips`) has touched it, together with the placement it was grown
+ * around. The game never calls this — it exists so tools/compare-styles.mjs can
+ * measure how much of a style's intended look SURVIVES the uniqueness repair,
+ * which turned out to be the thing that decides whether a construction is worth
+ * shipping. `strips` needed a repair of its own precisely because none of its
+ * signature survived the generic one; the same measurement is what disqualified
+ * `quilt`.
+ *
+ * @returns {{region:number[][], solution:number[]}|null}
+ */
+export function growStyleRaw(N, difficulty, style, rng = Math.random) {
+  const target = LEVELS[difficulty] ?? 1;
+  const cols = generatePlacement(N, rng);
+  if (!cols) return null;
+  let region = null;
+  if (style === 'strips') {
+    const grown = growRegionsStrips(N, cols, rng, {
+      minLen: STRIP_MIN_LEN,
+      coverage: stripCoverage(N),
+      spread: 0.6,
+    });
+    region = grown && grown.region;
+  } else if (style === 'blocky') {
+    region = growRegionsBlocky(N, cols, rng, BLOCKY_OPTS[target] ?? BLOCKY_OPTS[1]);
+  } else if (GROWERS[style]) {
+    region = GROWERS[style](N, cols, rng);
+  } else {
+    region = growRegions(N, cols, rng, target >= 2 ? 0.85 : 0);
+  }
+  return region ? { region, solution: cols.slice() } : null;
+}
+
+// The experimental styles, by name. They route through the ordinary
+// `makeUnique` repair rather than getting one of their own: how much of a
+// style's signature SURVIVES that repair is itself one of the things being
+// measured (strips needed `makeUniqueStrips` precisely because none of its did).
+const EXPERIMENTAL_GROWERS = {
+  quilt: growRegionsQuilt,
+  voronoi: growRegionsVoronoi,
+};
+
+// 'frame' has left that group: it is a shipped style now (see docs/board-styles.md
+// → "frame"). It keeps its own entry rather than joining EXPERIMENTAL_GROWERS
+// because the two things that list means — not drawn by the game, not measured
+// against a band — are both false for it.
+const GROWERS = { ...EXPERIMENTAL_GROWERS, frame: growRegionsFrame };
+
+/**
  * Generate a puzzle.
  * @param {number} N board size
  * @param {'easy'|'medium'|'hard'} difficulty target difficulty
@@ -632,6 +952,14 @@ function stripCoverage(N) {
  *            region, no single-cell freebies above easy)
  *          | 'strips' (N-1 straight one-wide segments plus one background
  *            region — has NO easy boards, see below)
+ *          | 'frame' (a few regions own the outer ring and reach inward, the
+ *            rest landlocked in the middle — the screenshot-D look; drawn for
+ *            sizes up to 10, see stylesFor() in main.js)
+ *          | 'quilt' | 'voronoi' — EXPERIMENTAL, measured but not shipped:
+ *            nothing in the game draws them (see the note above
+ *            growRegionsQuilt and docs/board-styles.md). They are reachable
+ *            here on purpose, because a style is only evaluated once the real
+ *            repair and the real rating have had a go at it.
  * @returns {{ region:number[][], solution:number[], level:number, attempts:number }}
  */
 export function generatePuzzle(N, difficulty, opts = {}) {
@@ -649,16 +977,34 @@ export function generatePuzzle(N, difficulty, opts = {}) {
   // and randomStyle() in main.js); asking for easy is not an error, it simply
   // comes back one level up, honestly rated.
   const strips = opts.style === 'strips';
+  const grower = GROWERS[opts.style] || null;
+  // Which grower actually produced the board comes back on the result as
+  // `grownWith`. It matches opts.style everywhere except the last-resort loop
+  // at the very bottom, which switches to organic on purpose.
+  const styleName = blocky || strips || grower ? opts.style : 'organic';
   const blockyOpts = BLOCKY_OPTS[target] ?? BLOCKY_OPTS[1];
-  const minSize = blocky ? blockyOpts.minSize : strips ? STRIP_MIN_LEN : 1;
+  // Same reasoning as blocky's floor, applied to the growers that have no
+  // opinion about tiny regions: above easy a one-cell colour is a free queen.
+  // 'frame' is the exception and passes 1, because a landlocked single IS part
+  // of the look it reproduces — screenshot D has one.
+  const growerMinSize = opts.style === 'frame' ? 1 : target <= 0 ? 1 : 2;
+  const minSize = blocky
+    ? blockyOpts.minSize
+    : strips
+      ? STRIP_MIN_LEN
+      : grower
+        ? growerMinSize
+        : 1;
   const stripsOpts = { minLen: STRIP_MIN_LEN, coverage: stripCoverage(N), spread: 0.6 };
   // Growth returns the region grid plus, for strips, which id ended up as the
   // background — the repair below needs it, and only that grower decides it.
   const grow = (cols, balanceIn) => {
     if (strips) return growRegionsStrips(N, cols, rng, stripsOpts);
-    const region = blocky
-      ? growRegionsBlocky(N, cols, rng, blockyOpts)
-      : growRegions(N, cols, rng, balanceIn);
+    const region = grower
+      ? grower(N, cols, rng)
+      : blocky
+        ? growRegionsBlocky(N, cols, rng, blockyOpts)
+        : growRegions(N, cols, rng, balanceIn);
     return region ? { region, background: -1 } : null;
   };
   const repair = (grown, cols, deadline) =>
@@ -704,7 +1050,7 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     // `best` only ever holds a fair (logic-solvable) board.
     if (level >= 3) continue;
     const reach = nakedSingleReach(N, region);
-    const result = { region, solution: cols.slice(), level, attempts };
+    const result = { region, solution: cols.slice(), level, attempts, grownWith: styleName };
     const dist = scoreOf(level, reach);
     if (best === null || dist < best._dist) {
       best = result;
@@ -756,7 +1102,7 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     if (level >= 3) continue; // never hand back a board the hints can't explain
     const dist = Math.abs(level - target);
     if (fair === null || dist < fair._dist) {
-      fair = { region, solution: cols.slice(), level, attempts };
+      fair = { region, solution: cols.slice(), level, attempts, grownWith: styleName };
       fair._dist = dist;
     }
     if (dist === 0) break; // exact difficulty match — done
@@ -785,11 +1131,24 @@ export function generatePuzzle(N, difficulty, opts = {}) {
     // make the repair fail.
     if (!makeUnique(N, region, cols, rng, now() + 500)) continue;
     const level = difficultyLevel(N, region);
-    const result = { region, solution: cols.slice(), level, attempts };
+    // `grownWith` is 'organic' here even when another style was asked for: this
+    // path deliberately abandons the requested style to guarantee a fair board.
+    // Saying so in the result is what keeps a style MEASUREMENT honest — a
+    // sample of "style X" silently padded with organic boards is worse than no
+    // sample, and at N >= 12 with a small budget this path is reached often.
+    const result = { region, solution: cols.slice(), level, attempts, grownWith: 'organic' };
     if (level <= 2) return result; // fair AND unique
     lastUnique = result;
   }
-  return lastUnique || { region: trivialRegions(N), solution: defaultPlacement(N), level: 0, attempts };
+  return (
+    lastUnique || {
+      region: trivialRegions(N),
+      solution: defaultPlacement(N),
+      level: 0,
+      attempts,
+      grownWith: 'organic',
+    }
+  );
 }
 
 function now() {
