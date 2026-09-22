@@ -681,6 +681,23 @@ export function readSupabaseUrl(root = ROOT) {
 
 const PAGE_SIZE = 1000;
 
+// Welche Header ein Schlüssel braucht, hängt von seiner Art ab — und davon gibt
+// es seit 2025 zwei:
+//   - der Legacy-`service_role`-Key ist ein JWT. Er geht als `apikey` UND als
+//     `Authorization: Bearer`, so wie bisher.
+//   - die neuen Secret keys (`sb_secret_…`) sind KEINE JWTs. Sie gehören nur in
+//     `apikey`; das Gateway tauscht sie intern gegen die service_role-Rolle.
+//     Als Bearer mitgeschickt würde PostgREST sie als JWT zu prüfen versuchen,
+//     und das kann nur scheitern.
+// Supabase empfiehlt die neuen Keys, weil sich einer einzeln widerrufen lässt —
+// ein geleakter Legacy-Key heißt dagegen: JWT-Secret neu erzeugen, womit auch
+// der öffentliche anon-Key in js/leaderboard.js ungültig würde.
+export function supabaseHeaders(key) {
+  const headers = { apikey: key, Accept: 'application/json' };
+  if (!key.startsWith('sb_')) headers.Authorization = `Bearer ${key}`;
+  return headers;
+}
+
 // Liest die ganze Tabelle. Der service_role-Key umgeht RLS — er darf NUR hier
 // in der Action existieren und niemals in den Browser. Gelesen wird über
 // PostgREST direkt, nicht über die SECURITY-DEFINER-Funktionen: die geben
@@ -694,7 +711,7 @@ async function fetchAllScores(baseUrl, serviceKey) {
       '?select=id,created_at,name,size,difficulty,seconds,hints,mistakes,score,client_key' +
       `&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`;
     const res = await fetch(url, {
-      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: 'application/json' },
+      headers: supabaseHeaders(serviceKey),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
@@ -716,7 +733,7 @@ async function fetchAllStats(baseUrl, serviceKey) {
       '?select=bucket_hour,kind,source,size,difficulty,count' +
       `&order=bucket_hour.asc&limit=${PAGE_SIZE}&offset=${offset}`;
     const res = await fetch(url, {
-      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: 'application/json' },
+      headers: supabaseHeaders(serviceKey),
     });
     // Ein 404 heißt: die Migration für die Zähler ist nicht gelaufen. Das ist
     // kein Fehler, sondern der dokumentierte Zustand davor — der Bericht lässt

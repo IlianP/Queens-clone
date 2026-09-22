@@ -24,8 +24,15 @@ ergeben zeichengleichen Text. Keine KI im Spiel, keine Modellausgabe, kein
    `grant select … to service_role`) und Abschnitt 8 (die anonymen Zähler:
    `play_stats`, `stat_limits`, `bump_stat`). Bestehende Daten bleiben
    unberührt.
-2. **service_role-Key holen.** Supabase → Project Settings → API →
-   `service_role` (der geheime Key, nicht der `anon`-Key).
+2. **Secret key holen.** Supabase → Project Settings → API Keys → Reiter
+   „Publishable and secret API keys" → einen **Secret key** anlegen (`sb_secret_…`,
+   z. B. `github-weekly-report`). Er handelt serverseitig als `service_role`, lässt
+   sich aber einzeln widerrufen — anders als der Legacy-`service_role`-Key, bei
+   dessen Leak man das JWT-Secret neu erzeugen müsste, was auch den öffentlichen
+   `anon`-Key in `js/leaderboard.js` ungültig machen würde. Der Legacy-Key
+   funktioniert weiterhin; `supabaseHeaders` in `tools/weekly-report.mjs`
+   erkennt die Art am Präfix und schickt einen `sb_`-Key nur als `apikey`, nie
+   als `Authorization: Bearer` — er ist kein JWT.
 3. **Secret setzen.** Im GitHub-Repo → Settings → Secrets and variables →
    Actions → New repository secret, Name `SUPABASE_SERVICE_KEY`, Wert der Key
    aus Schritt 2.
@@ -36,7 +43,7 @@ ergeben zeichengleichen Text. Keine KI im Spiel, keine Modellausgabe, kein
    *Watch → All Activity* (oder mindestens *Issues*) stehen und in den
    GitHub-Benachrichtigungseinstellungen „Email" aktiv sein.
 
-> **Der service_role-Key umgeht Row Level Security.** Er gehört ausschließlich in
+> **Der Schlüssel umgeht Row Level Security** (beide Arten). Er gehört ausschließlich in
 > dieses GitHub-Secret — nie in `js/leaderboard.js`, nie in den Browser, nie in
 > ein Issue. Im Browser steht der öffentliche `anon`-Key, und das ist der
 > Unterschied zwischen „darf die Funktionen aufrufen" und „darf alles lesen".
