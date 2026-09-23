@@ -432,3 +432,10 @@ a 390x844 phone lays out with no overflow, nothing under the top bar, nothing cu
 off, and a single tap marks exactly one cell. An earlier version of this feature
 capped the slider instead; that last check is what says the cap wasn't protecting
 anything.
+
+`leaderboard-cap.mjs` covers the one surface built on `top_scores`' per-player
+cap: the note at the foot of the global list. It appears when the cap held rows
+back and quotes both numbers, stays away when the cap didn't bite or the server
+doesn't cap at all, sits after the rows so numbering and the own-row highlight
+are untouched, and fits a 320px phone in fr/ru/pt. The cap's arithmetic is not
+tested here — that runs against a real Postgres in `tests/sql/top-scores-cap.sql`.

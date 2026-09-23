@@ -84,6 +84,8 @@ export const I18N_FR = {
 
   // ---------- score lists ----------
   'score.empty': 'Aucune entrée pour le moment – à toi d’ouvrir le classement !',
+  'score.capNote': ({ perPlayer, hidden }) =>
+    `Au plus ${frPlural(perPlayer, 'entrée', 'entrées')} par joueur · ${frPlural(hidden, 'autre masquée', 'autres masquées')}`,
   'score.anonymous': 'Anonyme',
   'score.you': 'Toi',
   // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —

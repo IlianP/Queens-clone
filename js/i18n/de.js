@@ -78,6 +78,8 @@ export const I18N_DE = {
 
   // ---------- score lists ----------
   'score.empty': 'Noch keine Einträge – sei die/der Erste!',
+  'score.capNote': ({ perPlayer, hidden }) =>
+    `Höchstens ${dePlural(perPlayer, 'Eintrag', 'Einträge')} pro Spieler · ${dePlural(hidden, 'weiterer', 'weitere')} ausgeblendet`,
   'score.anonymous': 'Anonym',
   'score.you': 'Du',
   'score.rowTitle': ({ time, hints, mistakes, penalty }) =>

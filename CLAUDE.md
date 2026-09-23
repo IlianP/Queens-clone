@@ -121,6 +121,12 @@ before re-deriving how to drive things:
   row — and that derivation carries the composite key too, since with a text
   prefix it would reproduce the same bug and confirm it instead of catching it.
   Run it after any change to section 5c of the SQL.
+- `tests/sql/top-scores-cap.sql` — the per-player cap on `top_scores` against the
+  same kind of **throwaway** local Postgres: the measured shape (34/5/2 rows from
+  three players → 17 each), one cap for case/whitespace variants of a name,
+  anonymous rows never capped, 60 players → one row each, a lone player uncapped,
+  the `p_since` window counting its own players, the shown rows being each
+  player's best, and nothing deleted. Run it after any change to section 5.
 - `tests/sql/rank-order.sql` — the server half: applies
   `docs/leaderboard-setup.sql` to a **throwaway** local Postgres (it truncates
   `public.scores`, never point it at the live project) and asserts that
@@ -993,7 +999,8 @@ one row **above** the entry that had just been submitted:
   new entry's favour — the returned rank then pointed at the FIRST row of the
   tied run while the list had ours at the end. It now counts rows that sort
   before the new one under the same four-part ordering (`(score, seconds,
-  created_at, id) < …`), so rank and list position agree exactly.
+  created_at, id) < …`), so rank and list position agree exactly — as long as the per-player cap
+  doesn't hide rows ahead of it (see "The per-player cap on the list").
 - `matchOwnEntry` therefore ignores the rank entirely and picks, among
   value-identical rows, the one with the newest `at` (or the last position when
   the server sends no `created_at`). That rule holds on an un-migrated database
@@ -1025,10 +1032,8 @@ from submitting at all.
 
 `player_rank` (section 5c of `docs/leaderboard-setup.sql`) answers the other
 question — *which player am I?* — and `main.js`'s `submitPlacementCopy` renders
-it. What it deliberately does **not** do is change the list: `top_scores` still
-returns every row. This is the cheap half of the idea; consolidating the list
-itself is a separate, bigger step (it would take 20 of 22 buckets down to 1–3
-rows, which is honest but empties the board).
+it. It counts over **all** rows; the list itself is capped separately, see "The
+per-player cap on the list" below.
 
 Four things hold it together:
 
@@ -1085,6 +1090,58 @@ matched on the remembered nickname with the same normalisation the server uses.
 It previously marked nothing at all, which with one enthusiast holding 34 of 50
 places meant "count the rows to find yourself". An empty nickname marks nothing:
 an anonymous row belongs to nobody in particular.
+
+#### The per-player cap on the list
+
+`player_rank` fixed the sentence; the **list** still let one enthusiast fill it.
+`top_scores` (section 5 of the SQL) now shows each player at most
+
+    per_player = ceil(p_limit / players in the slice), at least 1
+
+of their best rows — 17 each for three players on 50 places, 5 for ten, one row
+each from 50 players up. The alternatives were weighed and rejected for opposite
+reasons: **one row per player** is the honest endpoint but would take 20 of 22
+buckets down to 1–3 rows and empty the board; a **fixed cap** (3, 10, …) is
+right for exactly one population size and wrong for every other. The dynamic
+cap is the fixed-cap idea with the number derived instead of chosen, so the
+list stays full while few play and converges on "one row per player" by itself
+as more do — nobody ever re-tunes it.
+
+What holds it together:
+
+- **Display only.** Nothing is deleted. `submit_score`'s entry rank, `player_rank`
+  and the player's own local list all still see every row. That is also why the
+  win card's highlight can find nothing: a fresh solve outside the player's best
+  `per_player` isn't on the capped board — and `is_best = false` already makes
+  the status line say "not your best", so the two agree.
+- **Same player key as `player_rank`** — the `(anon, pkey)` pair, anonymous rows
+  each their own player, so they are never merged and never capped. Change the
+  key in one function and it must change in the other.
+- **Counted over the slice it shows.** The p_since window gets its own cap from
+  the players inside it, so the period tab isn't throttled by people who only
+  played last year.
+- **Derived from `p_limit`**, not a second constant: the client's
+  `TOP_SCORES_LIMIT` (50) is the number of places being shared out.
+- **It says so.** The server returns `per_player` and `hidden` (rows the cap held
+  back) on every row; `fetchTopScores` lifts them onto the returned array as
+  `list.perPlayer` / `list.hidden`, and `renderScoreList` appends one muted line
+  (`score.capNote`) after the rows when `hidden > 0`. Without it a regular sees
+  half their entries vanish and reasonably assumes they were lost. The note sits
+  *after* the rows and inside the scrolling list, so row indices, the highlight
+  and the card's height are untouched. An un-migrated server sends neither
+  column and reads as "no cap" — `perPlayer` null, never 0.
+- **Rank ≠ list position once the cap bites**, by design: a player's hidden
+  rows still count for `submit_score`'s rank. `tests/sql/rank-order.sql`'s
+  equality holds only because nobody in it exceeds the cap (it says so), and the
+  client never indexed the list by rank anyway — `matchOwnEntry` matches values.
+
+`tests/sql/top-scores-cap.sql` pins the arithmetic against a real Postgres (the
+measured 34/5/2 shape, case-variant names as one player, anonymous rows uncapped,
+60 players → one each, a lone player uncapped, the window's own cap, the shown
+rows being each player's best, nothing deleted) and was checked to fail with the
+cap removed. `tests/logic/leaderboard-period.mjs` covers the metadata lift, and
+`tests/browser/leaderboard-cap.mjs` the note — present when the cap bit, absent
+otherwise, after the rows, and fitting 320 px in fr/ru/pt.
 
 ### Time in the score data (entry age, rolling windows)
 

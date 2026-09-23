@@ -83,6 +83,8 @@ export const I18N_EN = {
 
   // ---------- score lists ----------
   'score.empty': 'No entries yet – be the first!',
+  'score.capNote': ({ perPlayer, hidden }) =>
+    `At most ${enPlural(perPlayer, 'entry', 'entries')} per player · ${hidden} more hidden`,
   'score.anonymous': 'Anonymous',
   'score.you': 'You',
   // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —

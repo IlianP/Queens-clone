@@ -82,6 +82,8 @@ export const I18N_ES = {
 
   // ---------- score lists ----------
   'score.empty': 'Aún no hay entradas: ¡estrena tú la clasificación!',
+  'score.capNote': ({ perPlayer, hidden }) =>
+    `Como máximo ${esPlural(perPlayer, 'entrada', 'entradas')} por jugador · ${esPlural(hidden, 'oculta más', 'ocultas más')}`,
   'score.anonymous': 'Anónimo',
   'score.you': 'Tú',
   // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —

@@ -1104,6 +1104,17 @@ function renderScoreList(container, entries, highlightIdx = -1) {
     row.appendChild(val);
     container.appendChild(row);
   });
+  // The global list caps each player's rows (see fetchTopScores). When the cap
+  // actually held something back, say so at the foot of the list — otherwise a
+  // regular sees half their entries vanish and reasonably assumes they were
+  // lost. Appended after the rows, so row indices (highlight, scroll) are
+  // unchanged, and inside the scrolling list, so no card grows by a line.
+  if (entries.hidden > 0 && entries.perPlayer != null) {
+    const note = document.createElement('div');
+    note.className = 'score-note';
+    note.textContent = t('score.capNote', { perPlayer: entries.perPlayer, hidden: entries.hidden });
+    container.appendChild(note);
+  }
   scrollRowIntoView(container, highlightIdx);
 }
 
