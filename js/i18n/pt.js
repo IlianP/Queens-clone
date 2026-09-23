@@ -94,6 +94,8 @@ export const I18N_PT = {
 
   // ---------- score lists ----------
   'score.empty': 'Ainda não há registros – estreie a classificação!',
+  'score.capNote': ({ perPlayer, hidden }) =>
+    `No máximo ${ptPlural(perPlayer, 'registro', 'registros')} por jogador · ${ptPlural(hidden, 'oculto', 'ocultos')} a mais`,
   'score.anonymous': 'Anônimo',
   'score.you': 'Você',
   // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —

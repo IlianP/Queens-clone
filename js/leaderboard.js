@@ -211,12 +211,22 @@ export const TOP_SCORES_LIMIT = 50;
 //
 // `at` is the row's submission time in epoch ms, or null — an un-migrated
 // top_scores doesn't return created_at, and the UI then simply shows no age.
+//
+// The list is capped PER PLAYER server-side (docs/leaderboard-setup.sql,
+// section 5): each player shows at most ceil(limit / players) of their best
+// rows, so one enthusiast can't fill the board a newcomer is trying to get onto.
+// The server reports that as two extra columns, surfaced here as properties on
+// the returned array rather than per row, because they describe the list:
+//   list.perPlayer — the cap in force, or null (a server without the cap);
+//   list.hidden    — how many rows the cap held back (0 when it didn't bite).
+// Neither changes which rows are in the array; they exist so the UI can say
+// that entries were held back instead of letting them seem lost.
 export async function fetchTopScores(size, difficulty, { limit = TOP_SCORES_LIMIT, since = null } = {}) {
   const body = { p_size: size, p_difficulty: difficulty, p_limit: limit };
   if (since != null) body.p_since = new Date(since).toISOString();
   const data = await rpc('top_scores', body);
   if (!Array.isArray(data)) return null;
-  return data.map((r) => ({
+  const list = data.map((r) => ({
     name: r.name,
     seconds: Number(r.seconds),
     hints: Number(r.hints),
@@ -224,6 +234,12 @@ export async function fetchTopScores(size, difficulty, { limit = TOP_SCORES_LIMI
     score: Number(r.score),
     at: r.created_at ? Date.parse(r.created_at) : null,
   }));
+  const first = data[0];
+  const perPlayer = first && first.per_player != null ? Number(first.per_player) : null;
+  const hidden = first && first.hidden != null ? Number(first.hidden) : 0;
+  list.perPlayer = Number.isFinite(perPlayer) && perPlayer >= 1 ? perPlayer : null;
+  list.hidden = list.perPlayer != null && Number.isFinite(hidden) && hidden > 0 ? hidden : 0;
+  return list;
 }
 
 // How full a bucket is, all-time and within the last `since` window:

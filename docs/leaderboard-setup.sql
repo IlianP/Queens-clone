@@ -233,26 +233,83 @@ $idempotent$;
 -- die zeitlich begrenzte Wertung. NULL = alle. Der Client schickt den Parameter
 -- nur, wenn er ihn braucht; ein Aufruf ohne ihn ist exakt der alte.
 --
--- ACHTUNG beim erneuten Ausführen: die Rückgabespalten haben sich geändert, und
--- das kann `create or replace` in Postgres nicht – deshalb das `drop` davor.
--- Zwischen drop und create existiert die Funktion für Sekundenbruchteile nicht;
--- ein Aufruf genau in dieser Lücke fällt im Spiel auf "nicht erreichbar"
--- zurück, was folgenlos ist. Daten werden dabei nicht angefasst.
+-- DECKEL PRO SPIELER, dynamisch. Gemessen (8x8 schwer, September 2026): 83
+-- Einträge von drei Namen, einer davon auf 34 der ersten 50 Plätze. Wer neu
+-- dazukommt, findet sich dann weit hinten zwischen den Wiederholungen eines
+-- Einzelnen – genau der Spieler, den man halten will. Deshalb zeigt die Liste
+-- je Spieler höchstens
+--
+--     per_player = aufrunden(p_limit / Anzahl Spieler im Bucket), mindestens 1
+--
+-- seiner besten Einträge. Bei drei Spielern und 50 Plätzen sind das 17, bei
+-- zehn Spielern 5, ab 50 Spielern einer. Die Liste bleibt also voll, solange
+-- wenige spielen, und wird von allein zur Bestenliste der Spieler, wenn es
+-- viele werden – ohne dass jemand je eine Zahl nachstellen muss. Gezählt wird
+-- im selben Ausschnitt, der auch gezeigt wird (Bucket, und bei p_since das
+-- Zeitfenster), sodass der Zeitraum-Reiter seinen eigenen, passenden Deckel hat.
+--
+-- Der Deckel ist NUR Anzeige. Nichts wird gelöscht; submit_score() rechnet den
+-- Einreichungsrang weiter über alle Zeilen, player_rank() zählt Spieler, und
+-- die eigene lokale Liste des Spielers bleibt vollständig. `hidden` meldet, wie
+-- viele Zeilen der Deckel in diesem Ausschnitt zurückhält, damit die Oberfläche
+-- das sagen kann, statt Einträge scheinbar verschwinden zu lassen.
+--
+-- Der Spielerschlüssel ist exakt der von player_rank() (5c): ein Paar aus
+-- Anonym-Kennzeichen und Text, namenlose Zeilen jede für sich. Anonyme
+-- Einreichungen werden also nie zusammengefasst und nie gekappt.
+--
+-- Kosten: statt eines begrenzten Indexscans jetzt der ganze Bucket mit einer
+-- Fensterfunktion. Ein Bucket hält Hunderte Zeilen, nicht Millionen.
+--
+-- ACHTUNG beim erneuten Ausführen: die Rückgabespalten haben sich geändert
+-- (per_player, hidden), und das kann `create or replace` in Postgres nicht –
+-- deshalb die `drop` davor. Zwischen drop und create existiert die Funktion
+-- innerhalb der Transaktion des Ausroll-Workflows nicht sichtbar für andere;
+-- beim Kopieren von Hand fällt ein Aufruf genau in dieser Lücke im Spiel auf
+-- "nicht erreichbar" zurück, was folgenlos ist. Daten werden nicht angefasst.
 drop function if exists public.top_scores(int, text, int);
+drop function if exists public.top_scores(int, text, int, timestamptz);
 create or replace function public.top_scores(
   p_size int, p_difficulty text, p_limit int default 10, p_since timestamptz default null
-) returns table (name text, seconds int, hints int, mistakes int, score int, created_at timestamptz)
-  language sql security definer set search_path = public stable as $$
-  select s.name, s.seconds, s.hints, s.mistakes, s.score, s.created_at
-    from public.scores s
-    where s.size = p_size and s.difficulty = p_difficulty
-      and (p_since is null or s.created_at >= p_since)
-    -- `id` als letztes Kriterium macht die Ordnung total: created_at allein
-    -- könnte bei zwei exakt gleichzeitigen Einträgen kippen, und submit_score
-    -- rechnet den Rang in genau dieser Reihenfolge aus.
-    order by s.score asc, s.seconds asc, s.created_at asc, s.id asc
-    limit least(greatest(coalesce(p_limit, 10), 1), 100);
-$$;
+) returns table (name text, seconds int, hints int, mistakes int, score int,
+                 created_at timestamptz, per_player int, hidden int)
+  language sql security definer set search_path = public stable as $top_scores$
+  with lim as (
+    select least(greatest(coalesce(p_limit, 10), 1), 100) as n
+  ),
+  bucket as (
+    select s.id, s.name, s.seconds, s.hints, s.mistakes, s.score, s.created_at,
+           btrim(coalesce(s.name, '')) = '' as anon,
+           case when btrim(coalesce(s.name, '')) = ''
+                then s.id::text
+                else lower(btrim(s.name)) end as pkey
+      from public.scores s
+     where s.size = p_size and s.difficulty = p_difficulty
+       and (p_since is null or s.created_at >= p_since)
+  ),
+  ranked as (
+    -- nth = der wievielte beste Eintrag seines Spielers, in der Ordnung der
+    -- Liste. `id` als letztes Kriterium macht die Ordnung total: created_at
+    -- allein könnte bei zwei exakt gleichzeitigen Einträgen kippen, und
+    -- submit_score rechnet den Rang in genau dieser Reihenfolge aus.
+    select b.*,
+           row_number() over (partition by b.anon, b.pkey
+                              order by b.score, b.seconds, b.created_at, b.id) as nth
+      from bucket b
+  ),
+  cap as (
+    select greatest(1, ceil((select n from lim)::numeric
+                            / greatest(count(distinct (b.anon, b.pkey)), 1)))::int as per_player
+      from bucket b
+  )
+  select r.name, r.seconds, r.hints, r.mistakes, r.score, r.created_at,
+         c.per_player,
+         (select count(*) from ranked x where x.nth > c.per_player)::int
+    from ranked r cross join cap c
+   where r.nth <= c.per_player
+   order by r.score asc, r.seconds asc, r.created_at asc, r.id asc
+   limit (select n from lim);
+$top_scores$;
 
 -- 5b) Wie voll ist ein Bucket – insgesamt und im Zeitfenster? ------------------
 -- Grundlage für die *adaptive* Zeitwertung: die Oberfläche bietet sie nur an,
@@ -279,8 +336,9 @@ $$;
 -- die neuen Spieler, die man halten möchte.
 --
 -- Diese Funktion beantwortet deshalb die andere Frage: "Der wievielte SPIELER
--- bin ich?" Sie ändert die Liste NICHT und löscht nichts – top_scores() gibt
--- weiterhin jede Zeile aus. Nur die Zahl daneben zählt ab jetzt Menschen.
+-- bin ich?" Sie löscht nichts und zählt über ALLE Zeilen. Die Liste selbst
+-- kappt inzwischen top_scores() (Abschnitt 5) pro Spieler, mit genau diesem
+-- Spielerschlüssel – ändert man ihn hier, muss er dort mit.
 --
 -- SPIELER-SCHLÜSSEL: ein Paar aus einem Anonym-Kennzeichen und einem Text, NICHT
 -- ein Text allein. Benannte Spieler gruppieren über (false, normalisierter Name),
@@ -517,13 +575,17 @@ grant select on public.play_stats to service_role;
 -- sobald sie auf `main` landet (Secret: SUPABASE_DB_URL). Von Hand kopieren ist
 -- also nur noch der Notnagel, wenn der Workflow nicht laufen kann.
 --
--- Muss es doch von Hand sein, reichen die geänderten Abschnitte. Sie sind in
--- sich abgeschlossen und in dieser Reihenfolge ausführbar:
+-- Muss es doch von Hand sein, reicht der geänderte Abschnitt. Die Abschnitte
+-- sind in sich abgeschlossen; Stand dieser Datei:
 --
---   Abschnitt 3   (Zeilen  63–99)   Score-Formel + einmaliger Backfill
---   Abschnitt 4+4b (Zeilen 100–226) submit_score – Größengrenze
---   Abschnitt 5c+6 (Zeilen 273–390) player_rank + Ausführrechte
---   Abschnitt 8   (Zeilen 409–514)  bump_stat – Größengrenze
+--   Abschnitt 3    (Zeilen  63–99)   Score-Formel + einmaliger Backfill
+--   Abschnitt 4+4b (Zeilen 100–226)  submit_score
+--   Abschnitt 5    (Zeilen 227–313)  top_scores – Deckel pro Spieler   ← zuletzt geändert
+--   Abschnitt 5b   (Zeilen 314–329)  score_counts
+--   Abschnitt 5c   (Zeilen 330–441)  player_rank
+--   Abschnitt 6    (Zeilen 442–448)  Ausführrechte – nach 5 immer mitnehmen,
+--                                    weil `drop function` die Rechte mitlöscht
+--   Abschnitt 8    (Zeilen 466–571)  bump_stat
 --
 -- Die Zeilennummern verschieben sich, sobald jemand oberhalb etwas einfügt —
 -- deshalb stehen die Abschnittsnummern daneben, und deshalb ist der Workflow
@@ -533,6 +595,12 @@ grant select on public.play_stats to service_role;
 -- Die ganze Datei erneut auszuführen ist immer sicher (alles ist `if not exists`
 -- bzw. `create or replace`, keine Daten werden angefasst). Wer nur die Änderung
 -- will, führt genau diesen Block aus:
+--
+--   2026-09: Deckel pro Spieler in der globalen Liste (top_scores, Abschnitt 5).
+--   Jeder Spieler zeigt höchstens aufrunden(p_limit / Spieler im Bucket) seiner
+--   besten Einträge; nichts wird gelöscht. Neue Rückgabespalten per_player und
+--   hidden, daher `drop` + `create` – danach Abschnitt 6 (Rechte) erneut. Ein
+--   Client ohne diese Änderung liest die zusätzlichen Spalten einfach nicht.
 --
 --   2026-09: Feldgrößen 13 und 14 zugelassen. Vorher wies `submit_score` (und
 --   `submit_score_v2`) jede Größe über 12 mit "bad size" (P0001, HTTP 400) ab –

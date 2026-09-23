@@ -132,6 +132,9 @@ export const I18N_RU = {
 
   // ---------- score lists ----------
   'score.empty': 'Записей пока нет — стань первым!',
+  // «Не больше» takes the genitive: одной записи, трёх/семнадцати записей.
+  'score.capNote': ({ perPlayer, hidden }) =>
+    `Не больше ${ruPlural(perPlayer, 'записи', 'записей', 'записей')} на игрока · скрыто ещё ${hidden}`,
   'score.anonymous': 'Аноним',
   'score.you': 'Ты',
   // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —

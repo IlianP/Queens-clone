@@ -114,6 +114,43 @@ try {
     eq(await fetchTopScores(10, 'hard', { since: Date.now() }), null, 'a failed windowed read → null');
   }
 
+  // 6) The per-player cap (section 5 of the SQL). The server repeats the cap and
+  //    the held-back count on every row; the client lifts them onto the list,
+  //    because they describe the list, not a row. An un-migrated server sends
+  //    neither, and that must read as "no cap" — never as a cap of 0, which
+  //    would make the UI claim rows were hidden.
+  {
+    const row = (n, s) => ({ name: n, seconds: s, hints: 0, mistakes: 0, score: s,
+      created_at: '2026-09-01T10:00:00Z', per_player: 17, hidden: 17 });
+    installFetch({ status: 200, body: [row('Viel', 101), row('Neu', 102)] });
+    const capped = await fetchTopScores(8, 'hard');
+    eq(capped.length, 2, 'cap metadata does not change the rows');
+    eq(capped.perPlayer, 17, 'per_player lifted onto the list');
+    eq(capped.hidden, 17, 'hidden lifted onto the list');
+    eq(JSON.stringify(Object.keys(capped[0]).sort()),
+      JSON.stringify(['at', 'hints', 'mistakes', 'name', 'score', 'seconds']),
+      'rows stay the same six fields — the cap is list metadata, not row data');
+
+    const open = { ...row('Allein', 101), per_player: 50, hidden: 0 };
+    installFetch({ status: 200, body: [open] });
+    const uncapped = await fetchTopScores(8, 'hard');
+    eq(uncapped.perPlayer, 50, 'a cap that did not bite still reports itself');
+    eq(uncapped.hidden, 0, '…with nothing hidden');
+
+    const legacy = { ...row('Alt', 101) };
+    delete legacy.per_player;
+    delete legacy.hidden;
+    installFetch({ status: 200, body: [legacy] });
+    const old = await fetchTopScores(8, 'hard');
+    eq(old.perPlayer, null, 'un-migrated server → no cap, not 0');
+    eq(old.hidden, 0, 'un-migrated server → nothing hidden');
+
+    installFetch({ status: 200, body: [] });
+    const empty = await fetchTopScores(8, 'hard');
+    eq(empty.length, 0, 'empty bucket still an empty array');
+    eq(empty.hidden, 0, 'empty bucket hides nothing');
+  }
+
   if (!failed) console.log('PASS: time-scoped reads send what they should and fail soft');
 } finally {
   globalThis.fetch = realFetch;

@@ -157,12 +157,19 @@ the line above doesn't already say, and is left out.
 
 After **submitting** to the global ranking, the status line adds the same
 comparison for the whole field – counted in **players, not entries**: *“Rank 3 of
-12 players”*. The list still shows every submitted game, but a ranking of 83
-entries belonging to three names does not describe a field of 83 people, and
-“rank 28 of 83” reads like a closed shop to a newcomer. If this run was slower
-than your own best, it says so (*“Not a personal best – your best still holds
-rank 1 of 3 players”*) instead of crediting the run with a placement it didn't
-earn.
+12 players”*. A ranking of 83 entries belonging to three names does not describe
+a field of 83 people, and “rank 28 of 83” reads like a closed shop to a newcomer.
+If this run was slower than your own best, it says so (*“Not a personal best –
+your best still holds rank 1 of 3 players”*) instead of crediting the run with a
+placement it didn't earn.
+
+The global list itself is **capped per player**, and the cap adapts to how many
+people play: the places are shared out evenly, so each player shows at most
+*places ÷ players* of their best times (rounded up). With three players on 50
+places that is 17 each, with ten it is 5, and from 50 players on it is one row
+per player. Nothing is deleted – the rank above still counts every game, and your
+own *Mine* list keeps them all – and when the cap holds rows back, a line at the
+foot of the list says how many.
 
 In the *Global* tab your own freshly submitted row is outlined in green – exactly
 like in the *Mine* tab. Until you submit, nothing is highlighted there, because

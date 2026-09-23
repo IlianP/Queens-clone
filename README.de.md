@@ -173,12 +173,19 @@ schon sagt, und bleibt weg.
 
 Nach dem **Eintragen** in die globale Rangliste ergänzt die Statuszeile den gleichen
 Vergleich für das gesamte Feld – und zwar **in Spielern, nicht in Einträgen**:
-*„Platz 3 von 12 Spielern"*. Die Liste zeigt weiterhin jede eingereichte Partie, aber
-eine Rangliste mit 83 Einträgen von drei Namen beschreibt kein Feld aus 83 Menschen,
-und „Platz 28 von 83" liest sich für Neue wie ein geschlossener Club. Wer diesmal
-langsamer war als seine eigene Bestzeit, bekommt das auch gesagt (*„Keine neue
-Bestzeit – deine beste hält Platz 1 von 3 Spielern"*), statt einen Platz gutgeschrieben
-zu bekommen, den dieser Lauf nicht geholt hat.
+*„Platz 3 von 12 Spielern"*. Eine Rangliste mit 83 Einträgen von drei Namen
+beschreibt kein Feld aus 83 Menschen, und „Platz 28 von 83" liest sich für Neue wie
+ein geschlossener Club. Wer diesmal langsamer war als seine eigene Bestzeit, bekommt
+das auch gesagt (*„Keine neue Bestzeit – deine beste hält Platz 1 von 3 Spielern"*),
+statt einen Platz gutgeschrieben zu bekommen, den dieser Lauf nicht geholt hat.
+
+Die globale Liste selbst ist **pro Spieler gedeckelt**, und der Deckel richtet sich
+danach, wie viele mitspielen: die Plätze werden gleichmäßig verteilt, jeder Spieler
+zeigt höchstens *Plätze ÷ Spieler* seiner besten Zeiten (aufgerundet). Bei drei
+Spielern und 50 Plätzen sind das 17, bei zehn Spielern 5, ab 50 Spielern eine Zeile
+pro Spieler. Gelöscht wird nichts – der Rang oben zählt weiterhin jede Partie, und
+die eigene Liste *Eigene* behält alle –, und wenn der Deckel Zeilen zurückhält, sagt
+eine Zeile unter der Liste, wie viele.
 
 Im *Global*-Tab wird die eigene, gerade eingetragene Zeile grün umrandet – genau wie im
 Reiter *Eigene*. Solange du nicht eingetragen hast, ist dort nichts markiert, weil dein

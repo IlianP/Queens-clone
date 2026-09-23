@@ -47,6 +47,13 @@ declare
 begin
   -- Deliberately full of collisions: two players on the same score, the same
   -- player submitting an identical solve twice, and a tie on the worst score.
+  --
+  -- Rank == list position only holds while top_scores' per-player cap doesn't
+  -- bite (6 players on 100 places → 17 each, nobody here has more than 3).
+  -- Once it does, a player's hidden rows still count for submit_score's rank
+  -- but no longer appear in the list; that is by design and has its own test,
+  -- tests/sql/top-scores-cap.sql. The client never indexes the list with this
+  -- rank anyway — matchOwnEntry matches on values.
   for r in select * from (values
       ('Alt', 100), ('Schnell', 60), ('Gleich', 100), ('Langsam', 200), ('Ich', 100),
       ('Ich', 100), ('Ich', 60), ('Neu', 45), ('Gleich', 200)) as t(n, s)
