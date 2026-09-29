@@ -58,6 +58,8 @@ export const I18N_PT = {
   'ui.settings': 'Ajustes',
   'ui.board': 'Tabuleiro',
   'ui.check': '🔎 Verificar',
+  'ui.check.title': ({ seconds }) =>
+    `Cada verificação soma ${seconds} segundos ao seu tempo – um segundo por linha. Verificar de novo o mesmo tabuleiro é grátis.`,
   'ui.hint': '💡 Dica',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
@@ -102,8 +104,8 @@ export const I18N_PT = {
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => ptRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
   'score.rowDate': ({ at }) => `Registrado: ${ptDateTime.format(new Date(at))}`,
-  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
-    `Tempo de jogo ${time} · ${ptPlural(hints, 'dica', 'dicas')}${hints ? ` (+${penalty})` : ''} · ${ptPlural(mistakes, 'erro', 'erros')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Tempo de jogo ${time} · ${ptPlural(hints, 'dica', 'dicas')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${ptPlural(checks, 'verificação', 'verificações')} (+${checkPenalty})` : ''} · ${ptPlural(mistakes, 'erro', 'erros')}`,
 
   // ---------- win card ----------
   'win.title': '🎉 Resolvido!',
@@ -121,8 +123,8 @@ export const I18N_PT = {
   'win.newGame': 'Novo jogo',
   'win.settings': '⚙ Ajustes',
   'win.debugCopy': '📋 Copiar estado de depuração',
-  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
-    `Tempo de jogo ${time} · ${ptPlural(hints, 'dica', 'dicas')}${hints ? ` (+${penalty})` : ''} · ${ptPlural(mistakes, 'erro', 'erros')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Tempo de jogo ${time} · ${ptPlural(hints, 'dica', 'dicas')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${ptPlural(checks, 'verificação', 'verificações')} (+${checkPenalty})` : ''} · ${ptPlural(mistakes, 'erro', 'erros')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) =>
@@ -190,7 +192,7 @@ export const I18N_PT = {
     'Ao colocar uma rainha, sua linha, sua coluna, sua região de cor e as casas vizinhas são marcadas com pontos automaticamente.',
   'settings.live.label': 'Verificação ao vivo',
   'settings.live.hint':
-    'Mostra continuamente um indicador de que o tabuleiro segue sem erros – sem revelar onde está o erro. Aparece pouco depois da sua última jogada. Sem essa opção, o estado pode ser consultado a qualquer momento com “Verificar”.',
+    'Mostra continuamente um indicador de que o tabuleiro segue sem erros – sem revelar onde está o erro. Aparece pouco depois da sua última jogada. Sem essa opção, o estado pode ser consultado a qualquer momento com “Verificar”. Cada novo veredito custa tempo, como apertar “Verificar”.',
   'settings.intro.label': 'Animação de abertura',
   'settings.intro.hint':
     'Enquanto um tabuleiro é gerado, as regiões de cor se espalham em animação enquanto o tabuleiro gira – preenche a espera nos tabuleiros grandes.',
@@ -206,6 +208,9 @@ export const I18N_PT = {
   'settings.voiceEdge.label': 'Coordenadas grandes na borda',
   'settings.voiceEdge.hint':
     'Mostra as letras das colunas e os números das linhas em tamanho grande na borda do tabuleiro – como num tabuleiro de xadrez – em vez de pequenos no canto de cada casa.',
+  'settings.voiceQueenFirst.label': 'Coordenada coloca primeiro uma rainha',
+  'settings.voiceQueenFirst.hint':
+    'Dizer só uma coordenada (“C4”) alterna rainha → ponto → vazio em vez de ponto → rainha → vazio. Tocar numa casa continua igual.',
   'settings.debug.label': 'Modo de depuração',
   'settings.debug.hint':
     'Mostra um botão que copia para a área de transferência tudo sobre o tabuleiro atual (inclusive a dica) – útil para relatar um problema.',

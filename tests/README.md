@@ -119,6 +119,11 @@ must not change when the host time zone does. The second check flips
 `process.env.TZ` to UTC+14 and re-renders; a stray `toLocaleString` or a
 local-time `getDate()` would regroup the days and fail it.
 
+`tap-cycle.mjs` pins the two cell cycles in `js/game.js`: `tap()` (empty → dot
+→ queen, what a finger does) and `tapQueenFirst()` (empty → queen → dot, Voice
+Mode's "Koordinate setzt zuerst eine Dame"), including that an auto-dotted cell
+still becomes a queen first.
+
 ## `sql/` — a throwaway local Postgres
 
 `rank-order.sql` is the only test that touches the *server* half of the
@@ -166,6 +171,12 @@ separate numbers, that `anon` may bump but may not read, that the 60-per-minute
 rate limit bites, and that re-running the setup file leaves the counters alone.
 Same throwaway-database rules as `rank-order.sql`; it TRUNCATES `play_stats` and
 `stat_limits`.
+
+`check-penalty.sql` pins the server half of the "Prüfen" surcharge: one second
+per row per check (`queens_check_penalty`), stored and scored by the
+eight-argument `submit_score`, 0 through the seven-argument call, returned by
+`top_scores`, range-checked, and untouched by a re-run. Same throwaway-database
+rules; it TRUNCATES `public.scores`.
 
 ## `browser/` — Playwright, environment-provided
 
@@ -327,8 +338,16 @@ microphone here, so it **injects a fake `SpeechRecognition`** (via
 — exercising the whole path a real utterance would (recogniser →
 `parseVoiceCommand` → the same internal calls a tap/button makes → the board).
 It enables the mode through the settings UI, places/clears a queen by voice,
-opens a hint, stops on "stopp", and confirms the feature gates itself off in a
-browser without the Web Speech API.
+opens a hint, cycles "C4" queen-first with the sub-option on (one "zurück" per
+spoken cell), accepts "deine" as "Dame", stops on "stopp", and confirms the
+feature gates itself off in a browser without the Web Speech API.
+
+`check-cost.mjs` covers the "Prüfen" surcharge: the price on the button follows
+the board size, an untouched or unchanged board is free, a changed one costs
+again, a live-lamp verdict costs a check, the win card's arithmetic closes
+(result = playing time + 30·hints + N·checks = the frozen clock), the local
+entry keeps the count, and both priced buttons fit at 320–430 px portrait and
+in the 740 px landscape column in every pack.
 
 ### Writing a new browser test
 

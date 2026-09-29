@@ -96,6 +96,8 @@ export const I18N_RU = {
   'ui.settings': 'Настройки',
   'ui.board': 'Игровое поле',
   'ui.check': '🔎 Проверить',
+  'ui.check.title': ({ seconds }) =>
+    `Каждая проверка добавляет ${ruPlural(seconds, 'секунду', 'секунды', 'секунд')} к твоему времени — по секунде за строку. Повторная проверка того же поля бесплатна.`,
   'ui.hint': '💡 Подсказка',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
@@ -141,8 +143,8 @@ export const I18N_RU = {
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => ruRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
   'score.rowDate': ({ at }) => `Отправлено: ${ruDateTime.format(new Date(at))}`,
-  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
-    `Игровое время ${time} · ${ruPlural(hints, 'подсказка', 'подсказки', 'подсказок')}${hints ? ` (+${penalty})` : ''} · ${ruPlural(mistakes, 'ошибка', 'ошибки', 'ошибок')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Игровое время ${time} · ${ruPlural(hints, 'подсказка', 'подсказки', 'подсказок')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${ruPlural(checks, 'проверка', 'проверки', 'проверок')} (+${checkPenalty})` : ''} · ${ruPlural(mistakes, 'ошибка', 'ошибки', 'ошибок')}`,
 
   // ---------- win card ----------
   'win.title': '🎉 Решено!',
@@ -165,8 +167,8 @@ export const I18N_RU = {
   'win.newGame': 'Новая игра',
   'win.settings': '⚙ Настройки',
   'win.debugCopy': '📋 Копировать состояние отладки',
-  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
-    `Игровое время ${time} · ${ruPlural(hints, 'подсказка', 'подсказки', 'подсказок')}${hints ? ` (+${penalty})` : ''} · ${ruPlural(mistakes, 'ошибка', 'ошибки', 'ошибок')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Игровое время ${time} · ${ruPlural(hints, 'подсказка', 'подсказки', 'подсказок')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${ruPlural(checks, 'проверка', 'проверки', 'проверок')} (+${checkPenalty})` : ''} · ${ruPlural(mistakes, 'ошибка', 'ошибки', 'ошибок')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   // "из ${total} партий": after "из" the noun is genitive plural whatever the
@@ -238,7 +240,7 @@ export const I18N_RU = {
     'При постановке ферзя его строка, колонка, цветная область и соседние клетки отмечаются точками автоматически.',
   'settings.live.label': 'Проверка на лету',
   'settings.live.hint':
-    'Постоянно показывает индикатор того, остаётся ли поле без ошибок — не раскрывая, где именно ошибка. Появляется вскоре после твоего последнего хода. Без этой опции статус можно посмотреть в любой момент через «Проверить».',
+    'Постоянно показывает индикатор того, остаётся ли поле без ошибок — не раскрывая, где именно ошибка. Появляется вскоре после твоего последнего хода. Без этой опции статус можно посмотреть в любой момент через «Проверить». Каждый новый вердикт стоит времени, как нажатие «Проверить».',
   'settings.intro.label': 'Вступительная анимация',
   'settings.intro.hint':
     'Пока создаётся головоломка, цветные области растекаются по вращающемуся полю — это скрашивает ожидание на больших полях.',
@@ -254,6 +256,9 @@ export const I18N_RU = {
   'settings.voiceEdge.label': 'Крупные координаты по краю',
   'settings.voiceEdge.hint':
     'Показывает буквы колонок и номера строк крупно по краю поля — как на шахматной доске — вместо мелких меток в углу каждой клетки.',
+  'settings.voiceQueenFirst.label': 'Координата сначала ставит ферзя',
+  'settings.voiceQueenFirst.hint':
+    'Если назвать только координату («C4»), клетка переключается ферзь → точка → пусто вместо точка → ферзь → пусто. Касание клетки не меняется.',
   'settings.debug.label': 'Режим отладки',
   'settings.debug.hint':
     'Показывает кнопку, которая копирует в буфер обмена всё о текущем поле (включая подсказку) — полезно при сообщении о проблеме.',

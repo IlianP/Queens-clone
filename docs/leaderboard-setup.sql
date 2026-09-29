@@ -43,6 +43,10 @@ create table if not exists public.scores (
 
 -- Nullable keeps historical rows untouched; new clients provide a UUID.
 alter table public.scores add column if not exists submission_id uuid;
+-- Wie oft "Prüfen" benutzt wurde (die Live-Lampe zählt je angezeigtem Urteil
+-- mit). Default 0 ist für den Altbestand exakt richtig: bis dahin war Prüfen
+-- kostenlos, und genau so steht er danach auch da.
+alter table public.scores add column if not exists checks int not null default 0;
 
 create index if not exists scores_bucket_idx
   on public.scores (size, difficulty, score, seconds);
@@ -69,9 +73,29 @@ revoke all on public.scores from anon, authenticated;
 -- `mistakes` in der Tabelle): die Rohwerte werden weiter gespeichert und
 -- angezeigt, nur ihr Gewicht ist 0. Die Signatur zu behalten heißt auch, dass
 -- submit_score() unverändert aufgerufen werden kann.
+--
+-- PRÜFEN KOSTET ZEIT (seit 2026-09): je Prüfung eine Sekunde pro Zeile des
+-- Feldes, also 5 s auf 5×5 bis 14 s auf 14×14 (queens_check_penalty). Mit der
+-- Größe skaliert, weil eine Prüfung auf einem großen Feld mehr Damen auf einmal
+-- absichert und die Lösungszeiten dort ebenfalls länger sind. Muss zu
+-- checkPenalty() in js/highscores.js passen.
+create or replace function public.queens_check_penalty(p_size int)
+  returns int language sql immutable as $$
+  select greatest(coalesce(p_size, 0), 0);
+$$;
+
+create or replace function public.queens_score(
+  p_seconds int, p_hints int, p_mistakes int, p_checks int, p_size int
+) returns int language sql immutable as $$
+  select p_seconds + 30 * p_hints
+         + public.queens_check_penalty(p_size) * coalesce(p_checks, 0);
+$$;
+
+-- Die alte Drei-Parameter-Form bleibt für die Einreichung ohne Prüfungen
+-- (sechs- und sieben-Parameter-submit_score): dort ist checks immer 0.
 create or replace function public.queens_score(p_seconds int, p_hints int, p_mistakes int)
   returns int language sql immutable as $$
-  select p_seconds + 30 * p_hints;
+  select public.queens_score(p_seconds, p_hints, p_mistakes, 0, 0);
 $$;
 
 -- Bestandsdaten auf die aktuelle Formel ziehen. Genau dafür liegen seconds,
@@ -82,8 +106,8 @@ $$;
 -- erneuten Ausführen der Datei ein No-Op; created_at bleibt unberührt, die
 -- Reihenfolge der Bestenliste ergibt sich danach aus den neuen Werten.
 update public.scores
-   set score = public.queens_score(seconds, hints, mistakes)
- where score is distinct from public.queens_score(seconds, hints, mistakes);
+   set score = public.queens_score(seconds, hints, mistakes, checks, size)
+ where score is distinct from public.queens_score(seconds, hints, mistakes, checks, size);
 
 -- Untergrenze für die gemeldete Zeit. ABSICHTLICH sehr niedrig: sie war früher
 -- `greatest(3, p_size)` – also z. B. 6 Sekunden bei 6×6 – und hat damit echte,
@@ -224,6 +248,72 @@ begin
 end;
 $idempotent$;
 
+-- 4c) Einreichung MIT Prüfungen --------------------------------------------------
+-- Wie 4b, plus p_checks. Eine eigene Überladung statt eines Defaults an 4b: mit
+-- `p_checks int default 0` wäre ein Aufruf mit sieben benannten Argumenten für
+-- PostgREST mehrdeutig. Der Client schickt p_checks nur, wenn er > 0 ist; eine
+-- Partie ohne Prüfung läuft also weiter über 4b und funktioniert auch gegen eine
+-- Datenbank, auf der diese Datei noch nicht neu ausgeführt wurde.
+create or replace function public.submit_score(
+  p_name text, p_size int, p_difficulty text,
+  p_seconds int, p_hints int, p_mistakes int, p_submission_id uuid, p_checks int
+) returns table (rank bigint, total bigint)
+  language plpgsql security definer set search_path = public as $checked$
+declare
+  v_name text; v_score int; v_key text; v_recent int;
+  v_id bigint; v_at timestamptz; v_size int; v_difficulty text; v_seconds int;
+begin
+  if p_submission_id is null then raise exception 'missing submission id'; end if;
+  v_name := left(btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')), 20);
+  if p_size < 5 or p_size > 14 then raise exception 'bad size'; end if;
+  if p_difficulty not in ('easy', 'medium', 'hard') then raise exception 'bad difficulty'; end if;
+  if p_seconds is null or p_seconds < queens_min_seconds(p_size) or p_seconds > 86400 then
+    raise exception 'implausible time';
+  end if;
+  if coalesce(p_hints, 0) < 0 or coalesce(p_hints, 0) > 999
+     or coalesce(p_mistakes, 0) < 0 or coalesce(p_mistakes, 0) > 9999
+     or coalesce(p_checks, 0) < 0 or coalesce(p_checks, 0) > 9999 then
+    raise exception 'bad counters';
+  end if;
+
+  select id, size, difficulty, score, seconds, created_at
+    into v_id, v_size, v_difficulty, v_score, v_seconds, v_at
+    from public.scores where submission_id = p_submission_id;
+
+  if not found then
+    v_key := md5(coalesce(host(inet_client_addr()), '') || '|' || current_date::text);
+    select count(*) into v_recent from public.scores
+      where client_key = v_key and created_at > now() - interval '1 minute';
+    if v_recent >= 20 then raise exception 'rate limited'; end if;
+
+    v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0),
+                            coalesce(p_checks, 0), p_size);
+    v_size := p_size; v_difficulty := p_difficulty; v_seconds := p_seconds;
+    insert into public.scores (name, size, difficulty, seconds, hints, mistakes, checks, score, client_key, submission_id)
+    values (v_name, v_size, v_difficulty, v_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0),
+            coalesce(p_checks, 0), v_score, v_key, p_submission_id)
+    on conflict (submission_id) where submission_id is not null do nothing
+    returning id, created_at into v_id, v_at;
+
+    if not found then
+      select id, size, difficulty, score, seconds, created_at
+        into v_id, v_size, v_difficulty, v_score, v_seconds, v_at
+        from public.scores where submission_id = p_submission_id;
+    end if;
+  end if;
+
+  return query
+    with bucket as (
+      select s.id, s.score, s.seconds, s.created_at from public.scores s
+        where s.size = v_size and s.difficulty = v_difficulty
+    )
+    select (select count(*) + 1 from bucket b
+              where (b.score, b.seconds, b.created_at, b.id)
+                  < (v_score, v_seconds, v_at, v_id))::bigint,
+           (select count(*) from bucket)::bigint;
+end;
+$checked$;
+
 -- 5) Bestenliste lesen (nur unbedenkliche Spalten, best-first) -----------------
 -- created_at wird MITGELIEFERT: die Oberfläche zeigt daneben das Alter des
 -- Eintrags ("vor 3 Tagen"). Das ist unbedenklich – der Zeitpunkt einer Übermittlung
@@ -271,14 +361,14 @@ drop function if exists public.top_scores(int, text, int);
 drop function if exists public.top_scores(int, text, int, timestamptz);
 create or replace function public.top_scores(
   p_size int, p_difficulty text, p_limit int default 10, p_since timestamptz default null
-) returns table (name text, seconds int, hints int, mistakes int, score int,
+) returns table (name text, seconds int, hints int, mistakes int, checks int, score int,
                  created_at timestamptz, per_player int, hidden int)
   language sql security definer set search_path = public stable as $top_scores$
   with lim as (
     select least(greatest(coalesce(p_limit, 10), 1), 100) as n
   ),
   bucket as (
-    select s.id, s.name, s.seconds, s.hints, s.mistakes, s.score, s.created_at,
+    select s.id, s.name, s.seconds, s.hints, s.mistakes, s.checks, s.score, s.created_at,
            btrim(coalesce(s.name, '')) = '' as anon,
            case when btrim(coalesce(s.name, '')) = ''
                 then s.id::text
@@ -302,7 +392,7 @@ create or replace function public.top_scores(
                             / greatest(count(distinct (b.anon, b.pkey)), 1)))::int as per_player
       from bucket b
   )
-  select r.name, r.seconds, r.hints, r.mistakes, r.score, r.created_at,
+  select r.name, r.seconds, r.hints, r.mistakes, r.checks, r.score, r.created_at,
          c.per_player,
          (select count(*) from ranked x where x.nth > c.per_player)::int
     from ranked r cross join cap c
@@ -443,6 +533,7 @@ $player_rank$;
 -- 6) Ausführrechte nur für diese Funktionen ------------------------------------
 grant execute on function public.submit_score(text, int, text, int, int, int) to anon;
 grant execute on function public.submit_score(text, int, text, int, int, int, uuid) to anon;
+grant execute on function public.submit_score(text, int, text, int, int, int, uuid, int) to anon;
 grant execute on function public.top_scores(int, text, int, timestamptz) to anon;
 grant execute on function public.score_counts(int, text, timestamptz) to anon;
 grant execute on function public.player_rank(int, text, text, int, int, uuid) to anon;
@@ -735,3 +826,15 @@ grant select on public.play_stats to service_role;
 -- Migration antwortet bump_stat mit 404; js/stats.js verschluckt das still und
 -- das Spiel läuft unverändert – im Wochenbericht bleibt der Abschnitt
 -- "Spielverlauf" dann einfach leer.
+--
+-- 2026-09: Prüfen kostet Zeit. Neue Spalte `checks` (Default 0), die Funktion
+-- queens_check_penalty(), eine Fünf-Parameter-Form von queens_score(), eine
+-- achte submit_score()-Überladung mit p_checks samt grant, und top_scores()
+-- liefert `checks` mit (die Rückgabespalten ändern sich; das vorhandene `drop`
+-- in Abschnitt 5 deckt das ab). Die ganze Datei erneut ausführen – der
+-- deploy-sql-Workflow tut das beim Merge nach main von selbst. Bestandszeilen
+-- bekommen checks = 0 und behalten ihren Score (das `update` in Abschnitt 3
+-- ist für sie ein No-Op). Ohne diese Migration funktioniert jede Partie OHNE
+-- Prüfung wie bisher; eine Partie MIT Prüfung ruft die achte Überladung, die es
+-- dann nicht gibt, und die globale Einreichung schlägt fehl (die lokale Liste
+-- bekommt sie trotzdem).

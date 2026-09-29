@@ -30,6 +30,7 @@ const {
   matchOwnEntry,
   previewRank,
   computeScore,
+  checkPenalty,
   getLocalScores,
   HINT_PENALTY,
   MAX_SOLVE_HISTORY,
@@ -373,9 +374,9 @@ eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
 {
   eq(computeScore(100, 0), 100, 'a clean solve scores its raw time');
   eq(computeScore(100, 2), 100 + 2 * HINT_PENALTY, 'each hint still costs HINT_PENALTY');
-  // The point of the change: a mis-tap must not be charged for twice. Anything
-  // past the two real inputs is ignored, so an old three-argument call site
-  // can't quietly reintroduce the surcharge.
+  // The point of the change: a mis-tap must not be charged for twice. The
+  // mistakes argument is accepted (it mirrors queens_score's signature) and
+  // carries no weight.
   eq(computeScore(100, 0, 4), 100, 'mistakes add nothing to the score');
 
   // Entries written under the old formula are recomputed from their raw
@@ -385,6 +386,26 @@ eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
   saveLocalScore(7, 'hard', { name: 'Alt', seconds: 60, hints: 0, mistakes: 3, score: 105 });
   eq(getLocalScores(7, 'hard')[0].score, 60, 'a stored score is re-derived, not trusted');
   eq(getLocalScores(7, 'hard')[0].mistakes, 3, 'the raw mistake count is still kept');
+}
+
+// --- checks ("Prüfen") cost one second per row each ---------------------------
+{
+  eq(checkPenalty(5), 5, 'a check costs 5 s on a 5×5');
+  eq(checkPenalty(14), 14, 'and 14 s on a 14×14');
+  eq(checkPenalty(undefined), 0, 'no size, no surcharge');
+  eq(computeScore(100, 1, 0, 3, 8), 100 + HINT_PENALTY + 3 * 8, 'checks are priced by board size');
+  eq(computeScore(100, 1, 0, 3), 100 + HINT_PENALTY, 'checks without a size price at 0');
+
+  // The local list derives the surcharge from the bucket's size, and entries
+  // from before checks were charged read as zero checks.
+  localStorage.clear();
+  saveLocalScore(9, 'hard', { name: 'Prüfer', seconds: 60, hints: 0, mistakes: 0, checks: 2, score: 60 });
+  saveLocalScore(9, 'hard', { name: 'Alt', seconds: 70, hints: 0, mistakes: 0, score: 70 });
+  const list = getLocalScores(9, 'hard');
+  eq(list[0].name, 'Alt', '60 s + 2 checks on a 9×9 (78) ranks behind a clean 70');
+  eq(list[1].score, 78, 'the checked entry scores 60 + 2·9');
+  eq(list[1].checks, 2, 'the raw check count is kept');
+  eq(list[0].checks, 0, 'an entry without the field has no checks');
 }
 
 // --- previewRank ------------------------------------------------------------

@@ -34,6 +34,9 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   aktuellen Stand **und** ein Abweichen von der eindeutigen Lösung, bevor eine
   Regel bricht: eine gesetzte Dame, die nicht zur Lösung gehört, ebenso wie ein
   Punkt auf einem Feld, auf dem laut Lösung eine Dame stehen muss.
+  Jede Prüfung kostet **eine Sekunde pro Zeile** (5 s auf 5×5 bis 14 s auf
+  14×14); den unveränderten Stand erneut zu prüfen und ein leeres Feld zu prüfen
+  ist frei.
 - Fehler (sich berührende / kollidierende Damen) werden rot markiert.
 - Eine Zeile, Spalte oder Farbregion, in der jedes Feld ausgeschlossen ist und
   keine Dame steht, wird rot pulsierend umrandet – dort ist keine Dame mehr
@@ -70,6 +73,7 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   (dieselbe Prüfung wie der **Prüfen**-Button, ebenfalls ohne die Fehlerstelle zu
   verraten). Es erscheint erst kurz nach deinem letzten Zug, damit es beim Spielen nicht
   flackert. Ohne diese Option lässt sich der Status jederzeit über **Prüfen** abrufen.
+  Jede neue Anzeige des Lämpchens kostet so viel wie ein Druck auf **Prüfen**.
 - **Ton:** Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise
   und beim Lösen. Lässt sich hier oder direkt über das 🔊/🔇-Symbol oben stummschalten.
 - **Sprachsteuerung (Beta, nur auf Deutsch):** Steuere das Spiel per Stimme. Die
@@ -83,7 +87,8 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   Koordinaten eingeblendet – wahlweise klein in der Ecke jedes Feldes oder (Unter-Option
   **„Koordinaten groß am Rand"**, nur bei aktiver Sprachsteuerung sichtbar) groß als
   Schachbrett-Leiste am Feldrand. Befehle: **„C4"** durchläuft das Feld (wie
-  Tippen), **„C4 Dame"** setzt eine Dame, **„C4 Punkt"** einen Ausschluss, **„C4 leeren"**
+  Tippen; mit der Unter-Option **„Koordinate setzt zuerst eine Dame"** in der
+  Reihenfolge leer → 👑 → Punkt → leer), **„C4 Dame"** setzt eine Dame, **„C4 Punkt"** einen Ausschluss, **„C4 leeren"**
   räumt es; dazu **„Hinweis"**, **„Prüfen"**, **„Zurück"**, **„Zurücksetzen"**,
   **„Neues Spiel"** und **„Stopp"** (Zuhören beenden). Mehrere Felder lassen sich in
   einem Befehl aufzählen (**„Punkte auf A2, B2, C3"**) und auch ganze Spalten, Zeilen
@@ -115,7 +120,8 @@ wird dagegen **nicht** gespeichert – ein Seiten-Reload startet ein frisches R�
 
 Nach dem Lösen zeigt der Gewinn-Bildschirm ein **Ergebnis** und fragt, ob du dich
 eintragen möchtest. Das Ergebnis ist eine „effektive Zeit": die reine Lösezeit plus
-ein Aufschlag pro genutztem **Tipp** (+30 s). Der Tipp-Button sagt das schon
+ein Aufschlag pro genutztem **Tipp** (+30 s) und pro **Prüfung** (+1 s je Zeile,
+also +8 s auf 8×8). Der Tipp-Button sagt das schon
 vorher, beim tatsächlich berechneten Tipp steigt ein kleines „+30 s" darüber auf,
 und **die Uhr läuft auf der effektiven Zeit** – die Zahl, die man sieht, ist also
 die Zahl, die zählt. Denselben Tipp erneut zu öffnen ist frei. Kleiner ist besser. **Fehler werden

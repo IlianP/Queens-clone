@@ -42,6 +42,23 @@ export class Game {
     }
   }
 
+  // The same three states in the other order: empty -> queen -> dot -> empty.
+  // Voice Mode's "queen first" option uses it for a bare coordinate ("C4"), where
+  // placing is what a spoken cell almost always means. Auto-marks don't matter
+  // here — an empty cell becomes a queen either way.
+  tapQueenFirst(r, c) {
+    if (this.queen[r][c]) {
+      this.queen[r][c] = false;
+      this.queenCount--;
+      this.mark[r][c] = true;
+    } else if (this.mark[r][c]) {
+      this.mark[r][c] = false;
+    } else {
+      this.queen[r][c] = true;
+      this.queenCount++;
+    }
+  }
+
   // Whether (r,c) is auto-dotted by quick mode because a queen already rules it
   // out: same row, column or region, or an adjacent (touching) cell.
   _autoMarked(r, c) {

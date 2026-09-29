@@ -83,6 +83,13 @@ check(
   '"damit C4 B1 D6" → batch queen of 3 ("damit" mis-hearing of "Dame")',
   batchIs(parseVoiceCommand('damit C4 B1 D6', 8), 'queen', [[3, 2], [0, 1], [5, 3]])
 );
+// Same story with "deine" ("C4 deine" for "C4 Dame", reported from play).
+check('"C4 deine" → queen ("deine" mis-hearing of "Dame")', cellIs(parseVoiceCommand('C4 deine', 8), 3, 2, 'queen'));
+check('"Deine auf C4" → queen', cellIs(parseVoiceCommand('Deine auf C4', 8), 3, 2, 'queen'));
+check(
+  '"deine C4 B1" → batch queen of 2',
+  batchIs(parseVoiceCommand('deine C4 B1', 8), 'queen', [[3, 2], [0, 1]])
+);
 
 // --- Out-of-range coordinates are rejected, not clamped. ---
 check('col L on a 5-board → none', parseVoiceCommand('ludwig eins', 5).type === 'none');

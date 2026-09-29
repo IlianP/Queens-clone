@@ -274,6 +274,15 @@
           <input type="checkbox" id="voice-edge-mode" class="switch" />
         </label>
 
+        <!-- Sub-option, revealed only while Voice Mode is enabled. -->
+        <label class="field toggle-field voice-suboption" id="voice-queen-first-field" hidden>
+          <span>
+            <span class="field-label" data-i18n="settings.voiceQueenFirst.label">Coordinate places a queen first</span>
+            <span class="field-hint" data-i18n="settings.voiceQueenFirst.hint">Saying just a coordinate (“C4”) cycles queen → dot → empty instead of dot → queen → empty. Tapping a cell stays as it is.</span>
+          </span>
+          <input type="checkbox" id="voice-queen-first" class="switch" />
+        </label>
+
         <label class="field toggle-field">
           <span>
             <span class="field-label" data-i18n="settings.debug.label">Debug mode</span>
@@ -393,8 +402,8 @@
 
         <h3 class="voice-help-h">Ein Feld ansprechen</h3>
         <ul class="voice-help-list">
-          <li><span class="vh-cmd">„C4“</span><span class="vh-desc">durchschalten: leer → Punkt → 👑 → leer (wie Tippen)</span></li>
-          <li><span class="vh-cmd">„C4 Dame“</span><span class="vh-desc">Dame setzen (auch „Dame auf C4“, „C4 setzen“)</span></li>
+          <li><span class="vh-cmd">„C4“</span><span class="vh-desc">durchschalten: leer → Punkt → 👑 → leer (wie Tippen) – mit der Einstellung „Koordinate setzt zuerst eine Dame“: leer → 👑 → Punkt → leer</span></li>
+          <li><span class="vh-cmd">„C4 Dame“</span><span class="vh-desc">Dame setzen (auch „Dame auf C4“, „C4 setzen“; wird „Dame“ als „damit“ oder „deine“ verstanden, zählt das auch)</span></li>
           <li><span class="vh-cmd">„C4 Punkt“</span><span class="vh-desc">Ausschluss-Punkt (auch „C4 markieren“)</span></li>
           <li><span class="vh-cmd">„C4 leeren“</span><span class="vh-desc">Feld leeren (auch „C4 löschen“)</span></li>
         </ul>

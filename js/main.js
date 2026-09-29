@@ -23,6 +23,7 @@ import {
   MIN_RECENT_SOLVES,
   MAX_LOCAL_ENTRIES,
   HINT_PENALTY,
+  checkPenalty,
 } from './highscores.js';
 import {
   leaderboardConfigured,
@@ -158,6 +159,8 @@ const dom = {
   voiceModeHint: el('voice-mode-hint'),
   voiceEdgeField: el('voice-edge-field'),
   voiceEdgeMode: el('voice-edge-mode'),
+  voiceQueenFirstField: el('voice-queen-first-field'),
+  voiceQueenFirst: el('voice-queen-first'),
   settingsApply: el('settings-apply'),
   settingsClose: el('settings-close'),
   openQr: el('open-qr'),
@@ -203,6 +206,7 @@ function applyTranslations(root = document) {
     }
   }
   decorateHintButton(); // data-i18n just wiped the button's children — see below
+  decorateCheckButton();
   document.documentElement.lang = t('lang.htmlLang');
   document.documentElement.setAttribute('data-i18n-ready', '');
 }
@@ -224,6 +228,28 @@ function decorateHintButton() {
   // label straight into the price ("Hinweis+30 s").
   dom.hint.append(document.createTextNode(' '), cost);
   dom.hint.title = t('ui.hint.title', { seconds: HINT_PENALTY });
+}
+
+// The "Prüfen" button carries its price the same way — but the price depends on
+// the board size (checkPenalty), so the tag is created once here and its number
+// is filled in by updateCheckCost() whenever a new board arrives.
+function decorateCheckButton() {
+  if (!dom.check) return;
+  const cost = document.createElement('span');
+  cost.className = 'btn-cost';
+  cost.id = 'check-cost';
+  dom.check.append(document.createTextNode(' '), cost);
+  updateCheckCost();
+}
+function currentCheckPenalty() {
+  return game ? checkPenalty(game.N) : checkPenalty(settings.size);
+}
+function updateCheckCost() {
+  const cost = dom.check && dom.check.querySelector('#check-cost');
+  if (!cost) return;
+  const seconds = currentCheckPenalty();
+  cost.textContent = t('ui.hint.costLabel', { seconds });
+  dom.check.title = t('ui.check.title', { seconds });
 }
 
 // ---------- Board size limits ----------
@@ -341,6 +367,13 @@ let hintsUsed = 0;
 // unchanged board) must not bump hintsUsed a second time — only *unique* hints
 // count toward the score (issue #37).
 let seenHints = new Set();
+// "Prüfen" costs checkPenalty(N) seconds per use — the button and every verdict
+// the live lamp shows alike, since the lamp is nothing but an automatic press.
+// Like hints, a check only counts once per board state (seenChecks holds the
+// states already vouched for): asking again about an unchanged board, or undoing
+// back to one, tells the player nothing new.
+let checksUsed = 0;
+let seenChecks = new Set();
 let mistakes = 0;
 let winHandled = false;
 // pendingWin: { size, difficulty, seconds, hints, mistakes, score, saved,
@@ -382,7 +415,11 @@ function currentElapsed() {
 // the surcharge a second time if it were folded in upstream. (Same trap one
 // level down as the mistake penalty, see js/highscores.js.)
 function displayedTime() {
-  return currentElapsed() + HINT_PENALTY * hintsUsed;
+  return currentElapsed() + HINT_PENALTY * hintsUsed + checkSeconds();
+}
+// The check surcharge for this attempt so far, in seconds.
+function checkSeconds() {
+  return game ? checkPenalty(game.N) * checksUsed : 0;
 }
 function renderTime() {
   const s = displayedTime();
@@ -406,6 +443,9 @@ function startTimer() {
   timerDone = false;
   hintsUsed = 0;
   seenHints = new Set();
+  checksUsed = 0;
+  seenChecks = new Set();
+  updateCheckCost(); // the price follows the board size
   mistakes = 0;
   winHandled = false;
   stickyForced = null;
@@ -1062,7 +1102,8 @@ const FRESH_MS = 7 * 24 * 60 * 60 * 1000;
 // Render score entries into a container. Names may come from other players via
 // the global leaderboard, so they go in with textContent (never innerHTML) to
 // keep untrusted text inert. highlightIdx (0-based) marks the player's own row.
-function renderScoreList(container, entries, highlightIdx = -1) {
+// `size` prices the check surcharge in the row tooltip (entries don't carry it).
+function renderScoreList(container, entries, highlightIdx = -1, size = 0) {
   container.innerHTML = '';
   if (!entries || entries.length === 0) {
     const empty = document.createElement('div');
@@ -1075,11 +1116,14 @@ function renderScoreList(container, entries, highlightIdx = -1) {
   entries.forEach((e, i) => {
     const row = document.createElement('div');
     row.className = 'score-row' + (i === highlightIdx ? ' me' : '');
+    const checks = e.checks || 0;
     const rowTitle = t('score.rowTitle', {
       time: fmtTime(e.seconds),
       hints: e.hints,
       mistakes: e.mistakes,
       penalty: fmtTime(HINT_PENALTY * e.hints),
+      checks,
+      checkPenalty: fmtTime(checkPenalty(size) * checks),
     });
     const at = entryTime(e);
     // The exact date goes in the tooltip, the rough age in the row: "vor 3
@@ -1251,13 +1295,14 @@ function onWin() {
   bumpStat('game_win', { size: game.N, difficulty: settings.difficulty });
 
   const seconds = currentElapsed();
-  const score = computeScore(seconds, hintsUsed);
+  const score = computeScore(seconds, hintsUsed, mistakes, checksUsed, game.N);
   pendingWin = {
     size: game.N,
     difficulty: settings.difficulty,
     seconds,
     hints: hintsUsed,
     mistakes,
+    checks: checksUsed,
     score,
     at: Date.now(), // when it was solved — the preview row's age comes from this
     submissionId: createSubmissionId(), // reused by every automatic/manual retry
@@ -1281,6 +1326,8 @@ function onWin() {
     hints: hintsUsed,
     mistakes,
     penalty: fmtTime(HINT_PENALTY * hintsUsed),
+    checks: checksUsed,
+    checkPenalty: fmtTime(checkSeconds()),
   });
   dom.winTime.append(scoreEl, breakdownEl);
 
@@ -1315,7 +1362,7 @@ function renderWinLocal() {
   if (!pendingWin) return;
   const { size, difficulty } = pendingWin;
   if (pendingWin.saved) {
-    renderScoreList(dom.winScores, getLocalScores(size, difficulty), pendingWin.savedRank);
+    renderScoreList(dom.winScores, getLocalScores(size, difficulty), pendingWin.savedRank, size);
     return;
   }
   // Not committed yet: preview where this solve would land in the local list.
@@ -1329,12 +1376,13 @@ function renderWinLocal() {
     seconds: pendingWin.seconds,
     hints: pendingWin.hints,
     mistakes: pendingWin.mistakes,
+    checks: pendingWin.checks,
     score: pendingWin.score,
     // Dated like every other row: the solve happened seconds ago, and a single
     // row without an age in an otherwise dated list reads as a missing value.
     date: new Date(pendingWin.at).toISOString(),
   });
-  renderScoreList(dom.winScores, list.slice(0, MAX_LOCAL_ENTRIES), rank);
+  renderScoreList(dom.winScores, list.slice(0, MAX_LOCAL_ENTRIES), rank, size);
 }
 
 async function renderWinGlobal() {
@@ -1362,7 +1410,7 @@ async function renderWinGlobal() {
         mistakes: pendingWin.mistakes,
       })
     : -1;
-  renderScoreList(dom.winScores, rows, mine);
+  renderScoreList(dom.winScores, rows, mine, size);
   if (!pendingWin.submittedGlobal) noteGlobalNotSubmitted();
 }
 
@@ -1388,6 +1436,7 @@ function commitPendingWin(name) {
     seconds: pendingWin.seconds,
     hints: pendingWin.hints,
     mistakes: pendingWin.mistakes,
+    checks: pendingWin.checks,
     score: pendingWin.score,
     // Dated when it was SOLVED, not when it was saved: the win card may sit
     // open for minutes before the button is pressed, and everything time-scoped
@@ -1464,6 +1513,7 @@ async function onWinSubmit() {
       seconds: pendingWin.seconds,
       hints: pendingWin.hints,
       mistakes: pendingWin.mistakes,
+      checks: pendingWin.checks,
       submissionId: pendingWin.submissionId,
     },
     {
@@ -2035,12 +2085,16 @@ function hintSignature(h) {
 // Animations API, so nothing about the .actions row (which wraps in portrait and
 // becomes a fixed-width column in landscape) has to accommodate it.
 function flyHintCost() {
+  flyCost(dom.hint, HINT_PENALTY);
+}
+// The same receipt, rising off whichever button charged `seconds`.
+function flyCost(button, seconds) {
   const pill = dom.costFly;
-  if (!pill || !dom.hint) return;
-  const btn = dom.hint.getBoundingClientRect();
+  if (!pill || !button) return;
+  const btn = button.getBoundingClientRect();
   if (!btn.width) return; // button not laid out (hidden/landscape reflow) — skip
 
-  pill.textContent = t('ui.hint.cost', { seconds: HINT_PENALTY });
+  pill.textContent = t('ui.hint.cost', { seconds });
   pill.hidden = false;
   // Measure after the text lands so the pill is centred on its own width.
   const self = pill.getBoundingClientRect();
@@ -2208,9 +2262,33 @@ function clearCheckStatus() {
   dom.checkStatus.textContent = '';
 }
 
+// A compact fingerprint of the board a verdict is about: queens and manual dots.
+// Auto-marks are derived from the queens, so they add nothing.
+function boardStateKey() {
+  let key = '';
+  for (let r = 0; r < game.N; r++)
+    for (let c = 0; c < game.N; c++) key += game.queen[r][c] ? 'Q' : game.mark[r][c] ? 'x' : '.';
+  return key;
+}
+
+// Charge one check for the verdict about to be shown — once per board state.
+// Free on an untouched board (the answer is known) and after the win.
+function chargeCheck() {
+  if (!game || game.isWon() || game.isPristine()) return;
+  const key = boardStateKey();
+  if (seenChecks.has(key)) return;
+  seenChecks.add(key);
+  checksUsed++;
+  renderTime(); // the clock owes the surcharge as of now, not at the next tick
+  flyCost(dom.check, currentCheckPenalty());
+}
+
 // Render the current yes/no result. Deliberately says nothing about *where*.
+// Every call is a verdict the player sees, so this is where a check is charged —
+// the button and the live lamp both come through here.
 function renderCheckStatus() {
   if (!game) return;
+  chargeCheck();
   const error = game.hasError(currentSolution);
   dom.checkStatus.textContent = error ? t('check.errors') : t('check.ok');
   dom.checkStatus.className = 'check-status ' + (error ? 'error' : 'ok');
@@ -2359,8 +2437,9 @@ function buildResultDebug() {
     seconds: pendingWin.seconds,
     hints: pendingWin.hints,
     mistakes: pendingWin.mistakes,
+    checks: pendingWin.checks,
     score: pendingWin.score,
-    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints}`,
+    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints} + ${checkPenalty(size)}·${pendingWin.checks}`,
     savedLocally: !!pendingWin.saved,
     savedRank: pendingWin.saved ? pendingWin.savedRank : null,
     // What the win card was told, computed before this solve joined the history.
@@ -2606,6 +2685,7 @@ function openSettings() {
   dom.soundToggle.checked = settings.sound;
   dom.voiceMode.checked = settings.voice;
   dom.voiceEdgeMode.checked = settings.voiceEdgeLabels;
+  dom.voiceQueenFirst.checked = settings.voiceQueenFirst;
   updateVoiceSubOptions();
   dom.debugMode.checked = settings.debug;
   dom.debugExtended.checked = settings.debugExtended;
@@ -2753,6 +2833,7 @@ dom.settingsApply.addEventListener('click', () => {
   settings.introAnimation = dom.introAnimation.checked;
   settings.voice = dom.voiceMode.checked;
   settings.voiceEdgeLabels = dom.voiceEdgeMode.checked;
+  settings.voiceQueenFirst = dom.voiceQueenFirst.checked;
   saveSettings(settings);
   applyVoiceSetting();
   hide(dom.settingsOverlay);
@@ -2888,7 +2969,7 @@ function bestOwnRowIndex(rows, nickname) {
 async function renderLb() {
   const { size, difficulty } = currentLbBucket();
   if (lbTab === 'local') {
-    renderScoreList(dom.lbScores, getLocalScores(size, difficulty), -1);
+    renderScoreList(dom.lbScores, getLocalScores(size, difficulty), -1, size);
     return;
   }
   const since = lbTab === 'period' ? Date.now() - PERIOD_MS : null;
@@ -2904,7 +2985,7 @@ async function renderLb() {
     dom.lbScores.firstChild.textContent = t('global.unreachable');
     return;
   }
-  renderScoreList(dom.lbScores, rows, bestOwnRowIndex(rows, settings.nickname));
+  renderScoreList(dom.lbScores, rows, bestOwnRowIndex(rows, settings.nickname), size);
 }
 
 dom.openLeaderboard.addEventListener('click', () => {
@@ -3139,10 +3220,13 @@ function flashVoiceCell(r, c) {
 }
 
 // Mutate one cell's state for `action` (no undo/sound/render — the caller rolls
-// those up). 'toggle' cycles like a tap; the rest force a state. `autoMarked` is
-// an optional frozen auto-mark verdict for 'toggle' (see voiceApplyCells).
+// those up). 'toggle' cycles like a tap — or queen-first when the Voice Mode
+// option asks for it; the rest force a state. `autoMarked` is an optional frozen
+// auto-mark verdict for the tap-order toggle (see voiceApplyCells).
 function applyCellStateChange(r, c, action, autoMarked) {
-  if (action === 'toggle') {
+  if (action === 'toggle' && settings.voiceQueenFirst) {
+    game.tapQueenFirst(r, c);
+  } else if (action === 'toggle') {
     game.tap(r, c, autoMarked);
   } else if (action === 'queen') {
     if (!game.queen[r][c]) {
@@ -3210,7 +3294,9 @@ function voiceApplyCells(cells, action, meta) {
   if (!game) return { ok: false, reason: 'no-game' };
   if (game.isWon()) return { ok: false, reason: 'won' };
   clearHint();
-  const perCell = action === 'queen';
+  // A queen-first toggle places queens too, so it gets the same per-cell undo:
+  // one "zurück" should take back one spoken "C4", not the whole batch.
+  const perCell = action === 'queen' || (action === 'toggle' && settings.voiceQueenFirst);
   if (!perCell) pushUndo();
   // Freeze the auto-mark basis for a multi-cell toggle: within one spoken batch
   // ("Punkte auf I5, I6") each named cell should advance one step in the cycle it
@@ -3260,6 +3346,16 @@ function voiceApplyCells(cells, action, meta) {
     } else if ((wasQueen || wasMark) && !nowQueen && !nowMark) {
       cleared++;
     }
+    // A queen-first toggle is logged per cell like a queen, so its dot and
+    // empty steps must be too — the bulk entry below skips per-cell gestures.
+    if (perCell && action === 'toggle' && cellChanged && !nowQueen && journalEnabled())
+      journalPush({
+        src: 'voice',
+        op: `${nowMark ? 'Punkt' : 'leer'} ${coordLabel(r, c)}`,
+        heard: meta && meta.heard,
+        cmd: meta && meta.cmd,
+        queens: queenCoords(),
+      });
   }
   if (!perCell && !changed) {
     // Nothing actually changed (e.g. "Punkt" on existing dots) — keep undo clean.
@@ -3584,11 +3680,14 @@ function applyVoiceSetting() {
   }
 }
 
-// The edge-labels sub-option only makes sense with Voice Mode on, so it's shown
-// in the settings modal only while the Voice Mode switch is checked (and the
-// feature is actually available — browser support plus the German UI).
+// The voice sub-options (edge labels, queen-first cycling) only make sense with
+// Voice Mode on, so they're shown in the settings modal only while the Voice Mode
+// switch is checked (and the feature is actually available — browser support plus
+// the German UI).
 function updateVoiceSubOptions() {
-  dom.voiceEdgeField.hidden = !(voiceAvailable() && dom.voiceMode.checked);
+  const hidden = !(voiceAvailable() && dom.voiceMode.checked);
+  dom.voiceEdgeField.hidden = hidden;
+  dom.voiceQueenFirstField.hidden = hidden;
 }
 
 dom.voiceListen.addEventListener('click', () => {
@@ -3605,6 +3704,11 @@ dom.voiceEdgeMode.addEventListener('change', () => {
   settings.voiceEdgeLabels = dom.voiceEdgeMode.checked;
   saveSettings(settings);
   applyVoiceSetting();
+});
+// Takes effect with the next spoken coordinate; nothing on the board changes.
+dom.voiceQueenFirst.addEventListener('change', () => {
+  settings.voiceQueenFirst = dom.voiceQueenFirst.checked;
+  saveSettings(settings);
 });
 
 // The ⓘ tutorial: what you can say and how the board reacts.

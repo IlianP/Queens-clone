@@ -47,6 +47,8 @@ export const I18N_EN = {
   'ui.settings': 'Settings',
   'ui.board': 'Game board',
   'ui.check': '🔎 Check',
+  'ui.check.title': ({ seconds }) =>
+    `Each check adds ${seconds} seconds to your time – one second per row. Checking the same board again is free.`,
   'ui.hint': '💡 Hint',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
@@ -91,8 +93,8 @@ export const I18N_EN = {
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => enRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
   'score.rowDate': ({ at }) => `Submitted: ${enDateTime.format(new Date(at))}`,
-  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
-    `Playing time ${time} · ${enPlural(hints, 'hint', 'hints')}${hints ? ` (+${penalty})` : ''} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Playing time ${time} · ${enPlural(hints, 'hint', 'hints')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${enPlural(checks, 'check', 'checks')} (+${checkPenalty})` : ''} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
 
   // ---------- win card ----------
   'win.title': '🎉 Solved!',
@@ -110,8 +112,8 @@ export const I18N_EN = {
   'win.newGame': 'New game',
   'win.settings': '⚙ Settings',
   'win.debugCopy': '📋 Copy debug state',
-  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
-    `Playing time ${time} · ${enPlural(hints, 'hint', 'hints')}${hints ? ` (+${penalty})` : ''} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Playing time ${time} · ${enPlural(hints, 'hint', 'hints')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${enPlural(checks, 'check', 'checks')} (+${checkPenalty})` : ''} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) => `Your first game at ${bucket} – from now on there's something to beat.`,
@@ -176,7 +178,7 @@ export const I18N_EN = {
     'Placing a queen automatically dots its row, column, colour region and the neighbouring cells.',
   'settings.live.label': 'Live check',
   'settings.live.hint':
-    'Continuously shows a status lamp for whether your board is still error-free – without revealing where a mistake is. It appears shortly after your last move. Without this option the status is available any time via “Check”.',
+    'Continuously shows a status lamp for whether your board is still error-free – without revealing where a mistake is. It appears shortly after your last move. Without this option the status is available any time via “Check”. Each new verdict costs time, just like pressing “Check”.',
   'settings.intro.label': 'Intro animation',
   'settings.intro.hint':
     'While a puzzle is generated the colour regions spread out in an animation as the board rotates – it fills the wait on large boards.',
@@ -192,6 +194,9 @@ export const I18N_EN = {
   'settings.voiceEdge.label': 'Large coordinates along the edge',
   'settings.voiceEdge.hint':
     'Shows the column letters and row numbers large along the edge of the board – like a chessboard – instead of small in each cell’s corner.',
+  'settings.voiceQueenFirst.label': 'Coordinate places a queen first',
+  'settings.voiceQueenFirst.hint':
+    'Saying just a coordinate (“C4”) cycles queen → dot → empty instead of dot → queen → empty. Tapping a cell stays as it is.',
   'settings.debug.label': 'Debug mode',
   'settings.debug.hint':
     'Shows a button that copies everything about the current board (including the hint) to the clipboard – useful when reporting a problem.',

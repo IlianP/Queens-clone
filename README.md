@@ -32,6 +32,8 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
   A mistake is any rule broken on the current board **and** any departure from
   the unique solution before a rule breaks: a queen that isn't part of the
   solution counts, as does a dot on a cell where the solution needs a queen.
+  Each check costs **one second per row** (5 s on a 5×5 up to 14 s on a 14×14);
+  checking an unchanged board again, or an empty one, is free.
 - Mistakes (touching / colliding queens) are marked red.
 - A row, column or colour region in which every cell is ruled out and no queen
   stands is outlined in pulsing red – no queen can go there any more, so
@@ -67,7 +69,8 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
   error-free (the same check the **Check** button runs, likewise without
   revealing where the mistake is). It only appears shortly after your last move
   so it doesn't flicker while you play. Without this option the status is
-  available any time via **Check**.
+  available any time via **Check**. Each new verdict of the lamp costs as much
+  as pressing **Check**.
 - **Sound:** Short, discreet sound effects for placing a queen, dotting, hints and
   solving. Can be muted here or directly via the 🔊/🔇 icon at the top.
 - **Voice control (beta, German only):** Steer the game by speaking. The commands
@@ -79,7 +82,8 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
   with a short command tutorial, and the last thing recognised; while the mode is
   active the coordinates are also shown on the board – either small in each cell's
   corner or (sub-option **“Koordinaten groß am Rand”**) large as a chessboard-style
-  ruler along the edge. It uses the browser's built-in speech recognition (Web
+  ruler along the edge. A bare **“C4”** cycles the cell like a tap; the sub-option
+  **“Koordinate setzt zuerst eine Dame”** makes it empty → 👑 → dot → empty. It uses the browser's built-in speech recognition (Web
   Speech API) – no extra dependency and no server, but currently only in
   **Chrome/Edge** and with microphone permission. Where recognition is missing the
   option is disabled and the game runs on unchanged.
@@ -101,7 +105,8 @@ These settings, the last name used and the local best times are kept in
 
 After solving, the win screen shows a **result** and asks whether you want to be
 listed. The result is an “effective time”: the raw solving time plus a penalty
-per **hint** used (+30 s). The hint button says so before you press it, a small
+per **hint** used (+30 s) and per **check** (+1 s per row, so +8 s on an 8×8).
+The hint button says so before you press it, a small
 “+30 s” rises off it whenever a hint is actually charged, and **the clock runs on
 the effective time**, so the number you watch is the number you get. Asking for
 the *same* hint again is free and costs no time. Lower is better. **Mistakes are counted and shown,

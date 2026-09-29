@@ -4,12 +4,13 @@
 //
 // Storage: one localStorage key `queens-clone-highscores`, shaped
 //   { "<size>-<difficulty>": Entry[] }   // Entry sorted best-first, capped
-// where Entry = { name, seconds, hints, mistakes, score, date }. Each
+// where Entry = { name, seconds, hints, mistakes, checks, score, date }. Each
 // (size, difficulty) pair is its own leaderboard — the granularity the game
 // already exposes (sizes 5–11 × easy/medium/hard, plus 12×hard).
 //
 // The "score" is an *effective time in seconds*: the raw solve time plus a
-// penalty per used hint, so faster solves with fewer hints rank higher.
+// penalty per used hint and per check ("Prüfen"), so faster solves with fewer
+// aids rank higher.
 // Keeping the raw components lets the penalties be re-tuned without a data
 // migration — and the same formula is mirrored server-side in
 // docs/leaderboard-setup.sql, so keep the two in sync.
@@ -47,6 +48,18 @@
 // name collisions with the other js/ modules.
 
 export const HINT_PENALTY = 30; // seconds added per hint used
+
+// Seconds added per "Prüfen" (the yes/no error check, and each verdict the live
+// lamp shows): one second per row of the board, so 5 s on a 5×5 up to 14 s on a
+// 14×14. Scaled rather than flat because a check is worth more on a big board —
+// it vouches for more placed queens at once — and the solve times it is charged
+// against grow with the size too (8×8 hard: ~15 s median, 12×12 hard: ~70 s).
+// A flat 10 s would more than double a typical small-board solve and be noise on
+// a 14×14. Mirrors queens_check_penalty() in docs/leaderboard-setup.sql.
+export function checkPenalty(size) {
+  const n = Math.floor(Number(size));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 // Kept per (size, difficulty) bucket. The list scrolls inside a fixed-height box
 // (see .score-list), so a larger cap costs card height nothing — it was 10 only
 // because that was the obvious round number, and ten is little once a bucket has
@@ -91,10 +104,11 @@ export function bucketKey(size, difficulty) {
 }
 
 // Effective time in whole seconds; lower is better. Mirrors queens_score() in
-// docs/leaderboard-setup.sql. Mistakes are deliberately not an input — see the
-// note at the top of this file.
-export function computeScore(seconds, hints = 0) {
-  return Math.round(seconds + HINT_PENALTY * hints);
+// docs/leaderboard-setup.sql, argument for argument. Mistakes are accepted but
+// carry no weight — see the note at the top of this file. `checks` needs the
+// board `size`, since a check costs checkPenalty(size) each.
+export function computeScore(seconds, hints = 0, mistakes = 0, checks = 0, size = 0) {
+  return Math.round(seconds + HINT_PENALTY * hints + checkPenalty(size) * checks);
 }
 
 export function sanitizeName(name) {
@@ -110,7 +124,9 @@ function byScore(a, b) {
 }
 
 // Coerce a stored/candidate entry into a clean Entry, or null if unusable.
-function normalizeEntry(e) {
+// `size` is the bucket's board size: an entry doesn't carry it, but the check
+// surcharge depends on it.
+function normalizeEntry(e, size) {
   if (!e || typeof e !== 'object') return null;
   const seconds = Math.floor(Number(e.seconds));
   if (!Number.isFinite(seconds) || seconds < 0) return null;
@@ -118,17 +134,21 @@ function normalizeEntry(e) {
   const mistakes = Number.isFinite(Number(e.mistakes))
     ? Math.max(0, Math.floor(Number(e.mistakes)))
     : 0;
+  // Entries written before checks were charged have no field, and 0 is exactly
+  // what they were: the check was free then.
+  const checks = Number.isFinite(Number(e.checks)) ? Math.max(0, Math.floor(Number(e.checks))) : 0;
   // The score is DERIVED, never trusted: the raw components are stored for
   // exactly this reason, so a retuned penalty applies to the whole list at once
   // instead of leaving old entries ranked under the old formula next to new
   // ones ranked under the new. A stored score that already matches recomputes
   // to itself, so this is a no-op for everything written since the last change.
-  const score = computeScore(seconds, hints);
+  const score = computeScore(seconds, hints, mistakes, checks, size);
   return {
     name: sanitizeName(e.name),
     seconds,
     hints,
     mistakes,
+    checks,
     score,
     date: typeof e.date === 'string' ? e.date : new Date().toISOString(),
   };
@@ -144,7 +164,8 @@ export function loadLocalScores() {
     const out = {};
     for (const key of Object.keys(data)) {
       if (!Array.isArray(data[key])) continue;
-      const list = data[key].map(normalizeEntry).filter(Boolean);
+      const size = parseInt(key, 10); // bucketKey: "<size>-<difficulty>"
+      const list = data[key].map((e) => normalizeEntry(e, size)).filter(Boolean);
       list.sort(byScore);
       out[key] = list.slice(0, MAX_LOCAL_ENTRIES);
     }
@@ -162,7 +183,7 @@ export function getLocalScores(size, difficulty) {
 // and report where the new entry landed. Returns { list, rank } with a
 // 0-based rank, or rank === -1 when the entry didn't make the top N.
 export function saveLocalScore(size, difficulty, entry) {
-  const norm = normalizeEntry(entry);
+  const norm = normalizeEntry(entry, size);
   if (!norm) return { list: getLocalScores(size, difficulty), rank: -1 };
   const all = loadLocalScores();
   const key = bucketKey(size, difficulty);

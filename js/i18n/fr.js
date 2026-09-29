@@ -48,6 +48,8 @@ export const I18N_FR = {
   'ui.settings': 'Réglages',
   'ui.board': 'Grille de jeu',
   'ui.check': '🔎 Vérifier',
+  'ui.check.title': ({ seconds }) =>
+    `Chaque vérification ajoute ${seconds}\u00a0secondes à ton temps – une seconde par ligne. Revérifier la même grille est gratuit.`,
   'ui.hint': '💡 Indice',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
@@ -92,8 +94,8 @@ export const I18N_FR = {
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => frRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
   'score.rowDate': ({ at }) => `Enregistré : ${frDateTime.format(new Date(at))}`,
-  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
-    `Temps de jeu ${time} · ${frPlural(hints, 'indice', 'indices')}${hints ? ` (+${penalty})` : ''} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Temps de jeu ${time} · ${frPlural(hints, 'indice', 'indices')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${frPlural(checks, 'vérification', 'vérifications')} (+${checkPenalty})` : ''} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
 
   // ---------- win card ----------
   'win.title': '🎉 Résolu !',
@@ -111,8 +113,8 @@ export const I18N_FR = {
   'win.newGame': 'Nouvelle partie',
   'win.settings': '⚙ Réglages',
   'win.debugCopy': '📋 Copier l’état de débogage',
-  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
-    `Temps de jeu ${time} · ${frPlural(hints, 'indice', 'indices')}${hints ? ` (+${penalty})` : ''} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Temps de jeu ${time} · ${frPlural(hints, 'indice', 'indices')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${frPlural(checks, 'vérification', 'vérifications')} (+${checkPenalty})` : ''} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) =>
@@ -180,7 +182,7 @@ export const I18N_FR = {
     'Poser une dame pointe automatiquement sa ligne, sa colonne, sa région de couleur et les cases voisines.',
   'settings.live.label': 'Vérification en direct',
   'settings.live.hint':
-    'Affiche en continu un voyant indiquant si ta grille est toujours sans erreur – sans révéler où se trouve l’erreur. Il apparaît peu après ton dernier coup. Sans cette option, le statut reste disponible à tout moment via « Vérifier ».',
+    'Affiche en continu un voyant indiquant si ta grille est toujours sans erreur – sans révéler où se trouve l’erreur. Il apparaît peu après ton dernier coup. Sans cette option, le statut reste disponible à tout moment via « Vérifier ». Chaque nouveau verdict coûte du temps, comme un appui sur « Vérifier ».',
   'settings.intro.label': 'Animation d’ouverture',
   'settings.intro.hint':
     'Pendant la génération d’une grille, les régions de couleur se déploient en animation tandis que le plateau tourne – de quoi occuper l’attente sur les grandes grilles.',
@@ -196,6 +198,9 @@ export const I18N_FR = {
   'settings.voiceEdge.label': 'Grandes coordonnées sur le bord',
   'settings.voiceEdge.hint':
     'Affiche les lettres de colonne et les numéros de ligne en grand sur le bord de la grille – comme sur un échiquier – au lieu de les mettre en petit dans le coin de chaque case.',
+  'settings.voiceQueenFirst.label': 'Une coordonnée place d’abord une dame',
+  'settings.voiceQueenFirst.hint':
+    'Dire seulement une coordonnée (« C4 ») fait défiler dame → point → vide au lieu de point → dame → vide. Toucher une case ne change pas.',
   'settings.debug.label': 'Mode débogage',
   'settings.debug.hint':
     'Affiche un bouton qui copie dans le presse-papiers tout ce qui concerne la grille actuelle (indice compris) – utile pour signaler un problème.',
