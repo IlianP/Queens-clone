@@ -9,8 +9,8 @@
 // already exposes (sizes 5–11 × easy/medium/hard, plus 12×hard).
 //
 // The "score" is an *effective time in seconds*: the raw solve time plus a
-// penalty per used hint and per check ("Prüfen"), so faster solves with fewer
-// aids rank higher.
+// penalty per used hint and per check ("Prüfen"), both priced per board row,
+// so faster solves with fewer aids rank higher.
 // Keeping the raw components lets the penalties be re-tuned without a data
 // migration — and the same formula is mirrored server-side in
 // docs/leaderboard-setup.sql, so keep the two in sync.
@@ -47,18 +47,29 @@
 // bundle, see tools/build-artifact.mjs): no `import.meta`, and no top-level
 // name collisions with the other js/ modules.
 
-export const HINT_PENALTY = 30; // seconds added per hint used
+// Both aids are priced PER ROW of the board, because the solve times they are
+// charged against grow with the size (live medians, Sept 2026: 5×5 hard ~9 s,
+// 8×8 hard ~14 s, 12×12 hard ~70 s). The old flat 30 s per hint tripled a
+// typical 5×5 solve and was a rounding error on a 14×14; a flat price for the
+// check would have had the same problem.
+//
+// A hint costs three seconds per row (15 s on 5×5, 24 s on 8×8, 30 s on 10×10
+// — where the old flat price still holds — up to 42 s on 14×14). A check
+// ("Prüfen", a bare yes/no) costs one second per row, so a hint always costs
+// three checks. Mirror queens_hint_penalty() / queens_check_penalty() in
+// docs/leaderboard-setup.sql.
+export const HINT_PENALTY_PER_ROW = 3;
+export const CHECK_PENALTY_PER_ROW = 1;
 
-// Seconds added per "Prüfen" (the yes/no error check, and each verdict the live
-// lamp shows): one second per row of the board, so 5 s on a 5×5 up to 14 s on a
-// 14×14. Scaled rather than flat because a check is worth more on a big board —
-// it vouches for more placed queens at once — and the solve times it is charged
-// against grow with the size too (8×8 hard: ~15 s median, 12×12 hard: ~70 s).
-// A flat 10 s would more than double a typical small-board solve and be noise on
-// a 14×14. Mirrors queens_check_penalty() in docs/leaderboard-setup.sql.
-export function checkPenalty(size) {
+function penaltyRows(size) {
   const n = Math.floor(Number(size));
   return Number.isFinite(n) && n > 0 ? n : 0;
+}
+export function hintPenalty(size) {
+  return HINT_PENALTY_PER_ROW * penaltyRows(size);
+}
+export function checkPenalty(size) {
+  return CHECK_PENALTY_PER_ROW * penaltyRows(size);
 }
 // Kept per (size, difficulty) bucket. The list scrolls inside a fixed-height box
 // (see .score-list), so a larger cap costs card height nothing — it was 10 only
@@ -105,10 +116,10 @@ export function bucketKey(size, difficulty) {
 
 // Effective time in whole seconds; lower is better. Mirrors queens_score() in
 // docs/leaderboard-setup.sql, argument for argument. Mistakes are accepted but
-// carry no weight — see the note at the top of this file. `checks` needs the
-// board `size`, since a check costs checkPenalty(size) each.
+// carry no weight — see the note at the top of this file. Both surcharges are
+// priced by the board `size`, so it is required for a score with any aid in it.
 export function computeScore(seconds, hints = 0, mistakes = 0, checks = 0, size = 0) {
-  return Math.round(seconds + HINT_PENALTY * hints + checkPenalty(size) * checks);
+  return Math.round(seconds + hintPenalty(size) * hints + checkPenalty(size) * checks);
 }
 
 export function sanitizeName(name) {

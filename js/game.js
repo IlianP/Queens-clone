@@ -221,7 +221,7 @@ export class Game {
   }
 
   // Whether the current board has any detectable mistake, WITHOUT revealing
-  // where. Used by the "Prüfen" status and the live lamp — a pure yes/no so the
+  // where. Used by the "Prüfen" status — a pure yes/no so the
   // UI never leaks a position or the next move. Reuses the existing rule logic
   // (conflicts + dead units) and, given the puzzle's unique solution, also flags
   // two ways of leaving the solution path even before a rule breaks: a placed
@@ -248,8 +248,8 @@ export class Game {
     return false;
   }
 
-  // Untouched board: no queens and no manual marks. The live lamp stays off in
-  // this state so a fresh board doesn't light up green for nothing.
+  // Untouched board: no queens and no manual marks. Checking it is free — the
+  // answer is known — so "Prüfen" charges nothing in this state.
   isPristine() {
     if (this.queenCount !== 0) return false;
     for (let r = 0; r < this.N; r++)

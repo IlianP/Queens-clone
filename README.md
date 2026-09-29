@@ -65,12 +65,6 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
   it were generated live.
 - **Quick mode:** Placing a queen automatically dots every cell it rules out: the
   whole row, column, colour region and the neighbouring cells.
-- **Live check:** Permanently shows a status lamp for whether your board is
-  error-free (the same check the **Check** button runs, likewise without
-  revealing where the mistake is). It only appears shortly after your last move
-  so it doesn't flicker while you play. Without this option the status is
-  available any time via **Check**. Each new verdict of the lamp costs as much
-  as pressing **Check**.
 - **Sound:** Short, discreet sound effects for placing a queen, dotting, hints and
   solving. Can be muted here or directly via the 🔊/🔇 icon at the top.
 - **Voice control (beta, German only):** Steer the game by speaking. The commands
@@ -105,9 +99,10 @@ These settings, the last name used and the local best times are kept in
 
 After solving, the win screen shows a **result** and asks whether you want to be
 listed. The result is an “effective time”: the raw solving time plus a penalty
-per **hint** used (+30 s) and per **check** (+1 s per row, so +8 s on an 8×8).
-The hint button says so before you press it, a small
-“+30 s” rises off it whenever a hint is actually charged, and **the clock runs on
+per **hint** used (+3 s per row: 15 s on a 5×5, 24 s on an 8×8, 42 s on a 14×14)
+and per **check** (+1 s per row, so +8 s on an 8×8). Both buttons show their
+price before you press them, a small “+24 s” (or whatever the board's price is)
+rises off the button whenever an aid is actually charged, and **the clock runs on
 the effective time**, so the number you watch is the number you get. Asking for
 the *same* hint again is free and costs no time. Lower is better. **Mistakes are counted and shown,
 but cost nothing** – a wrong queen already costs time, because you have to spot

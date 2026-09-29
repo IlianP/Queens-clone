@@ -101,12 +101,12 @@ export const I18N_RU = {
   'ui.hint': '💡 Подсказка',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
-  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // alone). Two presentations, one number — both are handed the same hintPenalty(N), so
   // the label, the animation and the score cannot quote different figures.
   'ui.hint.cost': ({ seconds }) => `+${seconds} с`,
   'ui.hint.costLabel': ({ seconds }) => `(+${seconds} с)`,
   'ui.hint.title': ({ seconds }) =>
-    `Новая подсказка добавляет ${ruPlural(seconds, 'секунду', 'секунды', 'секунд')} к твоему времени. Открыть ту же подсказку ещё раз — бесплатно.`,
+    `Новая подсказка добавляет ${ruPlural(seconds, 'секунду', 'секунды', 'секунд')} к твоему времени — по три секунды за строку. Открыть ту же подсказку ещё раз — бесплатно.`,
   'ui.undo': '↶ Отменить',
   'ui.reset': '🔄 Сбросить',
   'ui.debugCopy': '🐞 Копировать отладку',
@@ -238,9 +238,6 @@ export const I18N_RU = {
   'settings.quick.label': 'Быстрый режим',
   'settings.quick.hint':
     'При постановке ферзя его строка, колонка, цветная область и соседние клетки отмечаются точками автоматически.',
-  'settings.live.label': 'Проверка на лету',
-  'settings.live.hint':
-    'Постоянно показывает индикатор того, остаётся ли поле без ошибок — не раскрывая, где именно ошибка. Появляется вскоре после твоего последнего хода. Без этой опции статус можно посмотреть в любой момент через «Проверить». Каждый новый вердикт стоит времени, как нажатие «Проверить».',
   'settings.intro.label': 'Вступительная анимация',
   'settings.intro.hint':
     'Пока создаётся головоломка, цветные области растекаются по вращающемуся полю — это скрашивает ожидание на больших полях.',

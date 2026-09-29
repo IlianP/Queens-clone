@@ -32,7 +32,7 @@ const {
   computeScore,
   checkPenalty,
   getLocalScores,
-  HINT_PENALTY,
+  hintPenalty,
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
@@ -373,7 +373,10 @@ eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
 // --- computeScore: hints cost time, mistakes don't ---------------------------
 {
   eq(computeScore(100, 0), 100, 'a clean solve scores its raw time');
-  eq(computeScore(100, 2), 100 + 2 * HINT_PENALTY, 'each hint still costs HINT_PENALTY');
+  eq(computeScore(100, 2, 0, 0, 10), 100 + 2 * 30, 'a hint costs 30 s on a 10×10');
+  eq(hintPenalty(5), 15, 'a hint costs 3 s per row: 15 s on a 5×5');
+  eq(hintPenalty(14), 42, '… and 42 s on a 14×14');
+  eq(computeScore(20, 1, 0, 0, 5), 35, 'a 5×5 solve with one hint: 20 + 15');
   // The point of the change: a mis-tap must not be charged for twice. The
   // mistakes argument is accepted (it mirrors queens_score's signature) and
   // carries no weight.
@@ -393,8 +396,8 @@ eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
   eq(checkPenalty(5), 5, 'a check costs 5 s on a 5×5');
   eq(checkPenalty(14), 14, 'and 14 s on a 14×14');
   eq(checkPenalty(undefined), 0, 'no size, no surcharge');
-  eq(computeScore(100, 1, 0, 3, 8), 100 + HINT_PENALTY + 3 * 8, 'checks are priced by board size');
-  eq(computeScore(100, 1, 0, 3), 100 + HINT_PENALTY, 'checks without a size price at 0');
+  eq(computeScore(100, 1, 0, 3, 8), 100 + 3 * 8 + 3 * 8, 'hints and checks are priced by board size');
+  eq(computeScore(100, 1, 0, 3), 100, 'without a size neither aid has a price');
 
   // The local list derives the surcharge from the bucket's size, and entries
   // from before checks were charged read as zero checks.
@@ -424,14 +427,15 @@ for (const [sc, sec] of [[40, 40], [55, 55], [55, 55], [90, 90]]) {
   const { rank } = saveLocalScore(6, 'easy', { name: 'Ich', seconds: 55, hints: 0, mistakes: 0, score: 55 });
   eq(rank, 3, 'saving puts the tie in the same place the preview showed');
   // Within an equal score the faster raw time still wins (byScore's tie-break).
-  // The three scores are equal by construction (seconds + 30·hints = 90 each) —
+  // The three scores are equal by construction (seconds + 30·hints = 90 each on a
+  // 10×10, where a hint costs 3 s × 10 rows) —
   // a stored score is recomputed from its components on read, so it can't be
   // stated independently of them.
   localStorage.clear();
-  saveLocalScore(6, 'easy', { name: 'Ich', seconds: 90, hints: 0, mistakes: 0, score: 90 });
-  saveLocalScore(6, 'easy', { name: 'Ich', seconds: 30, hints: 2, mistakes: 0, score: 90 });
-  eq(previewRank(6, 'easy', 90, 60), 1, 'ranked behind the faster raw time, ahead of the slower');
-  eq(saveLocalScore(6, 'easy', { name: 'Ich', seconds: 60, hints: 1, mistakes: 0, score: 90 }).rank, 1,
+  saveLocalScore(10, 'easy', { name: 'Ich', seconds: 90, hints: 0, mistakes: 0, score: 90 });
+  saveLocalScore(10, 'easy', { name: 'Ich', seconds: 30, hints: 2, mistakes: 0, score: 90 });
+  eq(previewRank(10, 'easy', 90, 60), 1, 'ranked behind the faster raw time, ahead of the slower');
+  eq(saveLocalScore(10, 'easy', { name: 'Ich', seconds: 60, hints: 1, mistakes: 0, score: 90 }).rank, 1,
     'and saving agrees again');
 }
 

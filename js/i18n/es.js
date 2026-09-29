@@ -51,12 +51,12 @@ export const I18N_ES = {
   'ui.hint': '💡 Pista',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
-  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // alone). Two presentations, one number — both are handed the same hintPenalty(N), so
   // the label, the animation and the score cannot quote different figures.
   'ui.hint.cost': ({ seconds }) => `+${seconds}\u00a0s`,
   'ui.hint.costLabel': ({ seconds }) => `(+${seconds}\u00a0s)`,
   'ui.hint.title': ({ seconds }) =>
-    `Una pista nueva suma ${seconds}\u00a0segundos a tu tiempo. Volver a abrir la misma pista es gratis.`,
+    `Una pista nueva suma ${seconds}\u00a0segundos a tu tiempo: tres segundos por fila. Volver a abrir la misma pista es gratis.`,
   'ui.undo': '↶ Deshacer',
   'ui.reset': '🔄 Reiniciar',
   'ui.debugCopy': '🐞 Copiar depuración',
@@ -178,9 +178,6 @@ export const I18N_ES = {
   'settings.quick.label': 'Modo rápido',
   'settings.quick.hint':
     'Al colocar una reina se marcan automáticamente con un punto su fila, su columna, su región de color y las casillas contiguas.',
-  'settings.live.label': 'Comprobación en directo',
-  'settings.live.hint':
-    'Muestra de forma continua un indicador de si tu tablero sigue sin errores, sin revelar dónde está el error. Aparece poco después de tu última jugada. Sin esta opción, el estado se puede consultar en cualquier momento con «Comprobar». Cada nuevo veredicto cuesta tiempo, igual que pulsar «Comprobar».',
   'settings.intro.label': 'Animación de inicio',
   'settings.intro.hint':
     'Mientras se genera un tablero, las regiones de color se despliegan animadas mientras el tablero gira: así se llena la espera en los tableros grandes.',

@@ -53,12 +53,12 @@ export const I18N_FR = {
   'ui.hint': '💡 Indice',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
-  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // alone). Two presentations, one number — both are handed the same hintPenalty(N), so
   // the label, the animation and the score cannot quote different figures.
   'ui.hint.cost': ({ seconds }) => `+${seconds}\u00a0s`,
   'ui.hint.costLabel': ({ seconds }) => `(+${seconds}\u00a0s)`,
   'ui.hint.title': ({ seconds }) =>
-    `Un nouvel indice ajoute ${seconds}\u00a0secondes à ton temps. Rouvrir le même indice est gratuit.`,
+    `Un nouvel indice ajoute ${seconds}\u00a0secondes à ton temps – trois secondes par ligne. Rouvrir le même indice est gratuit.`,
   'ui.undo': '↶ Annuler',
   'ui.reset': '🔄 Réinitialiser',
   'ui.debugCopy': '🐞 Copier le débogage',
@@ -180,9 +180,6 @@ export const I18N_FR = {
   'settings.quick.label': 'Mode rapide',
   'settings.quick.hint':
     'Poser une dame pointe automatiquement sa ligne, sa colonne, sa région de couleur et les cases voisines.',
-  'settings.live.label': 'Vérification en direct',
-  'settings.live.hint':
-    'Affiche en continu un voyant indiquant si ta grille est toujours sans erreur – sans révéler où se trouve l’erreur. Il apparaît peu après ton dernier coup. Sans cette option, le statut reste disponible à tout moment via « Vérifier ». Chaque nouveau verdict coûte du temps, comme un appui sur « Vérifier ».',
   'settings.intro.label': 'Animation d’ouverture',
   'settings.intro.hint':
     'Pendant la génération d’une grille, les régions de couleur se déploient en animation tandis que le plateau tourne – de quoi occuper l’attente sur les grandes grilles.',

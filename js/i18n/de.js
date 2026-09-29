@@ -47,12 +47,12 @@ export const I18N_DE = {
   'ui.hint': '💡 Hinweis',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
-  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // alone). Two presentations, one number — both are handed the same hintPenalty(N), so
   // the label, the animation and the score cannot quote different figures.
   'ui.hint.cost': ({ seconds }) => `+${seconds}\u00a0s`,
   'ui.hint.costLabel': ({ seconds }) => `(+${seconds}\u00a0s)`,
   'ui.hint.title': ({ seconds }) =>
-    `Ein neuer Hinweis zählt ${seconds}\u00a0Sekunden auf deine Zeit. Denselben Hinweis erneut zu öffnen ist frei.`,
+    `Ein neuer Hinweis zählt ${seconds}\u00a0Sekunden auf deine Zeit – drei Sekunden pro Zeile. Denselben Hinweis erneut zu öffnen ist frei.`,
   'ui.undo': '↶ Rückgängig',
   'ui.reset': '🔄 Zurücksetzen',
   'ui.debugCopy': '🐞 Debug kopieren',
@@ -176,9 +176,6 @@ export const I18N_DE = {
   'settings.quick.label': 'Schnellmodus',
   'settings.quick.hint':
     'Beim Setzen einer Dame werden Zeile, Spalte, Farbregion und angrenzende Felder automatisch gepunktet.',
-  'settings.live.label': 'Live-Prüfung',
-  'settings.live.hint':
-    'Zeigt fortlaufend ein Statuslämpchen an, ob dein Spielstand fehlerfrei ist – ohne zu verraten, wo ein Fehler liegt. Erscheint erst kurz nach deinem letzten Zug. Ohne diese Option lässt sich der Status jederzeit über „Prüfen“ abrufen. Jede neue Anzeige kostet Zeit wie ein Druck auf „Prüfen“.',
   'settings.intro.label': 'Start-Animation',
   'settings.intro.hint':
     'Beim Erzeugen eines Rätsels breiten sich die Farbregionen animiert aus, während sich das Feld dreht – füllt die Wartezeit bei großen Feldern.',

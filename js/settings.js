@@ -26,7 +26,6 @@ export const DEFAULTS = {
   debugExtended: false,
   introAnimation: true,
   nickname: '',
-  liveCheck: false,
   sound: true,
   voice: false,
   voiceEdgeLabels: false,
@@ -68,7 +67,6 @@ export function loadSettings() {
       introAnimation:
         typeof s.introAnimation === 'boolean' ? s.introAnimation : DEFAULTS.introAnimation,
       nickname: sanitizeNickname(s.nickname),
-      liveCheck: typeof s.liveCheck === 'boolean' ? s.liveCheck : DEFAULTS.liveCheck,
       sound: typeof s.sound === 'boolean' ? s.sound : DEFAULTS.sound,
       voice: typeof s.voice === 'boolean' ? s.voice : DEFAULTS.voice,
       voiceEdgeLabels:

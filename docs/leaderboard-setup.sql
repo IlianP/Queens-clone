@@ -71,14 +71,17 @@ revoke all on public.scores from anon, authenticated;
 -- muss bemerkt und zurückgenommen werden) – der Aufschlag kassierte also zweimal
 -- für denselben Patzer. p_mistakes bleibt in der Signatur (und die Spalte
 -- `mistakes` in der Tabelle): die Rohwerte werden weiter gespeichert und
--- angezeigt, nur ihr Gewicht ist 0. Die Signatur zu behalten heißt auch, dass
--- submit_score() unverändert aufgerufen werden kann.
+-- angezeigt, nur ihr Gewicht ist 0.
 --
--- PRÜFEN KOSTET ZEIT (seit 2026-09): je Prüfung eine Sekunde pro Zeile des
--- Feldes, also 5 s auf 5×5 bis 14 s auf 14×14 (queens_check_penalty). Mit der
--- Größe skaliert, weil eine Prüfung auf einem großen Feld mehr Damen auf einmal
--- absichert und die Lösungszeiten dort ebenfalls länger sind. Muss zu
--- checkPenalty() in js/highscores.js passen.
+-- HILFEN KOSTEN JE ZEILE (seit 2026-09): ein Hinweis 3 s pro Zeile des Feldes
+-- (15 s auf 5×5, 24 s auf 8×8, 30 s auf 10×10, 42 s auf 14×14), eine Prüfung
+-- 1 s pro Zeile (5 s bis 14 s). Vorher kostete ein Hinweis pauschal 30 s – auf
+-- 5×5 mehr als das Dreifache einer typischen Lösung (Median ~9 s), auf 14×14
+-- kaum spürbar. Muss zu hintPenalty()/checkPenalty() in js/highscores.js passen.
+create or replace function public.queens_hint_penalty(p_size int)
+  returns int language sql immutable as $$
+  select 3 * greatest(coalesce(p_size, 0), 0);
+$$;
 create or replace function public.queens_check_penalty(p_size int)
   returns int language sql immutable as $$
   select greatest(coalesce(p_size, 0), 0);
@@ -87,20 +90,21 @@ $$;
 create or replace function public.queens_score(
   p_seconds int, p_hints int, p_mistakes int, p_checks int, p_size int
 ) returns int language sql immutable as $$
-  select p_seconds + 30 * p_hints
+  select p_seconds
+         + public.queens_hint_penalty(p_size) * coalesce(p_hints, 0)
          + public.queens_check_penalty(p_size) * coalesce(p_checks, 0);
 $$;
 
--- Die alte Drei-Parameter-Form bleibt für die Einreichung ohne Prüfungen
--- (sechs- und sieben-Parameter-submit_score): dort ist checks immer 0.
-create or replace function public.queens_score(p_seconds int, p_hints int, p_mistakes int)
-  returns int language sql immutable as $$
-  select public.queens_score(p_seconds, p_hints, p_mistakes, 0, 0);
-$$;
+-- Die frühere Drei-Parameter-Form kannte die Feldgröße nicht und kann den
+-- Hinweis deshalb nicht mehr richtig bepreisen. Alle submit_score()-Varianten
+-- rufen die Fünf-Parameter-Form; die alte wird entfernt, damit sie niemand
+-- versehentlich benutzt.
+drop function if exists public.queens_score(int, int, int);
 
 -- Bestandsdaten auf die aktuelle Formel ziehen. Genau dafür liegen seconds,
--- hints und mistakes einzeln in der Tabelle: ein früher eingetragener Lauf mit
--- Fehlern war nie wirklich langsamer, er wurde nur schlechter gerechnet – und
+-- hints, mistakes, checks und size einzeln in der Tabelle: ein früher
+-- eingetragener Lauf wurde nur anders gerechnet (Fehler mit 15 s, ein Hinweis
+-- pauschal mit 30 s) – und
 -- das lässt sich exakt zurückrechnen, ohne dass jemand etwas neu spielen muss.
 -- Idempotent (`is distinct from` schreibt nur, was abweicht), also bei jedem
 -- erneuten Ausführen der Datei ein No-Op; created_at bleibt unberührt, die
@@ -160,7 +164,7 @@ begin
     where client_key = v_key and created_at > now() - interval '1 minute';
   if v_recent >= 20 then raise exception 'rate limited'; end if;
 
-  v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0));
+  v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), 0, p_size);
 
   insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, client_key)
   values (v_name, p_size, p_difficulty, p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), v_score, v_key)
@@ -221,7 +225,7 @@ begin
       where client_key = v_key and created_at > now() - interval '1 minute';
     if v_recent >= 20 then raise exception 'rate limited'; end if;
 
-    v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0));
+    v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), 0, p_size);
     v_size := p_size; v_difficulty := p_difficulty; v_seconds := p_seconds;
     insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, client_key, submission_id)
     values (v_name, v_size, v_difficulty, v_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), v_score, v_key, p_submission_id)
@@ -669,14 +673,15 @@ grant select on public.play_stats to service_role;
 -- Muss es doch von Hand sein, reicht der geänderte Abschnitt. Die Abschnitte
 -- sind in sich abgeschlossen; Stand dieser Datei:
 --
---   Abschnitt 3    (Zeilen  63–99)   Score-Formel + einmaliger Backfill
---   Abschnitt 4+4b (Zeilen 100–226)  submit_score
---   Abschnitt 5    (Zeilen 227–313)  top_scores – Deckel pro Spieler   ← zuletzt geändert
---   Abschnitt 5b   (Zeilen 314–329)  score_counts
---   Abschnitt 5c   (Zeilen 330–441)  player_rank
---   Abschnitt 6    (Zeilen 442–448)  Ausführrechte – nach 5 immer mitnehmen,
+--   Abschnitt 1    (Zeilen  29–62)   Tabelle (+ Spalte checks)     ← zuletzt geändert
+--   Abschnitt 3    (Zeilen  67–127)  Score-Formel + Backfill       ← zuletzt geändert
+--   Abschnitt 4–4c (Zeilen 128–320)  submit_score (drei Formen)    ← zuletzt geändert
+--   Abschnitt 5    (Zeilen 321–407)  top_scores – Deckel pro Spieler, checks
+--   Abschnitt 5b   (Zeilen 408–423)  score_counts
+--   Abschnitt 5c   (Zeilen 424–536)  player_rank
+--   Abschnitt 6    (Zeilen 537–544)  Ausführrechte – nach 4c/5 immer mitnehmen,
 --                                    weil `drop function` die Rechte mitlöscht
---   Abschnitt 8    (Zeilen 466–571)  bump_stat
+--   Abschnitt 8    (Zeilen 562–…)    bump_stat
 --
 -- Die Zeilennummern verschieben sich, sobald jemand oberhalb etwas einfügt —
 -- deshalb stehen die Abschnittsnummern daneben, und deshalb ist der Workflow
@@ -775,6 +780,8 @@ grant select on public.play_stats to service_role;
 --   mehr auf den Rang); nur die Statuszeile kann bei Gleichstand einen Platz zu
 --   gut anzeigen.
 
+-- (Überholt durch „Hilfen kosten je Zeile“ weiter unten: die Drei-Parameter-
+-- Form von queens_score() gibt es nicht mehr. Stehen gelassen als Historie.)
 -- 2026-09: Fehler kosten keine Zeit mehr. queens_score() rechnet nur noch
 -- `seconds + 30 * hints`; der Aufschlag von 15 s je Fehler entfällt (Begründung
 -- in Abschnitt 3). Die ganze Datei erneut ausführen – das ersetzt die Funktion
@@ -827,14 +834,18 @@ grant select on public.play_stats to service_role;
 -- das Spiel läuft unverändert – im Wochenbericht bleibt der Abschnitt
 -- "Spielverlauf" dann einfach leer.
 --
--- 2026-09: Prüfen kostet Zeit. Neue Spalte `checks` (Default 0), die Funktion
--- queens_check_penalty(), eine Fünf-Parameter-Form von queens_score(), eine
--- achte submit_score()-Überladung mit p_checks samt grant, und top_scores()
--- liefert `checks` mit (die Rückgabespalten ändern sich; das vorhandene `drop`
--- in Abschnitt 5 deckt das ab). Die ganze Datei erneut ausführen – der
--- deploy-sql-Workflow tut das beim Merge nach main von selbst. Bestandszeilen
--- bekommen checks = 0 und behalten ihren Score (das `update` in Abschnitt 3
--- ist für sie ein No-Op). Ohne diese Migration funktioniert jede Partie OHNE
--- Prüfung wie bisher; eine Partie MIT Prüfung ruft die achte Überladung, die es
--- dann nicht gibt, und die globale Einreichung schlägt fehl (die lokale Liste
--- bekommt sie trotzdem).
+-- 2026-09: Hilfen kosten je Zeile. Ein Hinweis kostet 3 s pro Zeile statt
+-- pauschal 30 s, eine Prüfung ("Prüfen") neu 1 s pro Zeile. Neu: Spalte
+-- `checks` (Default 0), queens_hint_penalty(), queens_check_penalty(), die
+-- Fünf-Parameter-Form von queens_score() (die Drei-Parameter-Form wird
+-- entfernt), eine achte submit_score()-Überladung mit p_checks samt grant, und
+-- top_scores() liefert `checks` mit (das vorhandene `drop` in Abschnitt 5 deckt
+-- die geänderten Rückgabespalten ab). Die ganze Datei erneut ausführen – der
+-- deploy-sql-Workflow tut das beim Merge nach main von selbst. Das `update` in
+-- Abschnitt 3 rechnet alle Bestandszeilen MIT Hinweisen neu: auf Feldern unter
+-- 10×10 werden sie besser, darüber schlechter, auf 10×10 bleiben sie gleich;
+-- Zeilen ohne Hinweis ändern sich nicht (checks = 0). Ohne diese Migration
+-- funktioniert eine Partie OHNE Prüfung weiter (nur rechnet der Server den
+-- Hinweis noch pauschal); eine Partie MIT Prüfung ruft die achte Überladung,
+-- die es dann nicht gibt, und die globale Einreichung schlägt fehl (die lokale
+-- Liste bekommt sie trotzdem).

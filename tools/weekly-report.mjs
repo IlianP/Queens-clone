@@ -612,7 +612,7 @@ export function renderReport(stats, { continued = true } = {}) {
   out.push('- **„Einreichung" ≠ „gespieltes Spiel".** Eine Zeile in der Rangliste entsteht nur, wenn ein Spiel gelöst *und* geschickt wurde. Reine Seitenaufrufe von Leuten, die nie ein Spiel starten, sieht nur der Zähler `app_open`.');
   out.push('- **„Aktive Geräte" ist eine Untergrenze pro Tag.** Gezählt wird der tägliche IP-Hash aus `submit_score`, den die Rangliste ohnehin fürs Rate-Limit führt. Er wechselt täglich und ist pro Netz grob — zwei Personen im selben WLAN sind ein Gerät, dieselbe Person an zwei Tagen sind zwei Gerätetage. Eine echte Nutzerzahl ist das nicht und kann es ohne Tracking auch nicht werden.');
   out.push('- **Namen sind selbstgewählt und nicht eindeutig.** „Neu dabei" heißt: dieser Name stand vorher nie in der Tabelle.');
-  out.push('- **Ergebnis = Spielzeit + 30 s je Tipp** (`queens_score`), Fehler kosten nichts. Die Spalte „Zeit" ist die reine Spielzeit.');
+  out.push('- **Ergebnis = Spielzeit + 3 s je Zeile und Tipp + 1 s je Zeile und Prüfung** (`queens_score`), Fehler kosten nichts. Die Spalte „Zeit" ist die reine Spielzeit.');
   out.push('- Der Zeitraum beginnt dort, wo der letzte Bericht endete. Fällt ein Lauf aus, deckt der nächste beide Wochen ab. Die Zähler liegen nur stundenweise vor, ihr Fenster ist deshalb auf volle Stunden gerundet — die angebrochene Stunde gehört dem nächsten Bericht. Die Trichterstufen zählen alle über dieses gerundete Fenster, damit ihre Quoten zueinander passen; weicht die Einreichungszahl dadurch von der oben ab, steht es an der Stelle dabei.');
   out.push('');
   out.push('</details>');

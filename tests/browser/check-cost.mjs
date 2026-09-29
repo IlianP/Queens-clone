@@ -5,9 +5,9 @@
 // browser test are the ones the diff can't show:
 //   - an untouched board is free (the answer is known), and asking again about
 //     an unchanged board is free (it tells nothing new) — like a repeated hint;
-//   - the live lamp is an automatic "Prüfen", so each verdict it shows costs
-//     the same, or turning it on would be a way around the price;
-//   - the win card's arithmetic closes: result = raw time + 30·hints + N·checks,
+//   - a verdict is about the board it was asked for, so the next move clears
+//     it (there is no live lamp any more — it was removed on purpose);
+//   - the win card's arithmetic closes: result = raw time + 3N·hints + N·checks,
 //     and the frozen clock reads exactly that;
 //   - the price label follows the board size;
 //   - the longer "(+14 s)" label fits the action row at phone widths.
@@ -48,7 +48,7 @@ async function solveViaHints(page) {
   return page.evaluate(() => !document.getElementById('win-overlay').hidden);
 }
 
-// Pinned to 8×8 so the price is known (8 s) whatever the default becomes.
+// Pinned to 8×8 so the prices are known (check 8 s, hint 24 s) whatever the default becomes.
 const storage = {
   'queens-clone-settings': JSON.stringify({ size: 8, difficulty: 'medium', introAnimation: false }),
 };
@@ -85,7 +85,10 @@ const storage = {
     ok((await clock(page)) - before <= 1, 'checking the same board again is free');
     eq(await page.$eval('#cost-fly', (el) => el.hidden), true, '… and flies nothing');
 
+    ok(!(await page.$eval('#check-status', (el) => el.hidden)), 'the verdict is showing');
     await tapCell(page, 0); // dot → queen: a new board state
+    eq(await page.$eval('#check-status', (el) => el.hidden), true, 'the next move clears the verdict');
+    ok(!(await page.$('#live-check')), 'there is no live-check switch any more');
     before = await clock(page);
     await page.click('#check');
     after = await clock(page);
@@ -104,7 +107,7 @@ const storage = {
     const checksM = card.breakdown.match(/(\d+)\s*Prüfung/);
     eq(checksM && Number(checksM[1]), 2, `the breakdown counts both checks: "${card.breakdown}"`);
     const raw = secs(card.breakdown.match(/Spielzeit\s+(\d+:\d\d)/)[1]);
-    eq(secs(card.score), raw + 30 * hints + 8 * 2, 'result = playing time + 30·hints + 8·checks');
+    eq(secs(card.score), raw + 24 * hints + 8 * 2, 'result = playing time + 24·hints + 8·checks');
     ok(/Prüfungen \(\+0:16\)/.test(card.breakdown), 'the check surcharge is named (+0:16)');
     eq(secs(card.score), frozen, 'the frozen clock reads exactly the result');
 
@@ -117,26 +120,6 @@ const storage = {
     });
     ok(entry && entry.checks === 2, `the local entry keeps checks = 2 (${JSON.stringify(entry)})`);
     ok(entry && entry.score === secs(card.score), 'and the same score');
-
-    ok(errors.length === 0, `no console errors (${errors.join(' | ') || 'none'})`);
-  } finally {
-    await browser.close();
-  }
-}
-
-// --- 2) the live lamp charges per verdict ----------------------------------------
-{
-  const live = {
-    'queens-clone-settings': JSON.stringify({ size: 8, difficulty: 'medium', introAnimation: false, liveCheck: true }),
-  };
-  const { browser, page, errors } = await openGame({ baseUrl: BASE, locale: 'de-DE', storage: live });
-  try {
-    const before = await clock(page);
-    await tapCell(page, 0);
-    await page.waitForFunction(() => !document.getElementById('check-status').hidden, null, { timeout: 5000 });
-    const after = await clock(page);
-    // The lamp waits 2 s before it speaks, so allow for the time passing too.
-    ok(after - before >= 8 + 2 && after - before <= 8 + 4, `a live verdict costs a check (${before} -> ${after})`);
 
     ok(errors.length === 0, `no console errors (${errors.join(' | ') || 'none'})`);
   } finally {

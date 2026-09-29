@@ -63,12 +63,12 @@ export const I18N_PT = {
   'ui.hint': '💡 Dica',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
-  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // alone). Two presentations, one number — both are handed the same hintPenalty(N), so
   // the label, the animation and the score cannot quote different figures.
   'ui.hint.cost': ({ seconds }) => `+${seconds} s`,
   'ui.hint.costLabel': ({ seconds }) => `(+${seconds} s)`,
   'ui.hint.title': ({ seconds }) =>
-    `Uma dica nova soma ${seconds} segundos ao seu tempo. Reabrir a mesma dica é grátis.`,
+    `Uma dica nova soma ${seconds} segundos ao seu tempo – três segundos por linha. Reabrir a mesma dica é grátis.`,
   'ui.undo': '↶ Desfazer',
   'ui.reset': '🔄 Reiniciar',
   'ui.debugCopy': '🐞 Copiar depuração',
@@ -190,9 +190,6 @@ export const I18N_PT = {
   'settings.quick.label': 'Modo rápido',
   'settings.quick.hint':
     'Ao colocar uma rainha, sua linha, sua coluna, sua região de cor e as casas vizinhas são marcadas com pontos automaticamente.',
-  'settings.live.label': 'Verificação ao vivo',
-  'settings.live.hint':
-    'Mostra continuamente um indicador de que o tabuleiro segue sem erros – sem revelar onde está o erro. Aparece pouco depois da sua última jogada. Sem essa opção, o estado pode ser consultado a qualquer momento com “Verificar”. Cada novo veredito custa tempo, como apertar “Verificar”.',
   'settings.intro.label': 'Animação de abertura',
   'settings.intro.hint':
     'Enquanto um tabuleiro é gerado, as regiões de cor se espalham em animação enquanto o tabuleiro gira – preenche a espera nos tabuleiros grandes.',

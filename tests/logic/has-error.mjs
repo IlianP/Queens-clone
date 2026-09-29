@@ -1,5 +1,5 @@
 // Pure-logic checks for Game.hasError(solution) — the yes/no behind the
-// "Prüfen" status and the live lamp. No browser, no deps:
+// "Prüfen" status. No browser, no deps:
 //   node tests/logic/has-error.mjs
 import { Game } from '../../js/game.js';
 

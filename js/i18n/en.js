@@ -52,12 +52,12 @@ export const I18N_EN = {
   'ui.hint': '💡 Hint',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
-  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // alone). Two presentations, one number — both are handed the same hintPenalty(N), so
   // the label, the animation and the score cannot quote different figures.
   'ui.hint.cost': ({ seconds }) => `+${seconds}s`,
   'ui.hint.costLabel': ({ seconds }) => `(+${seconds}s)`,
   'ui.hint.title': ({ seconds }) =>
-    `A new hint adds ${seconds} seconds to your time. Reopening the same hint is free.`,
+    `A new hint adds ${seconds} seconds to your time – three seconds per row. Reopening the same hint is free.`,
   'ui.undo': '↶ Undo',
   'ui.reset': '🔄 Reset',
   'ui.debugCopy': '🐞 Copy debug',
@@ -176,9 +176,6 @@ export const I18N_EN = {
   'settings.quick.label': 'Quick mode',
   'settings.quick.hint':
     'Placing a queen automatically dots its row, column, colour region and the neighbouring cells.',
-  'settings.live.label': 'Live check',
-  'settings.live.hint':
-    'Continuously shows a status lamp for whether your board is still error-free – without revealing where a mistake is. It appears shortly after your last move. Without this option the status is available any time via “Check”. Each new verdict costs time, just like pressing “Check”.',
   'settings.intro.label': 'Intro animation',
   'settings.intro.hint':
     'While a puzzle is generated the colour regions spread out in an animation as the board rotates – it fills the wait on large boards.',

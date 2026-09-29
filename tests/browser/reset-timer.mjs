@@ -97,15 +97,16 @@ try {
   await page.click('#reset-board');
 
   // --- 3. hintsUsed survives too ------------------------------------------
-  // The clock shows elapsed + 30·hints, so it doubles as a live readout of
+  // The clock shows elapsed + 3·N·hints, so it doubles as a live readout of
   // hintsUsed: a reset that kept the elapsed time but zeroed the hint counter
-  // still rewinds it by half a minute. The board is empty here and the hint is
+  // still rewinds it by the hint's price. The board is empty here and the hint is
   // only read, never applied, so it stays empty — which is what makes phase 4
   // and phase 5 below say something exact.
   const preHint = await clock(page);
   await page.click('#hint');
   const withHint = await clock(page);
-  ok(withHint >= preHint + 30, `hint surcharge is on the clock (${preHint}s -> ${withHint}s)`);
+  const HINT = 3 * N; // hintPenalty(N): three seconds per row
+  ok(withHint >= preHint + HINT, `hint surcharge is on the clock (${preHint}s -> ${withHint}s)`);
   await page.click('#hint-close');
 
   await page.click('#reset-board');
@@ -116,7 +117,7 @@ try {
   // hintsUsed only bumps for a NEW deduction (seenHints, issue #37). The board
   // is byte-for-byte the one the hint above was computed on, so the same
   // deduction comes back — and must still be free. Were seenHints cleared by the
-  // reset while hintsUsed was kept, this would charge a second 30 s for a hint
+  // reset while hintsUsed was kept, this would charge a second hint price for a hint
   // the player has already seen: the exploit's mirror image, overcharging
   // instead of undercharging.
   const preRepeat = await clock(page);
@@ -171,13 +172,13 @@ try {
   // broken build, and the comparison would pass vacuously).
   ok(raw >= before, `the scored playing time keeps the seconds played before the reset (${raw}s >= ${before}s)`);
   ok(
-    secs(card.score) >= before + 30,
-    `the recorded score is at least "played before the reset + one hint" (${card.score} >= ${before + 30}s)`
+    secs(card.score) >= before + HINT,
+    `the recorded score is at least "played before the reset + one hint" (${card.score} >= ${before + HINT}s)`
   );
   // With those pinned, the arithmetic on the card closes as usual.
   ok(hints === 1, `the scored solve counts one hint, the one taken before the reset (got ${hints})`);
   ok(
-    raw >= 0 && secs(card.score) === raw + 30 * hints,
+    raw >= 0 && secs(card.score) === raw + HINT * hints,
     `the recorded score charges it: "${card.breakdown}" -> ${card.score}`
   );
   // The third counter startTimer() used to clear. Mistakes carry no penalty

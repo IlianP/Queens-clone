@@ -172,10 +172,12 @@ rate limit bites, and that re-running the setup file leaves the counters alone.
 Same throwaway-database rules as `rank-order.sql`; it TRUNCATES `play_stats` and
 `stat_limits`.
 
-`check-penalty.sql` pins the server half of the "Prüfen" surcharge: one second
-per row per check (`queens_check_penalty`), stored and scored by the
-eight-argument `submit_score`, 0 through the seven-argument call, returned by
-`top_scores`, range-checked, and untouched by a re-run. Same throwaway-database
+`check-penalty.sql` pins the server half of both surcharges: three seconds per
+row per hint (`queens_hint_penalty`, including through the seven-argument call)
+and one per check (`queens_check_penalty`), checks stored and scored by the
+eight-argument `submit_score`, 0 through the seven-argument call, the size-less
+three-argument `queens_score` gone, the count returned by `top_scores`,
+range-checked, and untouched by a re-run. Same throwaway-database
 rules; it TRUNCATES `public.scores`.
 
 ## `browser/` — Playwright, environment-provided
@@ -244,14 +246,14 @@ clickable and Playwright then waits out a full 30 s timeout. A JS error inside
 errors instead of hanging — which is how an unimported constant was found.
 
 `hint-cost.mjs` covers the hint surcharge becoming visible: the price tag baked
-into the hint button's label, the "+30 s" pill that flies off it, the live clock
-taking the 30 s, and the timer pulse that ties the two together. The assertion
+into the hint button's label, the "+3N s" pill that flies off it (24 s on the
+default 8×8), the live clock taking it, and the timer pulse that ties the two together. The assertion
 that earns the file is the **negative** one: `hintsUsed` only bumps for a *new*
 deduction (`seenHints`), so re-opening the same hint must move neither the clock
 nor the pill — an animation wired to the click instead of to that branch would
 charge the player for something the score doesn't. It then solves by hints and
-closes the arithmetic on the win card (effective time = playing time + 30 s per
-hint, charged exactly once, and the frozen clock reads exactly the result) —
+closes the arithmetic on the win card (effective time = playing time + 3 s per
+row per hint, charged exactly once, and the frozen clock reads exactly the result) —
 which is what would catch the penalty being folded into `currentElapsed()`
 instead of `renderTime()`. Finally it measures the grown label at 320/375/430px
 portrait and in the fixed-width landscape button column, where `.btn` is
@@ -344,8 +346,9 @@ feature gates itself off in a browser without the Web Speech API.
 
 `check-cost.mjs` covers the "Prüfen" surcharge: the price on the button follows
 the board size, an untouched or unchanged board is free, a changed one costs
-again, a live-lamp verdict costs a check, the win card's arithmetic closes
-(result = playing time + 30·hints + N·checks = the frozen clock), the local
+again, the next move clears the verdict (and no live-check switch exists), the
+win card's arithmetic closes (result = playing time + 3N·hints + N·checks = the
+frozen clock), the local
 entry keeps the count, and both priced buttons fit at 320–430 px portrait and
 in the 740 px landscape column in every pack.
 
@@ -369,7 +372,7 @@ browser on a first visit (see `js/i18n.js`), so an unpinned test reads whatever
 language the host happens to be in. `openGame({ locale: 'de-DE' })` (or
 `newPage({ viewport, locale })` for the tests that build their own page) fixes it;
 `openGame` also takes `{ storage }` to seed `localStorage` before boot. Tests
-asserting German copy — `live-check-sticky.mjs`, `leaderboard-retry.mjs`,
+asserting German copy — `check-cost.mjs`, `leaderboard-retry.mjs`,
 `win-feedback.mjs` — pin `de-DE` for that reason, and `voice-mode.mjs` *must*:
 Voice Mode is gated to the German UI, so the switch is disabled otherwise and
 nothing below it runs.

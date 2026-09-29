@@ -685,7 +685,7 @@ html[data-i18n-ready] .app {
 /* Prüf-Status lamp: a small pill with a coloured dot. Only ever a yes/no —
    never reveals a position. Colours mirror the message line (ok green /
    error red). Hidden until a check has run. The slot keeps a fixed height even
-   while the pill is hidden, so the live lamp appearing/disappearing never
+   while the pill is hidden, so the status appearing/disappearing never
    reflows the board (which would jump under the player's finger mid-tap). */
 .check-slot {
   display: flex;

@@ -22,7 +22,7 @@ import {
   MIN_GLOBAL_PLAYERS_FOR_PERCENTILE,
   MIN_RECENT_SOLVES,
   MAX_LOCAL_ENTRIES,
-  HINT_PENALTY,
+  hintPenalty,
   checkPenalty,
 } from './highscores.js';
 import {
@@ -153,7 +153,6 @@ const dom = {
   difficulty: el('difficulty'),
   difficultyHint: el('difficulty-hint'),
   quickMode: el('quick-mode'),
-  liveCheck: el('live-check'),
   introAnimation: el('intro-animation'),
   voiceMode: el('voice-mode'),
   voiceModeHint: el('voice-mode-hint'),
@@ -217,39 +216,54 @@ function applyTranslations(root = document) {
 //
 // It is appended here rather than written into index.html because data-i18n sets
 // textContent, which would delete any child element at boot. The number comes
-// from HINT_PENALTY, never a literal, so the label, the flying pill and the
-// score can't drift apart.
+// from hintPenalty(N), never a literal, so the label, the flying pill and the
+// score can't drift apart. The price follows the board size, so the tag is
+// created once here and filled by updateCostLabels() for every new board.
 function decorateHintButton() {
   if (!dom.hint) return;
   const cost = document.createElement('span');
   cost.className = 'btn-cost';
-  cost.textContent = t('ui.hint.costLabel', { seconds: HINT_PENALTY });
+  cost.id = 'hint-cost';
   // A real space, not just the margin: without it a screen reader runs the
-  // label straight into the price ("Hinweis+30 s").
+  // label straight into the price ("Hinweis+24 s").
   dom.hint.append(document.createTextNode(' '), cost);
-  dom.hint.title = t('ui.hint.title', { seconds: HINT_PENALTY });
+  updateCostLabels();
 }
 
 // The "Prüfen" button carries its price the same way — but the price depends on
 // the board size (checkPenalty), so the tag is created once here and its number
-// is filled in by updateCheckCost() whenever a new board arrives.
+// is filled in by updateCostLabels() whenever a new board arrives.
 function decorateCheckButton() {
   if (!dom.check) return;
   const cost = document.createElement('span');
   cost.className = 'btn-cost';
   cost.id = 'check-cost';
   dom.check.append(document.createTextNode(' '), cost);
-  updateCheckCost();
+  updateCostLabels();
+}
+// Both prices for the board in play (or, before the first one, the chosen size).
+function currentBoardSize() {
+  return game ? game.N : settings.size;
+}
+function currentHintPenalty() {
+  return hintPenalty(currentBoardSize());
 }
 function currentCheckPenalty() {
-  return game ? checkPenalty(game.N) : checkPenalty(settings.size);
+  return checkPenalty(currentBoardSize());
 }
-function updateCheckCost() {
-  const cost = dom.check && dom.check.querySelector('#check-cost');
-  if (!cost) return;
-  const seconds = currentCheckPenalty();
-  cost.textContent = t('ui.hint.costLabel', { seconds });
-  dom.check.title = t('ui.check.title', { seconds });
+function updateCostLabels() {
+  const hintCost = dom.hint && dom.hint.querySelector('#hint-cost');
+  if (hintCost) {
+    const seconds = currentHintPenalty();
+    hintCost.textContent = t('ui.hint.costLabel', { seconds });
+    dom.hint.title = t('ui.hint.title', { seconds });
+  }
+  const checkCost = dom.check && dom.check.querySelector('#check-cost');
+  if (checkCost) {
+    const seconds = currentCheckPenalty();
+    checkCost.textContent = t('ui.hint.costLabel', { seconds });
+    dom.check.title = t('ui.check.title', { seconds });
+  }
 }
 
 // ---------- Board size limits ----------
@@ -367,9 +381,7 @@ let hintsUsed = 0;
 // unchanged board) must not bump hintsUsed a second time — only *unique* hints
 // count toward the score (issue #37).
 let seenHints = new Set();
-// "Prüfen" costs checkPenalty(N) seconds per use — the button and every verdict
-// the live lamp shows alike, since the lamp is nothing but an automatic press.
-// Like hints, a check only counts once per board state (seenChecks holds the
+// "Prüfen" costs checkPenalty(N) seconds per use. Like hints, a check only counts once per board state (seenChecks holds the
 // states already vouched for): asking again about an unchanged board, or undoing
 // back to one, tells the player nothing new.
 let checksUsed = 0;
@@ -415,9 +427,12 @@ function currentElapsed() {
 // the surcharge a second time if it were folded in upstream. (Same trap one
 // level down as the mistake penalty, see js/highscores.js.)
 function displayedTime() {
-  return currentElapsed() + HINT_PENALTY * hintsUsed + checkSeconds();
+  return currentElapsed() + hintSeconds() + checkSeconds();
 }
-// The check surcharge for this attempt so far, in seconds.
+// The surcharges for this attempt so far, in seconds.
+function hintSeconds() {
+  return game ? hintPenalty(game.N) * hintsUsed : 0;
+}
 function checkSeconds() {
   return game ? checkPenalty(game.N) * checksUsed : 0;
 }
@@ -445,7 +460,7 @@ function startTimer() {
   seenHints = new Set();
   checksUsed = 0;
   seenChecks = new Set();
-  updateCheckCost(); // the price follows the board size
+  updateCostLabels(); // both prices follow the board size
   mistakes = 0;
   winHandled = false;
   stickyForced = null;
@@ -959,7 +974,7 @@ function updateBoard() {
 
   updateMessage();
   maybeParty();
-  refreshLiveCheck();
+  clearCheckStatus(); // a verdict is about the board it was asked for — any move retires it
   updateActionButtons(); // freeze undo/reset the instant the board is solved
 }
 
@@ -1121,7 +1136,7 @@ function renderScoreList(container, entries, highlightIdx = -1, size = 0) {
       time: fmtTime(e.seconds),
       hints: e.hints,
       mistakes: e.mistakes,
-      penalty: fmtTime(HINT_PENALTY * e.hints),
+      penalty: fmtTime(hintPenalty(size) * e.hints),
       checks,
       checkPenalty: fmtTime(checkPenalty(size) * checks),
     });
@@ -1325,7 +1340,7 @@ function onWin() {
     time: fmtTime(seconds),
     hints: hintsUsed,
     mistakes,
-    penalty: fmtTime(HINT_PENALTY * hintsUsed),
+    penalty: fmtTime(hintSeconds()),
     checks: checksUsed,
     checkPenalty: fmtTime(checkSeconds()),
   });
@@ -2085,7 +2100,7 @@ function hintSignature(h) {
 // Animations API, so nothing about the .actions row (which wraps in portrait and
 // becomes a fixed-width column in landscape) has to accommodate it.
 function flyHintCost() {
-  flyCost(dom.hint, HINT_PENALTY);
+  flyCost(dom.hint, currentHintPenalty());
 }
 // The same receipt, rising off whichever button charged `seconds`.
 function flyCost(button, seconds) {
@@ -2245,18 +2260,14 @@ dom.hintClose.addEventListener('click', clearHint);
 // never the next move (that's the hint's job). It reads the same rule logic the
 // board already uses (conflicts + dead units) plus a solution-aware check: a
 // placed queen that isn't on the unique solution counts as an error even before
-// a rule breaks (design choice (b)). Two ways to surface it:
-//   - the "Prüfen" button: shows the status on demand,
-//   - the live lamp (opt-in): updates automatically a short beat after the last
-//     move, so it doesn't flicker while you're still placing queens.
-const LIVE_CHECK_DELAY = 2000; // ms of quiet after the last move before the lamp updates
-let liveCheckTimer = null;
-
+// a rule breaks (design choice (b)). It only ever appears on demand, from the
+// "Prüfen" button (or the voice command), and is cleared by the next move.
+//
+// There used to be an opt-in live lamp that re-ran this after every pause. It
+// was removed on purpose: a verdict after every move turns the game into
+// guess-and-check, and no price per verdict made that fair — so the only way to
+// ask is to ask, and to pay for it (see chargeCheck).
 function clearCheckStatus() {
-  if (liveCheckTimer) {
-    clearTimeout(liveCheckTimer);
-    liveCheckTimer = null;
-  }
   dom.checkStatus.hidden = true;
   dom.checkStatus.className = 'check-status';
   dom.checkStatus.textContent = '';
@@ -2283,62 +2294,15 @@ function chargeCheck() {
   flyCost(dom.check, currentCheckPenalty());
 }
 
-// Render the current yes/no result. Deliberately says nothing about *where*.
-// Every call is a verdict the player sees, so this is where a check is charged —
-// the button and the live lamp both come through here.
-function renderCheckStatus() {
+// The "Prüfen" button (and voice "Prüfen"): charge, then show the verdict.
+// Deliberately says nothing about *where*.
+function runCheck() {
   if (!game) return;
   chargeCheck();
   const error = game.hasError(currentSolution);
   dom.checkStatus.textContent = error ? t('check.errors') : t('check.ok');
   dom.checkStatus.className = 'check-status ' + (error ? 'error' : 'ok');
   dom.checkStatus.hidden = false;
-}
-
-// The "Prüfen" button: evaluate right away, regardless of the live setting.
-function runCheck() {
-  if (!game) return;
-  if (liveCheckTimer) {
-    clearTimeout(liveCheckTimer);
-    liveCheckTimer = null;
-  }
-  renderCheckStatus();
-}
-
-// Called after every board change. With the live lamp on, a red "there are
-// errors" message is *sticky*: it stays put across taps and only clears once the
-// board is actually error-free — so acknowledging an error doesn't make the
-// warning vanish the instant you touch the board again. A green message is not
-// sticky: like before, it's cleared on the next move and re-armed after a pause.
-// Live off / untouched / solved: never keep a status around.
-function refreshLiveCheck() {
-  if (!settings.liveCheck || !game || game.isWon() || game.isPristine()) {
-    clearCheckStatus();
-    return;
-  }
-
-  // A red error already on screen stays exactly as it is while the board is
-  // still in error — tapping a new cell must not clear it. Drop the pending
-  // re-evaluation too; the answer ("there are errors") still holds.
-  const showingError = !dom.checkStatus.hidden && dom.checkStatus.classList.contains('error');
-  if (showingError && game.hasError(currentSolution)) {
-    if (liveCheckTimer) {
-      clearTimeout(liveCheckTimer);
-      liveCheckTimer = null;
-    }
-    return;
-  }
-
-  // No sticky red to hold (nothing shown, a green shown, or the red's errors
-  // just got cleared): hide the current status and re-arm a fresh evaluation
-  // for once the player pauses.
-  if (liveCheckTimer) {
-    clearTimeout(liveCheckTimer);
-    liveCheckTimer = null;
-  }
-  dom.checkStatus.hidden = true;
-  dom.checkStatus.className = 'check-status';
-  liveCheckTimer = setTimeout(renderCheckStatus, LIVE_CHECK_DELAY);
 }
 
 dom.check.addEventListener('click', () => {
@@ -2439,7 +2403,7 @@ function buildResultDebug() {
     mistakes: pendingWin.mistakes,
     checks: pendingWin.checks,
     score: pendingWin.score,
-    scoreFormula: `${pendingWin.seconds} + ${HINT_PENALTY}·${pendingWin.hints} + ${checkPenalty(size)}·${pendingWin.checks}`,
+    scoreFormula: `${pendingWin.seconds} + ${hintPenalty(size)}·${pendingWin.hints} + ${checkPenalty(size)}·${pendingWin.checks}`,
     savedLocally: !!pendingWin.saved,
     savedRank: pendingWin.saved ? pendingWin.savedRank : null,
     // What the win card was told, computed before this solve joined the history.
@@ -2680,7 +2644,6 @@ function openSettings() {
   applyDifficultyConstraint(settings.size);
   updateSizeHint(settings.size);
   dom.quickMode.checked = settings.quickMode;
-  dom.liveCheck.checked = settings.liveCheck;
   dom.introAnimation.checked = settings.introAnimation;
   dom.soundToggle.checked = settings.sound;
   dom.voiceMode.checked = settings.voice;
@@ -2809,15 +2772,6 @@ dom.quickMode.addEventListener('change', () => {
   }
 });
 
-// Live-Prüfung applies to the running board at once: turning it on arms the
-// lamp for the current position, turning it off hides it immediately.
-dom.liveCheck.addEventListener('change', () => {
-  settings.liveCheck = dom.liveCheck.checked;
-  saveSettings(settings);
-  if (settings.liveCheck) refreshLiveCheck();
-  else clearCheckStatus();
-});
-
 // A visual-only preference: persist immediately so it sticks even if the modal
 // is closed without applying. It takes effect on the next generated puzzle.
 dom.introAnimation.addEventListener('change', () => {
@@ -2829,7 +2783,6 @@ dom.settingsApply.addEventListener('click', () => {
   settings.size = clampSize(dom.sizeRange.value);
   settings.difficulty = settings.size >= HARD_ONLY_SIZE ? 'hard' : currentDifficultyUI();
   settings.quickMode = dom.quickMode.checked;
-  settings.liveCheck = dom.liveCheck.checked;
   settings.introAnimation = dom.introAnimation.checked;
   settings.voice = dom.voiceMode.checked;
   settings.voiceEdgeLabels = dom.voiceEdgeMode.checked;

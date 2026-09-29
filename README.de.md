@@ -69,11 +69,6 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   selten wären.
 - **Schnellmodus:** Beim Setzen einer Dame werden alle dadurch ausgeschlossenen Felder
   automatisch gepunktet: die gesamte Zeile, Spalte, Farbregion und die angrenzenden Felder.
-- **Live-Prüfung:** Zeigt dauerhaft ein Statuslämpchen an, ob dein Stand fehlerfrei ist
-  (dieselbe Prüfung wie der **Prüfen**-Button, ebenfalls ohne die Fehlerstelle zu
-  verraten). Es erscheint erst kurz nach deinem letzten Zug, damit es beim Spielen nicht
-  flackert. Ohne diese Option lässt sich der Status jederzeit über **Prüfen** abrufen.
-  Jede neue Anzeige des Lämpchens kostet so viel wie ein Druck auf **Prüfen**.
 - **Ton:** Kurze, dezente Soundeffekte beim Setzen einer Dame, Punkten, für Hinweise
   und beim Lösen. Lässt sich hier oder direkt über das 🔊/🔇-Symbol oben stummschalten.
 - **Sprachsteuerung (Beta, nur auf Deutsch):** Steuere das Spiel per Stimme. Die
@@ -120,9 +115,10 @@ wird dagegen **nicht** gespeichert – ein Seiten-Reload startet ein frisches R�
 
 Nach dem Lösen zeigt der Gewinn-Bildschirm ein **Ergebnis** und fragt, ob du dich
 eintragen möchtest. Das Ergebnis ist eine „effektive Zeit": die reine Lösezeit plus
-ein Aufschlag pro genutztem **Tipp** (+30 s) und pro **Prüfung** (+1 s je Zeile,
-also +8 s auf 8×8). Der Tipp-Button sagt das schon
-vorher, beim tatsächlich berechneten Tipp steigt ein kleines „+30 s" darüber auf,
+ein Aufschlag pro genutztem **Tipp** (+3 s je Zeile: 15 s auf 5×5, 24 s auf 8×8,
+42 s auf 14×14) und pro **Prüfung** (+1 s je Zeile, also +8 s auf 8×8). Beide
+Buttons zeigen ihren Preis schon vorher, bei jeder tatsächlich berechneten Hilfe
+steigt ein kleines „+24 s" (bzw. der Preis des Feldes) darüber auf,
 und **die Uhr läuft auf der effektiven Zeit** – die Zahl, die man sieht, ist also
 die Zahl, die zählt. Denselben Tipp erneut zu öffnen ist frei. Kleiner ist besser. **Fehler werden
 gezählt und angezeigt, kosten aber nichts** – eine falsche Dame kostet ohnehin
