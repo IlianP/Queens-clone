@@ -4,12 +4,13 @@
 //
 // Storage: one localStorage key `queens-clone-highscores`, shaped
 //   { "<size>-<difficulty>": Entry[] }   // Entry sorted best-first, capped
-// where Entry = { name, seconds, hints, mistakes, score, date }. Each
+// where Entry = { name, seconds, hints, mistakes, checks, score, date }. Each
 // (size, difficulty) pair is its own leaderboard — the granularity the game
 // already exposes (sizes 5–11 × easy/medium/hard, plus 12×hard).
 //
 // The "score" is an *effective time in seconds*: the raw solve time plus a
-// penalty per used hint, so faster solves with fewer hints rank higher.
+// penalty per used hint and per check ("Prüfen"), both priced per board row,
+// so faster solves with fewer aids rank higher.
 // Keeping the raw components lets the penalties be re-tuned without a data
 // migration — and the same formula is mirrored server-side in
 // docs/leaderboard-setup.sql, so keep the two in sync.
@@ -46,7 +47,30 @@
 // bundle, see tools/build-artifact.mjs): no `import.meta`, and no top-level
 // name collisions with the other js/ modules.
 
-export const HINT_PENALTY = 30; // seconds added per hint used
+// Both aids are priced PER ROW of the board, because the solve times they are
+// charged against grow with the size (live medians, Sept 2026: 5×5 hard ~9 s,
+// 8×8 hard ~14 s, 12×12 hard ~70 s). The old flat 30 s per hint tripled a
+// typical 5×5 solve and was a rounding error on a 14×14; a flat price for the
+// check would have had the same problem.
+//
+// A hint costs three seconds per row (15 s on 5×5, 24 s on 8×8, 30 s on 10×10
+// — where the old flat price still holds — up to 42 s on 14×14). A check
+// ("Prüfen", a bare yes/no) costs one second per row, so a hint always costs
+// three checks. Mirror queens_hint_penalty() / queens_check_penalty() in
+// docs/leaderboard-setup.sql.
+export const HINT_PENALTY_PER_ROW = 3;
+export const CHECK_PENALTY_PER_ROW = 1;
+
+function penaltyRows(size) {
+  const n = Math.floor(Number(size));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+export function hintPenalty(size) {
+  return HINT_PENALTY_PER_ROW * penaltyRows(size);
+}
+export function checkPenalty(size) {
+  return CHECK_PENALTY_PER_ROW * penaltyRows(size);
+}
 // Kept per (size, difficulty) bucket. The list scrolls inside a fixed-height box
 // (see .score-list), so a larger cap costs card height nothing — it was 10 only
 // because that was the obvious round number, and ten is little once a bucket has
@@ -91,10 +115,11 @@ export function bucketKey(size, difficulty) {
 }
 
 // Effective time in whole seconds; lower is better. Mirrors queens_score() in
-// docs/leaderboard-setup.sql. Mistakes are deliberately not an input — see the
-// note at the top of this file.
-export function computeScore(seconds, hints = 0) {
-  return Math.round(seconds + HINT_PENALTY * hints);
+// docs/leaderboard-setup.sql, argument for argument. Mistakes are accepted but
+// carry no weight — see the note at the top of this file. Both surcharges are
+// priced by the board `size`, so it is required for a score with any aid in it.
+export function computeScore(seconds, hints = 0, mistakes = 0, checks = 0, size = 0) {
+  return Math.round(seconds + hintPenalty(size) * hints + checkPenalty(size) * checks);
 }
 
 export function sanitizeName(name) {
@@ -110,7 +135,9 @@ function byScore(a, b) {
 }
 
 // Coerce a stored/candidate entry into a clean Entry, or null if unusable.
-function normalizeEntry(e) {
+// `size` is the bucket's board size: an entry doesn't carry it, but the check
+// surcharge depends on it.
+function normalizeEntry(e, size) {
   if (!e || typeof e !== 'object') return null;
   const seconds = Math.floor(Number(e.seconds));
   if (!Number.isFinite(seconds) || seconds < 0) return null;
@@ -118,17 +145,21 @@ function normalizeEntry(e) {
   const mistakes = Number.isFinite(Number(e.mistakes))
     ? Math.max(0, Math.floor(Number(e.mistakes)))
     : 0;
+  // Entries written before checks were charged have no field, and 0 is exactly
+  // what they were: the check was free then.
+  const checks = Number.isFinite(Number(e.checks)) ? Math.max(0, Math.floor(Number(e.checks))) : 0;
   // The score is DERIVED, never trusted: the raw components are stored for
   // exactly this reason, so a retuned penalty applies to the whole list at once
   // instead of leaving old entries ranked under the old formula next to new
   // ones ranked under the new. A stored score that already matches recomputes
   // to itself, so this is a no-op for everything written since the last change.
-  const score = computeScore(seconds, hints);
+  const score = computeScore(seconds, hints, mistakes, checks, size);
   return {
     name: sanitizeName(e.name),
     seconds,
     hints,
     mistakes,
+    checks,
     score,
     date: typeof e.date === 'string' ? e.date : new Date().toISOString(),
   };
@@ -144,7 +175,8 @@ export function loadLocalScores() {
     const out = {};
     for (const key of Object.keys(data)) {
       if (!Array.isArray(data[key])) continue;
-      const list = data[key].map(normalizeEntry).filter(Boolean);
+      const size = parseInt(key, 10); // bucketKey: "<size>-<difficulty>"
+      const list = data[key].map((e) => normalizeEntry(e, size)).filter(Boolean);
       list.sort(byScore);
       out[key] = list.slice(0, MAX_LOCAL_ENTRIES);
     }
@@ -162,7 +194,7 @@ export function getLocalScores(size, difficulty) {
 // and report where the new entry landed. Returns { list, rank } with a
 // 0-based rank, or rank === -1 when the entry didn't make the top N.
 export function saveLocalScore(size, difficulty, entry) {
-  const norm = normalizeEntry(entry);
+  const norm = normalizeEntry(entry, size);
   if (!norm) return { list: getLocalScores(size, difficulty), rank: -1 };
   const all = loadLocalScores();
   const key = bucketKey(size, difficulty);

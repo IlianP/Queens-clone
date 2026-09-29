@@ -1,7 +1,7 @@
 // Does the hint surcharge show itself — before the click, at the click, and on
 // the win screen?
 //
-// A hint costs HINT_PENALTY seconds, and for a long time nothing said so until
+// A hint costs hintPenalty(N) = 3 s per row (24 s on the default 8×8), and for a long time nothing said so until
 // the win screen. Three surfaces now carry it, and the one that can silently go
 // wrong is the middle one: hintsUsed only bumps for a NEW deduction (seenHints,
 // issue #37), so re-opening the same hint is free. An animation tied to the
@@ -9,7 +9,7 @@
 // something the score doesn't charge — a lie the win screen then contradicts.
 // That is the case worth a browser test, because it is invisible in the diff.
 //
-// Also guards the layout: the button's label grew by "(+30s)", and .actions is
+// Also guards the layout: the button's label grew by "(+24 s)", and .actions is
 // a wrapping row in portrait but a fixed-width column in landscape, where
 // .btn is white-space: nowrap. A label that outgrows that column doesn't
 // report itself — it just paints over its neighbour.
@@ -57,12 +57,16 @@ async function solveViaHints() {
   return page.evaluate(() => !document.getElementById('win-overlay').hidden);
 }
 
+const N = await page.$$eval('.cell', (cs) => Math.round(Math.sqrt(cs.length)));
+const HINT = 3 * N; // hintPenalty(N)
+const priceRe = new RegExp(`\\+${HINT}(\\D|$)`);
+
 try {
   // --- the standing price, before anything is clicked -----------------------
   const label = await page.$eval('#hint', (el) => el.textContent);
-  ok(/\+30/.test(label), `hint button announces the price up front: "${label}"`);
+  ok(priceRe.test(label), `hint button announces the ${HINT} s price up front: "${label}"`);
   const title = await page.$eval('#hint', (el) => el.title);
-  ok(/30/.test(title) && title.length > 20, 'the button title spells the rule out');
+  ok(title.includes(String(HINT)) && title.length > 20, 'the button title spells the rule out');
   await page.waitForSelector('#cost-fly', { state: 'attached' });
   eq(await page.$eval('#cost-fly', (el) => el.hidden), true, 'the pill starts hidden');
 
@@ -73,9 +77,9 @@ try {
     .waitForSelector('#cost-fly:not([hidden])', { timeout: 2000 })
     .then(() => true)
     .catch(() => false);
-  ok(flew, 'a charged hint flies a "+30 s" pill off the button');
+  ok(flew, 'a charged hint flies a price pill off the button');
   const pillText = await page.$eval('#cost-fly', (el) => el.textContent);
-  ok(/\+30/.test(pillText), `the pill quotes the same number as the label: "${pillText}"`);
+  ok(priceRe.test(pillText), `the pill quotes the same number as the label: "${pillText}"`);
   ok(
     await page.$eval('#status', (el) => el.classList.contains('bumped')),
     'the clock pulses at the same moment, so the jump reads as a consequence'
@@ -83,8 +87,8 @@ try {
 
   const after = await clock(page);
   ok(
-    after - before >= 30 && after - before <= 32,
-    `the clock takes the 30 s live (${before} -> ${after})`
+    after - before >= HINT && after - before <= HINT + 2,
+    `the clock takes the ${HINT} s live (${before} -> ${after})`
   );
 
   // The pill must clean up after itself, or it sits over the board for good.
@@ -116,10 +120,10 @@ try {
   // --- the clock is display-only: the raw seconds must stay raw -------------
   // The real risk in this change is folding the penalty into currentElapsed()
   // instead of into renderTime(): the stored `seconds` would then already carry
-  // it, and score = seconds + 30·hints would charge it a SECOND time. Solving by
+  // it, and score = seconds + 3·N·hints would charge it a SECOND time. Solving by
   // hints puts every figure on one screen, where the arithmetic has to close:
   //   effective time (the big number, and the clock's last reading)
-  //     = raw playing time + 30 · hints
+  //     = raw playing time + 3·N · hints
   ok(await solveViaHints(), 'solved the board by applying hints');
   // stopTimer() renders once more as it freezes, so the clock's final reading is
   // the result itself — exactly, not approximately.
@@ -138,8 +142,8 @@ try {
   ok(hints >= 1, `the solve really used hints (${hints})`);
   eq(
     secs(card.score),
-    raw + 30 * hints,
-    'effective time = playing time + 30 s per hint, charged exactly once'
+    raw + HINT * hints,
+    'effective time = playing time + 3 s per row per hint, charged exactly once'
   );
   ok(
     /\(\+\d+:\d\d\)/.test(card.breakdown),

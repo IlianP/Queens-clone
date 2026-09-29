@@ -99,6 +99,7 @@ async function run() {
   await page.waitForSelector('#settings-overlay:not([hidden])');
   check('voice toggle enabled (fake API supported)', !(await page.$eval('#voice-mode', (e) => e.disabled)));
   check('edge sub-option hidden before Voice Mode', !(await page.isVisible('#voice-edge-field')));
+  check('queen-first sub-option hidden before Voice Mode', !(await page.isVisible('#voice-queen-first-field')));
   await page.check('#voice-mode');
   check('edge sub-option shown once Voice Mode on', !(!(await page.isVisible('#voice-edge-field'))));
   await page.click('#settings-close');
@@ -448,6 +449,44 @@ async function run() {
   check('first row label is "1"', (await page.$eval('#coord-rows', (e) => e.children[0].textContent)) === '1');
   check('no horizontal page overflow with rulers', await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 
+  // --- "Koordinate setzt zuerst eine Dame": a bare coordinate cycles
+  //     empty → queen → dot → empty. Consecutive identical finals inside
+  //     VOICE_REPLAY_MS are dropped as re-finalises, so each step waits it out. ---
+  await emit(['C4 leeren']);
+  await page.waitForTimeout(60);
+  await page.click('#open-settings');
+  await page.waitForSelector('#settings-overlay:not([hidden])');
+  check('queen-first sub-option shown while Voice Mode on', await page.isVisible('#voice-queen-first-field'));
+  await page.check('#voice-queen-first');
+  await page.click('#settings-close');
+  const qfSteps = [];
+  for (let i = 0; i < 3; i++) {
+    await page.waitForTimeout(1600);
+    await emit(['C4']);
+    await page.waitForTimeout(60);
+    qfSteps.push(await cellState(page, 26));
+  }
+  check(`queen-first: "C4" ×3 → queen, dot, empty (${qfSteps.join(', ')})`,
+    qfSteps[0] === 'queen' && qfSteps[1] === 'dot' && qfSteps[2] !== 'queen' && qfSteps[2] !== 'dot');
+  await page.waitForTimeout(1600);
+  await emit(['C4']);
+  await page.waitForTimeout(60);
+  await emit(['zurück']);
+  await page.waitForTimeout(60);
+  check('one "zurück" takes back one queen-first "C4"', (await cellState(page, 26)) !== 'queen');
+  await page.click('#open-settings');
+  await page.waitForSelector('#settings-overlay:not([hidden])');
+  await page.uncheck('#voice-queen-first');
+  await page.click('#settings-close');
+
+  // --- "deine" is a mis-hearing of "Dame" and places a queen. ---
+  await page.waitForTimeout(1600);
+  await emit(['C4 deine']);
+  await page.waitForTimeout(60);
+  check('"C4 deine" placed a queen at C4', (await cellState(page, 26)) === 'queen');
+  await emit(['C4 leeren']);
+  await page.waitForTimeout(60);
+
   // --- "stopp" ends listening. ---
   await emit(['stopp']);
   await page.waitForFunction(
@@ -460,6 +499,7 @@ async function run() {
   await page.waitForSelector('#settings-overlay:not([hidden])');
   await page.uncheck('#voice-mode');
   check('edge sub-option hidden when Voice Mode off', !(await page.isVisible('#voice-edge-field')));
+  check('queen-first sub-option hidden when Voice Mode off', !(await page.isVisible('#voice-queen-first-field')));
   await page.click('#settings-close');
   check('voice panel hidden again', await page.$eval('#voice-panel', (e) => e.hidden));
   check('coordinate labels removed', !(await page.$eval('#board', (e) => e.classList.contains('show-coords'))));

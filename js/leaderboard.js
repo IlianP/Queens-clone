@@ -158,20 +158,24 @@ function serverReason(body) {
 // game carries one client-generated UUID (submissionId), and the database treats
 // it as an idempotency key: a response lost after a successful insert can be
 // retried safely without creating a second leaderboard row.
+//
+// `p_checks` (how often "Prüfen" was used) is sent ONLY when it is non-zero.
+// PostgREST picks the overload by its argument names, so a solve without checks
+// keeps calling the seven-argument submit_score exactly as before — and keeps
+// working against a database where docs/leaderboard-setup.sql hasn't been re-run
+// yet. Only a solve that actually used checks needs the eight-argument version.
 export async function submitScore(entry, { onRetry } = {}) {
-  const result = await rpcWithRetry(
-    'submit_score',
-    {
-      p_name: entry.name,
-      p_size: entry.size,
-      p_difficulty: entry.difficulty,
-      p_seconds: entry.seconds,
-      p_hints: entry.hints,
-      p_mistakes: entry.mistakes,
-      p_submission_id: entry.submissionId,
-    },
-    onRetry
-  );
+  const body = {
+    p_name: entry.name,
+    p_size: entry.size,
+    p_difficulty: entry.difficulty,
+    p_seconds: entry.seconds,
+    p_hints: entry.hints,
+    p_mistakes: entry.mistakes,
+    p_submission_id: entry.submissionId,
+  };
+  if (entry.checks > 0) body.p_checks = entry.checks;
+  const result = await rpcWithRetry('submit_score', body, onRetry);
   if (!result.ok) {
     // Separate "the server said no" from "the server never answered". Both used
     // to surface as "nicht erreichbar", which sent a player hunting for a network
@@ -231,6 +235,8 @@ export async function fetchTopScores(size, difficulty, { limit = TOP_SCORES_LIMI
     seconds: Number(r.seconds),
     hints: Number(r.hints),
     mistakes: Number(r.mistakes),
+    // Absent on a server without the column — and 0 is what those rows were.
+    checks: r.checks != null ? Number(r.checks) : 0,
     score: Number(r.score),
     at: r.created_at ? Date.parse(r.created_at) : null,
   }));

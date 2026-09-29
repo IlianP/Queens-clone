@@ -127,6 +127,14 @@ before re-deriving how to drive things:
   anonymous rows never capped, 60 players → one row each, a lone player uncapped,
   the `p_since` window counting its own players, the shown rows being each
   player's best, and nothing deleted. Run it after any change to section 5.
+- `tests/sql/check-penalty.sql` — the check surcharge on the server, against the
+  same kind of **throwaway** local Postgres: `queens_check_penalty` is one second
+  per row, the eight-argument `submit_score` stores `checks` and scores them, the
+  seven-argument call (a solve without checks) still stores 0, `top_scores`
+  returns the count, a negative count is `bad counters`, and a re-run moves no
+  score. Run it after touching sections 3/4/4c/5 of the SQL.
+- `tests/logic/tap-cycle.mjs` — the two cell cycles in `js/game.js`: `tap()`
+  (dot first) and `tapQueenFirst()` (queen first, Voice Mode's option).
 - `tests/sql/rank-order.sql` — the server half: applies
   `docs/leaderboard-setup.sql` to a **throwaway** local Postgres (it truncates
   `public.scores`, never point it at the live project) and asserts that
@@ -198,7 +206,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/generator.js` | Generates puzzles with a guaranteed-unique solution at a target difficulty (runtime fallback + pool builds); three region-growth styles (`organic` / `blocky` / `strips`), see below — mixing is a *pool*-level concern, the generator only ever grows one style per call |
 | `js/levels.js` | Serves precomputed puzzles from `levels/` with a random D4 rotation/mirror per draw; session shuffle-bag; `drawLevel` resolves `null` on any failure |
 | `levels/` | Precomputed pools, one JSON per size × difficulty (built by `tools/generate-levels.mjs`, checked by `tools/verify-levels.mjs`). Shipped pools are **mixed**: an even split of the styles that bucket has, each entry tagged `t` — see "Mixing the styles" |
-| `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status / live lamp (rules + solution-aware, reveals no position) |
+| `js/game.js` | `Game` class: interactive state, quick-mode auto-marks, conflict + dead-unit (region/row/column) + win detection, and `hasError(solution)` — the pure yes/no behind the "Prüfen" status (rules + solution-aware, reveals no position) |
 | `js/hint.js` | `computeHint(...)` → the simplest next deduction as structured data the UI renders and explains |
 | `js/highscores.js` | Score model (`computeScore` = time + hint penalty; mistakes are counted, not charged) + local top list (`MAX_LOCAL_ENTRIES` = 50) per `(size, difficulty)` in `localStorage`, plus the **solve history** behind the relative feedback (`recordSolve` / `getPersonalStats` / `percentileBetter` / `globalPercentile`); pure logic. History entries are **dated** (`[score, at]`, or a bare `score` for the undated ones — see "Time in the score data") |
 | `js/leaderboard.js` | Optional global leaderboard via Supabase REST; **network layer**, no DOM. Reads (`fetchTopScores` — optional `{ since }` window, `created_at` per row — `fetchBucketCounts`, and `fetchPlayerRank` — the rank among **players** rather than entries) fail soft to `null` (offline/unconfigured/CSP/SQL-not-re-run) so the game stays local-only — mirrors `drawLevel`'s fallback. `submitScore` fails soft too, but to `{ failed: true, attempts }` rather than a bare `null`, so a caller can tell *why* — `attempts` is every `rpcOnce()` try (HTTP status / retriable / error text); `main.js`'s `copySubmitFailureDebug` is the consumer |
@@ -206,7 +214,7 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/i18n/en.js`, `de.js`, `fr.js`, `es.js`, `pt.js`, `ru.js` | The language packs. Flat `key → string \| (params) => string` maps, one identical key set per language — `tests/logic/verify-i18n.mjs` fails CI otherwise. Each pack owns its own plural/ordinal/percent helpers and its own noun choices; every pack pins the piece to the local name of the *n*-queens problem (`dame` / `reina` / `rainha` / `ферзь`). See "Grammar lives in the pack" below for what that buys |
 | `js/settings.js` | Preferences (language/size/difficulty/quick mode/debug/sound/voice) + last nickname in `localStorage` — highscores live in their own key; no live game state is persisted. Settings sub-options (`debugExtended`, edge-coords) hide via the `hidden` attribute — and `.field[hidden]` must win over `.toggle-field { display:flex }`, or they'd stay visible |
 | `js/audio.js` | Minimalist sound effects synthesised on the fly with the Web Audio API (no asset files, CSP-safe in the Artifact); **audio layer, no DOM**. Muting is an in-memory flag driven by the `sound` preference; every call fails soft so audio never blocks the game |
-| `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. `isRefinaliseExtension(prevText, newText)` is the **pure** detector for the other half of the same problem: Chrome finalising a sentence it cut short ("Punkte Zeile 1" before "… außer Region E1"). A premature **fill** can't be repaired by re-running the narrower one (marking only adds), so `main.js` rolls the earlier fill back — identity-checking its undo snapshot against the stack top — and applies the completed utterance. It is only a *detector*: the full new transcript is re-parsed, never stripped. Mirrors the audio/leaderboard layering |
+| `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. The queen verb also accepts the field mis-hearings `damit` and `deine`. A bare coordinate is a `toggle`; with the `voiceQueenFirst` setting (sub-option under Voice Mode, like the edge rulers) `main.js` routes it to `game.tapQueenFirst` — empty → queen → dot → empty — with per-cell undo like a queen. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. `isRefinaliseExtension(prevText, newText)` is the **pure** detector for the other half of the same problem: Chrome finalising a sentence it cut short ("Punkte Zeile 1" before "… außer Region E1"). A premature **fill** can't be repaired by re-running the narrower one (marking only adds), so `main.js` rolls the earlier fill back — identity-checking its undo snapshot against the stack top — and applies the completed utterance. It is only a *detector*: the full new transcript is re-parsed, never stripped. Mirrors the audio/leaderboard layering |
 | `js/stats.js` | Anonymous play counters ("pings"): `bumpStat(kind, {size, difficulty})` posts a counter increment to `bump_stat`, `statsSource(env)` is the **pure**, Node-testable rule that decides whether a page counts as `web` / `test` / `dev`. **Network layer, no DOM**, fire-and-forget — returns nothing, so no caller can await a counter — and fails soft everywhere, including a one-shot latch that stops asking after a 404/401/403. Reads `js/leaderboard.js`'s exported `SUPABASE_*` config rather than keeping a second copy. See "The weekly activity report" |
 | `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, QR share dialog, voice panel + coordinate labels (per-cell corner labels or an edge ruler — the `.board-stage` wraps the board so the rulers sit outside the intro rotation), the hint-cost surfaces (price tag on the button, the flying `+30 s` pill, the effective-time clock — see "Highscores / leaderboard"), debug export (with an optional `debugExtended` journal — the last 20 voice/board events: **every** heard final incl. ones that changed nothing (op `gehört`) plus effect entries, the raw voice transcript, replay-skips, and exactly what each undo removed; back-to-back coordinate finals also carry a short replay guard so a re-finalise doesn't double-apply). Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
 
@@ -807,11 +815,52 @@ the quiet zone and the light plate are the parts a dark theme silently eats.
 
 ### Highscores / leaderboard
 
-Score = effective time in seconds: `seconds + 30·hints` (lower is better),
-bucketed per `(size, difficulty)`. **`computeScore` in `js/highscores.js` and
-`queens_score()` in `docs/leaderboard-setup.sql` must stay identical** — if you
-retune a penalty, change both. Raw components are stored (not just the final
-score) so weights can move without a data migration.
+Score = effective time in seconds: `seconds + 3N·hints + N·checks` (lower is
+better, `N` = board size), bucketed per `(size, difficulty)`. **`computeScore` /
+`hintPenalty` / `checkPenalty` in `js/highscores.js` and `queens_score()` /
+`queens_hint_penalty()` / `queens_check_penalty()` in
+`docs/leaderboard-setup.sql` must stay identical** — if you retune a penalty,
+change both. Raw components are stored (not just the final score) so weights
+can move without a data migration.
+
+**Both aids are priced per row** (since 2026-09): a hint `HINT_PENALTY_PER_ROW`
+= 3 s per row (15 s on 5×5, 24 s on 8×8, 30 s on 10×10 — the old flat price —
+42 s on 14×14), a check `CHECK_PENALTY_PER_ROW` = 1 s per row. Measured on the
+live list before the change (hard medians: 5×5 ~9 s, 8×8 ~14 s, 12×12 ~70 s),
+a flat 30 s hint more than tripled a small-board solve and was noise on a big
+one. So a hint is always worth three checks. The section 3 backfill re-prices
+every stored row with hints (cheaper below 10×10, dearer above); the local list
+re-derives on read anyway, and the solve history keeps its old bare scores (the
+same accepted wrinkle as the mistake retune below). `computeScore` needs the
+`size` for any aid to cost anything — a size-less call prices both at 0 — and
+the size-less three-argument `queens_score` was **dropped** for the same reason.
+
+**"Prüfen" is on-demand only, and paid.** There was an opt-in **live lamp**
+that re-ran the check after every pause; it was **removed on purpose** (owner's
+call): a verdict after every move turns the game into guess-and-check, and no
+per-verdict price made that fair. Don't bring it back as a setting. Rules, all in
+`main.js`, guarded by `tests/browser/check-cost.mjs`:
+- `runCheck()` (button and voice "Prüfen") is the one place a verdict becomes
+  visible, so it is where `chargeCheck()` runs. `updateBoard()` clears the
+  verdict on every move — it is about the board it was asked for.
+- **Once per board state** (`seenChecks`, keyed by `boardStateKey()` — queens and
+  manual dots), like `seenHints`: re-checking an unchanged board, or undoing back
+  to a checked one, is free. An untouched board and a won one are free as well.
+- `checksUsed`/`seenChecks` reset in `startTimer()` only — **not** on
+  Zurücksetzen, for the same reason the clock doesn't.
+- Both buttons wear their price (`decorateHintButton` / `decorateCheckButton`
+  create the tag, `updateCostLabels()` fills both per board since the price
+  follows N), the pill flies off the charging button (`flyCost`), and
+  `displayedTime()` adds `hintSeconds()` + `checkSeconds()`. `win.breakdown` /
+  `score.rowTitle` take `checks` + `checkPenalty` and name the check surcharge
+  only when `checks > 0`.
+- Server: a `checks` column (default 0 — exactly right for older rows, when
+  checking was free) and an **eighth `submit_score` overload** with `p_checks`.
+  `submitScore` sends `p_checks` **only when > 0**, so a check-free solve stays
+  the seven-argument call and works against an un-migrated database. Not a
+  default on the seven-argument function: PostgREST would then find two
+  candidates for a seven-name call. The local entry stores `checks`, and
+  `normalizeEntry` prices both aids from the bucket key's size.
 
 **Mistakes are counted and displayed but carry no penalty** (they cost 15 s
 each until 2026-09). The surcharge charged twice for one slip: a wrong queen
@@ -819,17 +868,17 @@ already costs the time it takes to notice and undo it, and on a phone a mis-tap
 is a thumb's width away — so the penalty was taxing the input surface, not the
 reasoning. `mistakes` still rides along everywhere (counter in `main.js`, the
 `mistakes` column, `p_mistakes`, the per-row breakdown); only its weight is
-gone, and `queens_score`'s three-parameter signature was kept so `submit_score`
-and every client call site are unchanged.
+gone. (Its three-parameter `queens_score` signature was kept at the time; it
+has since been replaced by the five-parameter form, see above.)
 
 **The surcharge is visible while you play, not only afterwards.** Three surfaces
-carry it and all three read `HINT_PENALTY`, never a literal:
-- The hint button's own label (`decorateHintButton`) — `💡 Hinweis (+30 s)`, plus
+carry it and all three read `hintPenalty(N)`, never a literal:
+- The hint button's own label (`decorateHintButton`) — `💡 Hinweis (+24 s)` on 8×8, plus
   a `title` saying a *repeat* of the same hint is free. Appended from JS rather
   than written into `index.html` because `data-i18n` sets `textContent` and would
   delete a child element at boot; that is why the decoration is called from
   inside `applyTranslations` rather than next to it.
-- A `+30 s` pill (`flyHintCost`, `#cost-fly`) rising off the button, and a pulse
+- A `+24 s` pill (`flyHintCost` → `flyCost`, `#cost-fly`) rising off the button, and a pulse
   on the timer chip at the same moment so the clock's jump reads as a consequence
   instead of a glitch. `position: fixed`, placed from the button's live rect and
   animated with the Web Animations API, so the `.actions` row — which wraps in
@@ -842,7 +891,7 @@ carry it and all three read `HINT_PENALTY`, never a literal:
 Two traps, both guarded by `tests/browser/hint-cost.mjs`:
 - **Add the penalty in `renderTime`, never in `currentElapsed()`.** The raw
   elapsed time feeds the stored `seconds` and the debug journal, and
-  `score = seconds + 30·hints` would then charge the surcharge twice. Exactly the
+  `score = seconds + 3N·hints` would then charge the surcharge twice. Exactly the
   mistake-penalty trap one level down.
 - **Fire the animation from the branch that bumps `hintsUsed`, not from the
   click.** Only *unique* deductions count (`seenHints`), so a re-opened hint is
@@ -850,7 +899,7 @@ Two traps, both guarded by `tests/browser/hint-cost.mjs`:
 
 Because the clock now shows the effective time, `win.breakdown` and
 `score.rowTitle` say **"Spielzeit"** rather than "Zeit" and spell the surcharge
-out (`· 3 Tipps (+1:30)`); an unqualified "Zeit" next to the big effective number
+out (`· 3 Tipps (+1:12)` on 8×8); an unqualified "Zeit" next to the big effective number
 would look like the game had quietly refunded the hints.
 
 That retune is where "raw components, not just the score" paid off, and both

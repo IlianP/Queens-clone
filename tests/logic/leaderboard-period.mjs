@@ -128,8 +128,8 @@ try {
     eq(capped.perPlayer, 17, 'per_player lifted onto the list');
     eq(capped.hidden, 17, 'hidden lifted onto the list');
     eq(JSON.stringify(Object.keys(capped[0]).sort()),
-      JSON.stringify(['at', 'hints', 'mistakes', 'name', 'score', 'seconds']),
-      'rows stay the same six fields — the cap is list metadata, not row data');
+      JSON.stringify(['at', 'checks', 'hints', 'mistakes', 'name', 'score', 'seconds']),
+      'rows carry the score fields only — the cap is list metadata, not row data');
 
     const open = { ...row('Allein', 101), per_player: 50, hidden: 0 };
     installFetch({ status: 200, body: [open] });

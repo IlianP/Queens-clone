@@ -42,6 +42,23 @@ export class Game {
     }
   }
 
+  // The same three states in the other order: empty -> queen -> dot -> empty.
+  // Voice Mode's "queen first" option uses it for a bare coordinate ("C4"), where
+  // placing is what a spoken cell almost always means. Auto-marks don't matter
+  // here — an empty cell becomes a queen either way.
+  tapQueenFirst(r, c) {
+    if (this.queen[r][c]) {
+      this.queen[r][c] = false;
+      this.queenCount--;
+      this.mark[r][c] = true;
+    } else if (this.mark[r][c]) {
+      this.mark[r][c] = false;
+    } else {
+      this.queen[r][c] = true;
+      this.queenCount++;
+    }
+  }
+
   // Whether (r,c) is auto-dotted by quick mode because a queen already rules it
   // out: same row, column or region, or an adjacent (touching) cell.
   _autoMarked(r, c) {
@@ -204,7 +221,7 @@ export class Game {
   }
 
   // Whether the current board has any detectable mistake, WITHOUT revealing
-  // where. Used by the "Prüfen" status and the live lamp — a pure yes/no so the
+  // where. Used by the "Prüfen" status — a pure yes/no so the
   // UI never leaks a position or the next move. Reuses the existing rule logic
   // (conflicts + dead units) and, given the puzzle's unique solution, also flags
   // two ways of leaving the solution path even before a rule breaks: a placed
@@ -231,8 +248,8 @@ export class Game {
     return false;
   }
 
-  // Untouched board: no queens and no manual marks. The live lamp stays off in
-  // this state so a fresh board doesn't light up green for nothing.
+  // Untouched board: no queens and no manual marks. Checking it is free — the
+  // answer is known — so "Prüfen" charges nothing in this state.
   isPristine() {
     if (this.queenCount !== 0) return false;
     for (let r = 0; r < this.N; r++)

@@ -30,8 +30,9 @@ const {
   matchOwnEntry,
   previewRank,
   computeScore,
+  checkPenalty,
   getLocalScores,
-  HINT_PENALTY,
+  hintPenalty,
   MAX_SOLVE_HISTORY,
   MIN_SOLVES_FOR_PERCENTILE,
   MIN_GLOBAL_FOR_PERCENTILE,
@@ -372,10 +373,13 @@ eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
 // --- computeScore: hints cost time, mistakes don't ---------------------------
 {
   eq(computeScore(100, 0), 100, 'a clean solve scores its raw time');
-  eq(computeScore(100, 2), 100 + 2 * HINT_PENALTY, 'each hint still costs HINT_PENALTY');
-  // The point of the change: a mis-tap must not be charged for twice. Anything
-  // past the two real inputs is ignored, so an old three-argument call site
-  // can't quietly reintroduce the surcharge.
+  eq(computeScore(100, 2, 0, 0, 10), 100 + 2 * 30, 'a hint costs 30 s on a 10×10');
+  eq(hintPenalty(5), 15, 'a hint costs 3 s per row: 15 s on a 5×5');
+  eq(hintPenalty(14), 42, '… and 42 s on a 14×14');
+  eq(computeScore(20, 1, 0, 0, 5), 35, 'a 5×5 solve with one hint: 20 + 15');
+  // The point of the change: a mis-tap must not be charged for twice. The
+  // mistakes argument is accepted (it mirrors queens_score's signature) and
+  // carries no weight.
   eq(computeScore(100, 0, 4), 100, 'mistakes add nothing to the score');
 
   // Entries written under the old formula are recomputed from their raw
@@ -385,6 +389,26 @@ eq(seedSolveHistory(), 0, 'no top lists → nothing seeded');
   saveLocalScore(7, 'hard', { name: 'Alt', seconds: 60, hints: 0, mistakes: 3, score: 105 });
   eq(getLocalScores(7, 'hard')[0].score, 60, 'a stored score is re-derived, not trusted');
   eq(getLocalScores(7, 'hard')[0].mistakes, 3, 'the raw mistake count is still kept');
+}
+
+// --- checks ("Prüfen") cost one second per row each ---------------------------
+{
+  eq(checkPenalty(5), 5, 'a check costs 5 s on a 5×5');
+  eq(checkPenalty(14), 14, 'and 14 s on a 14×14');
+  eq(checkPenalty(undefined), 0, 'no size, no surcharge');
+  eq(computeScore(100, 1, 0, 3, 8), 100 + 3 * 8 + 3 * 8, 'hints and checks are priced by board size');
+  eq(computeScore(100, 1, 0, 3), 100, 'without a size neither aid has a price');
+
+  // The local list derives the surcharge from the bucket's size, and entries
+  // from before checks were charged read as zero checks.
+  localStorage.clear();
+  saveLocalScore(9, 'hard', { name: 'Prüfer', seconds: 60, hints: 0, mistakes: 0, checks: 2, score: 60 });
+  saveLocalScore(9, 'hard', { name: 'Alt', seconds: 70, hints: 0, mistakes: 0, score: 70 });
+  const list = getLocalScores(9, 'hard');
+  eq(list[0].name, 'Alt', '60 s + 2 checks on a 9×9 (78) ranks behind a clean 70');
+  eq(list[1].score, 78, 'the checked entry scores 60 + 2·9');
+  eq(list[1].checks, 2, 'the raw check count is kept');
+  eq(list[0].checks, 0, 'an entry without the field has no checks');
 }
 
 // --- previewRank ------------------------------------------------------------
@@ -403,14 +427,15 @@ for (const [sc, sec] of [[40, 40], [55, 55], [55, 55], [90, 90]]) {
   const { rank } = saveLocalScore(6, 'easy', { name: 'Ich', seconds: 55, hints: 0, mistakes: 0, score: 55 });
   eq(rank, 3, 'saving puts the tie in the same place the preview showed');
   // Within an equal score the faster raw time still wins (byScore's tie-break).
-  // The three scores are equal by construction (seconds + 30·hints = 90 each) —
+  // The three scores are equal by construction (seconds + 30·hints = 90 each on a
+  // 10×10, where a hint costs 3 s × 10 rows) —
   // a stored score is recomputed from its components on read, so it can't be
   // stated independently of them.
   localStorage.clear();
-  saveLocalScore(6, 'easy', { name: 'Ich', seconds: 90, hints: 0, mistakes: 0, score: 90 });
-  saveLocalScore(6, 'easy', { name: 'Ich', seconds: 30, hints: 2, mistakes: 0, score: 90 });
-  eq(previewRank(6, 'easy', 90, 60), 1, 'ranked behind the faster raw time, ahead of the slower');
-  eq(saveLocalScore(6, 'easy', { name: 'Ich', seconds: 60, hints: 1, mistakes: 0, score: 90 }).rank, 1,
+  saveLocalScore(10, 'easy', { name: 'Ich', seconds: 90, hints: 0, mistakes: 0, score: 90 });
+  saveLocalScore(10, 'easy', { name: 'Ich', seconds: 30, hints: 2, mistakes: 0, score: 90 });
+  eq(previewRank(10, 'easy', 90, 60), 1, 'ranked behind the faster raw time, ahead of the slower');
+  eq(saveLocalScore(10, 'easy', { name: 'Ich', seconds: 60, hints: 1, mistakes: 0, score: 90 }).rank, 1,
     'and saving agrees again');
 }
 

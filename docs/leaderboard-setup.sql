@@ -43,6 +43,10 @@ create table if not exists public.scores (
 
 -- Nullable keeps historical rows untouched; new clients provide a UUID.
 alter table public.scores add column if not exists submission_id uuid;
+-- Wie oft "Prüfen" benutzt wurde (die Live-Lampe zählt je angezeigtem Urteil
+-- mit). Default 0 ist für den Altbestand exakt richtig: bis dahin war Prüfen
+-- kostenlos, und genau so steht er danach auch da.
+alter table public.scores add column if not exists checks int not null default 0;
 
 create index if not exists scores_bucket_idx
   on public.scores (size, difficulty, score, seconds);
@@ -67,23 +71,47 @@ revoke all on public.scores from anon, authenticated;
 -- muss bemerkt und zurückgenommen werden) – der Aufschlag kassierte also zweimal
 -- für denselben Patzer. p_mistakes bleibt in der Signatur (und die Spalte
 -- `mistakes` in der Tabelle): die Rohwerte werden weiter gespeichert und
--- angezeigt, nur ihr Gewicht ist 0. Die Signatur zu behalten heißt auch, dass
--- submit_score() unverändert aufgerufen werden kann.
-create or replace function public.queens_score(p_seconds int, p_hints int, p_mistakes int)
+-- angezeigt, nur ihr Gewicht ist 0.
+--
+-- HILFEN KOSTEN JE ZEILE (seit 2026-09): ein Hinweis 3 s pro Zeile des Feldes
+-- (15 s auf 5×5, 24 s auf 8×8, 30 s auf 10×10, 42 s auf 14×14), eine Prüfung
+-- 1 s pro Zeile (5 s bis 14 s). Vorher kostete ein Hinweis pauschal 30 s – auf
+-- 5×5 mehr als das Dreifache einer typischen Lösung (Median ~9 s), auf 14×14
+-- kaum spürbar. Muss zu hintPenalty()/checkPenalty() in js/highscores.js passen.
+create or replace function public.queens_hint_penalty(p_size int)
   returns int language sql immutable as $$
-  select p_seconds + 30 * p_hints;
+  select 3 * greatest(coalesce(p_size, 0), 0);
+$$;
+create or replace function public.queens_check_penalty(p_size int)
+  returns int language sql immutable as $$
+  select greatest(coalesce(p_size, 0), 0);
 $$;
 
+create or replace function public.queens_score(
+  p_seconds int, p_hints int, p_mistakes int, p_checks int, p_size int
+) returns int language sql immutable as $$
+  select p_seconds
+         + public.queens_hint_penalty(p_size) * coalesce(p_hints, 0)
+         + public.queens_check_penalty(p_size) * coalesce(p_checks, 0);
+$$;
+
+-- Die frühere Drei-Parameter-Form kannte die Feldgröße nicht und kann den
+-- Hinweis deshalb nicht mehr richtig bepreisen. Alle submit_score()-Varianten
+-- rufen die Fünf-Parameter-Form; die alte wird entfernt, damit sie niemand
+-- versehentlich benutzt.
+drop function if exists public.queens_score(int, int, int);
+
 -- Bestandsdaten auf die aktuelle Formel ziehen. Genau dafür liegen seconds,
--- hints und mistakes einzeln in der Tabelle: ein früher eingetragener Lauf mit
--- Fehlern war nie wirklich langsamer, er wurde nur schlechter gerechnet – und
+-- hints, mistakes, checks und size einzeln in der Tabelle: ein früher
+-- eingetragener Lauf wurde nur anders gerechnet (Fehler mit 15 s, ein Hinweis
+-- pauschal mit 30 s) – und
 -- das lässt sich exakt zurückrechnen, ohne dass jemand etwas neu spielen muss.
 -- Idempotent (`is distinct from` schreibt nur, was abweicht), also bei jedem
 -- erneuten Ausführen der Datei ein No-Op; created_at bleibt unberührt, die
 -- Reihenfolge der Bestenliste ergibt sich danach aus den neuen Werten.
 update public.scores
-   set score = public.queens_score(seconds, hints, mistakes)
- where score is distinct from public.queens_score(seconds, hints, mistakes);
+   set score = public.queens_score(seconds, hints, mistakes, checks, size)
+ where score is distinct from public.queens_score(seconds, hints, mistakes, checks, size);
 
 -- Untergrenze für die gemeldete Zeit. ABSICHTLICH sehr niedrig: sie war früher
 -- `greatest(3, p_size)` – also z. B. 6 Sekunden bei 6×6 – und hat damit echte,
@@ -136,7 +164,7 @@ begin
     where client_key = v_key and created_at > now() - interval '1 minute';
   if v_recent >= 20 then raise exception 'rate limited'; end if;
 
-  v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0));
+  v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), 0, p_size);
 
   insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, client_key)
   values (v_name, p_size, p_difficulty, p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), v_score, v_key)
@@ -197,7 +225,7 @@ begin
       where client_key = v_key and created_at > now() - interval '1 minute';
     if v_recent >= 20 then raise exception 'rate limited'; end if;
 
-    v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0));
+    v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), 0, p_size);
     v_size := p_size; v_difficulty := p_difficulty; v_seconds := p_seconds;
     insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, client_key, submission_id)
     values (v_name, v_size, v_difficulty, v_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0), v_score, v_key, p_submission_id)
@@ -223,6 +251,72 @@ begin
            (select count(*) from bucket)::bigint;
 end;
 $idempotent$;
+
+-- 4c) Einreichung MIT Prüfungen --------------------------------------------------
+-- Wie 4b, plus p_checks. Eine eigene Überladung statt eines Defaults an 4b: mit
+-- `p_checks int default 0` wäre ein Aufruf mit sieben benannten Argumenten für
+-- PostgREST mehrdeutig. Der Client schickt p_checks nur, wenn er > 0 ist; eine
+-- Partie ohne Prüfung läuft also weiter über 4b und funktioniert auch gegen eine
+-- Datenbank, auf der diese Datei noch nicht neu ausgeführt wurde.
+create or replace function public.submit_score(
+  p_name text, p_size int, p_difficulty text,
+  p_seconds int, p_hints int, p_mistakes int, p_submission_id uuid, p_checks int
+) returns table (rank bigint, total bigint)
+  language plpgsql security definer set search_path = public as $checked$
+declare
+  v_name text; v_score int; v_key text; v_recent int;
+  v_id bigint; v_at timestamptz; v_size int; v_difficulty text; v_seconds int;
+begin
+  if p_submission_id is null then raise exception 'missing submission id'; end if;
+  v_name := left(btrim(regexp_replace(coalesce(p_name, ''), '\s+', ' ', 'g')), 20);
+  if p_size < 5 or p_size > 14 then raise exception 'bad size'; end if;
+  if p_difficulty not in ('easy', 'medium', 'hard') then raise exception 'bad difficulty'; end if;
+  if p_seconds is null or p_seconds < queens_min_seconds(p_size) or p_seconds > 86400 then
+    raise exception 'implausible time';
+  end if;
+  if coalesce(p_hints, 0) < 0 or coalesce(p_hints, 0) > 999
+     or coalesce(p_mistakes, 0) < 0 or coalesce(p_mistakes, 0) > 9999
+     or coalesce(p_checks, 0) < 0 or coalesce(p_checks, 0) > 9999 then
+    raise exception 'bad counters';
+  end if;
+
+  select id, size, difficulty, score, seconds, created_at
+    into v_id, v_size, v_difficulty, v_score, v_seconds, v_at
+    from public.scores where submission_id = p_submission_id;
+
+  if not found then
+    v_key := md5(coalesce(host(inet_client_addr()), '') || '|' || current_date::text);
+    select count(*) into v_recent from public.scores
+      where client_key = v_key and created_at > now() - interval '1 minute';
+    if v_recent >= 20 then raise exception 'rate limited'; end if;
+
+    v_score := queens_score(p_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0),
+                            coalesce(p_checks, 0), p_size);
+    v_size := p_size; v_difficulty := p_difficulty; v_seconds := p_seconds;
+    insert into public.scores (name, size, difficulty, seconds, hints, mistakes, checks, score, client_key, submission_id)
+    values (v_name, v_size, v_difficulty, v_seconds, coalesce(p_hints, 0), coalesce(p_mistakes, 0),
+            coalesce(p_checks, 0), v_score, v_key, p_submission_id)
+    on conflict (submission_id) where submission_id is not null do nothing
+    returning id, created_at into v_id, v_at;
+
+    if not found then
+      select id, size, difficulty, score, seconds, created_at
+        into v_id, v_size, v_difficulty, v_score, v_seconds, v_at
+        from public.scores where submission_id = p_submission_id;
+    end if;
+  end if;
+
+  return query
+    with bucket as (
+      select s.id, s.score, s.seconds, s.created_at from public.scores s
+        where s.size = v_size and s.difficulty = v_difficulty
+    )
+    select (select count(*) + 1 from bucket b
+              where (b.score, b.seconds, b.created_at, b.id)
+                  < (v_score, v_seconds, v_at, v_id))::bigint,
+           (select count(*) from bucket)::bigint;
+end;
+$checked$;
 
 -- 5) Bestenliste lesen (nur unbedenkliche Spalten, best-first) -----------------
 -- created_at wird MITGELIEFERT: die Oberfläche zeigt daneben das Alter des
@@ -271,14 +365,14 @@ drop function if exists public.top_scores(int, text, int);
 drop function if exists public.top_scores(int, text, int, timestamptz);
 create or replace function public.top_scores(
   p_size int, p_difficulty text, p_limit int default 10, p_since timestamptz default null
-) returns table (name text, seconds int, hints int, mistakes int, score int,
+) returns table (name text, seconds int, hints int, mistakes int, checks int, score int,
                  created_at timestamptz, per_player int, hidden int)
   language sql security definer set search_path = public stable as $top_scores$
   with lim as (
     select least(greatest(coalesce(p_limit, 10), 1), 100) as n
   ),
   bucket as (
-    select s.id, s.name, s.seconds, s.hints, s.mistakes, s.score, s.created_at,
+    select s.id, s.name, s.seconds, s.hints, s.mistakes, s.checks, s.score, s.created_at,
            btrim(coalesce(s.name, '')) = '' as anon,
            case when btrim(coalesce(s.name, '')) = ''
                 then s.id::text
@@ -302,7 +396,7 @@ create or replace function public.top_scores(
                             / greatest(count(distinct (b.anon, b.pkey)), 1)))::int as per_player
       from bucket b
   )
-  select r.name, r.seconds, r.hints, r.mistakes, r.score, r.created_at,
+  select r.name, r.seconds, r.hints, r.mistakes, r.checks, r.score, r.created_at,
          c.per_player,
          (select count(*) from ranked x where x.nth > c.per_player)::int
     from ranked r cross join cap c
@@ -443,6 +537,7 @@ $player_rank$;
 -- 6) Ausführrechte nur für diese Funktionen ------------------------------------
 grant execute on function public.submit_score(text, int, text, int, int, int) to anon;
 grant execute on function public.submit_score(text, int, text, int, int, int, uuid) to anon;
+grant execute on function public.submit_score(text, int, text, int, int, int, uuid, int) to anon;
 grant execute on function public.top_scores(int, text, int, timestamptz) to anon;
 grant execute on function public.score_counts(int, text, timestamptz) to anon;
 grant execute on function public.player_rank(int, text, text, int, int, uuid) to anon;
@@ -578,14 +673,15 @@ grant select on public.play_stats to service_role;
 -- Muss es doch von Hand sein, reicht der geänderte Abschnitt. Die Abschnitte
 -- sind in sich abgeschlossen; Stand dieser Datei:
 --
---   Abschnitt 3    (Zeilen  63–99)   Score-Formel + einmaliger Backfill
---   Abschnitt 4+4b (Zeilen 100–226)  submit_score
---   Abschnitt 5    (Zeilen 227–313)  top_scores – Deckel pro Spieler   ← zuletzt geändert
---   Abschnitt 5b   (Zeilen 314–329)  score_counts
---   Abschnitt 5c   (Zeilen 330–441)  player_rank
---   Abschnitt 6    (Zeilen 442–448)  Ausführrechte – nach 5 immer mitnehmen,
+--   Abschnitt 1    (Zeilen  29–62)   Tabelle (+ Spalte checks)     ← zuletzt geändert
+--   Abschnitt 3    (Zeilen  67–127)  Score-Formel + Backfill       ← zuletzt geändert
+--   Abschnitt 4–4c (Zeilen 128–320)  submit_score (drei Formen)    ← zuletzt geändert
+--   Abschnitt 5    (Zeilen 321–407)  top_scores – Deckel pro Spieler, checks
+--   Abschnitt 5b   (Zeilen 408–423)  score_counts
+--   Abschnitt 5c   (Zeilen 424–536)  player_rank
+--   Abschnitt 6    (Zeilen 537–544)  Ausführrechte – nach 4c/5 immer mitnehmen,
 --                                    weil `drop function` die Rechte mitlöscht
---   Abschnitt 8    (Zeilen 466–571)  bump_stat
+--   Abschnitt 8    (Zeilen 562–…)    bump_stat
 --
 -- Die Zeilennummern verschieben sich, sobald jemand oberhalb etwas einfügt —
 -- deshalb stehen die Abschnittsnummern daneben, und deshalb ist der Workflow
@@ -684,6 +780,8 @@ grant select on public.play_stats to service_role;
 --   mehr auf den Rang); nur die Statuszeile kann bei Gleichstand einen Platz zu
 --   gut anzeigen.
 
+-- (Überholt durch „Hilfen kosten je Zeile“ weiter unten: die Drei-Parameter-
+-- Form von queens_score() gibt es nicht mehr. Stehen gelassen als Historie.)
 -- 2026-09: Fehler kosten keine Zeit mehr. queens_score() rechnet nur noch
 -- `seconds + 30 * hints`; der Aufschlag von 15 s je Fehler entfällt (Begründung
 -- in Abschnitt 3). Die ganze Datei erneut ausführen – das ersetzt die Funktion
@@ -735,3 +833,19 @@ grant select on public.play_stats to service_role;
 -- Migration antwortet bump_stat mit 404; js/stats.js verschluckt das still und
 -- das Spiel läuft unverändert – im Wochenbericht bleibt der Abschnitt
 -- "Spielverlauf" dann einfach leer.
+--
+-- 2026-09: Hilfen kosten je Zeile. Ein Hinweis kostet 3 s pro Zeile statt
+-- pauschal 30 s, eine Prüfung ("Prüfen") neu 1 s pro Zeile. Neu: Spalte
+-- `checks` (Default 0), queens_hint_penalty(), queens_check_penalty(), die
+-- Fünf-Parameter-Form von queens_score() (die Drei-Parameter-Form wird
+-- entfernt), eine achte submit_score()-Überladung mit p_checks samt grant, und
+-- top_scores() liefert `checks` mit (das vorhandene `drop` in Abschnitt 5 deckt
+-- die geänderten Rückgabespalten ab). Die ganze Datei erneut ausführen – der
+-- deploy-sql-Workflow tut das beim Merge nach main von selbst. Das `update` in
+-- Abschnitt 3 rechnet alle Bestandszeilen MIT Hinweisen neu: auf Feldern unter
+-- 10×10 werden sie besser, darüber schlechter, auf 10×10 bleiben sie gleich;
+-- Zeilen ohne Hinweis ändern sich nicht (checks = 0). Ohne diese Migration
+-- funktioniert eine Partie OHNE Prüfung weiter (nur rechnet der Server den
+-- Hinweis noch pauschal); eine Partie MIT Prüfung ruft die achte Überladung,
+-- die es dann nicht gibt, und die globale Einreichung schlägt fehl (die lokale
+-- Liste bekommt sie trotzdem).

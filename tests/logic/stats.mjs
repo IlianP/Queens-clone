@@ -107,10 +107,11 @@ ok(sizeBound, 'bump_stat still validates the board size in docs/leaderboard-setu
 eq(Number(sizeBound[1]), MIN_SIZE, 'bump_stat accepts down to MIN_SIZE');
 eq(Number(sizeBound[2]), MAX_SIZE, 'bump_stat accepts up to MAX_SIZE');
 
-// submit_score and submit_score_v2 carry the same bound, and there it is loud
-// (P0001 'bad size', HTTP 400) rather than silent. Both must move together.
+// The three submit_score overloads (six, seven and eight arguments — the last
+// one carries p_checks) carry the same bound, and there it is loud (P0001 'bad
+// size', HTTP 400) rather than silent. All of them must move together.
 const submitBounds = [...sql.matchAll(/if p_size < (\d+) or p_size > (\d+) then raise exception 'bad size'/g)];
-eq(submitBounds.length, 2, 'both submit functions still bound the board size');
+eq(submitBounds.length, 3, 'every submit function still bounds the board size');
 for (const [i, m] of submitBounds.entries()) {
   eq(Number(m[1]), MIN_SIZE, `submit function ${i + 1} accepts down to MIN_SIZE`);
   eq(Number(m[2]), MAX_SIZE, `submit function ${i + 1} accepts up to MAX_SIZE`);

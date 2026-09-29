@@ -42,15 +42,17 @@ export const I18N_DE = {
   'ui.settings': 'Einstellungen',
   'ui.board': 'Spielfeld',
   'ui.check': '🔎 Prüfen',
+  'ui.check.title': ({ seconds }) =>
+    `Jede Prüfung zählt ${seconds}\u00a0Sekunden auf deine Zeit – eine Sekunde pro Zeile. Denselben Spielstand erneut zu prüfen ist frei.`,
   'ui.hint': '💡 Hinweis',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
-  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // alone). Two presentations, one number — both are handed the same hintPenalty(N), so
   // the label, the animation and the score cannot quote different figures.
   'ui.hint.cost': ({ seconds }) => `+${seconds}\u00a0s`,
   'ui.hint.costLabel': ({ seconds }) => `(+${seconds}\u00a0s)`,
   'ui.hint.title': ({ seconds }) =>
-    `Ein neuer Hinweis zählt ${seconds}\u00a0Sekunden auf deine Zeit. Denselben Hinweis erneut zu öffnen ist frei.`,
+    `Ein neuer Hinweis zählt ${seconds}\u00a0Sekunden auf deine Zeit – drei Sekunden pro Zeile. Denselben Hinweis erneut zu öffnen ist frei.`,
   'ui.undo': '↶ Rückgängig',
   'ui.reset': '🔄 Zurücksetzen',
   'ui.debugCopy': '🐞 Debug kopieren',
@@ -82,8 +84,8 @@ export const I18N_DE = {
     `Höchstens ${dePlural(perPlayer, 'Eintrag', 'Einträge')} pro Spieler · ${dePlural(hidden, 'weiterer', 'weitere')} ausgeblendet`,
   'score.anonymous': 'Anonym',
   'score.you': 'Du',
-  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
-    `Spielzeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')}${hints ? ` (+${penalty})` : ''} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Spielzeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${dePlural(checks, 'Prüfung', 'Prüfungen')} (+${checkPenalty})` : ''} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
   // `unit` arrives as an Intl unit kind ('day', 'month', …), never as a word —
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => deRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
@@ -105,8 +107,8 @@ export const I18N_DE = {
   'win.newGame': 'Neues Spiel',
   'win.settings': '⚙ Einstellungen',
   'win.debugCopy': '📋 Debug-Status kopieren',
-  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
-    `Spielzeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')}${hints ? ` (+${penalty})` : ''} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Spielzeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${dePlural(checks, 'Prüfung', 'Prüfungen')} (+${checkPenalty})` : ''} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) => `Deine erste Partie in ${bucket} – ab jetzt gibt es etwas zu schlagen.`,
@@ -174,9 +176,6 @@ export const I18N_DE = {
   'settings.quick.label': 'Schnellmodus',
   'settings.quick.hint':
     'Beim Setzen einer Dame werden Zeile, Spalte, Farbregion und angrenzende Felder automatisch gepunktet.',
-  'settings.live.label': 'Live-Prüfung',
-  'settings.live.hint':
-    'Zeigt fortlaufend ein Statuslämpchen an, ob dein Spielstand fehlerfrei ist – ohne zu verraten, wo ein Fehler liegt. Erscheint erst kurz nach deinem letzten Zug. Ohne diese Option lässt sich der Status jederzeit über „Prüfen“ abrufen.',
   'settings.intro.label': 'Start-Animation',
   'settings.intro.hint':
     'Beim Erzeugen eines Rätsels breiten sich die Farbregionen animiert aus, während sich das Feld dreht – füllt die Wartezeit bei großen Feldern.',
@@ -192,6 +191,9 @@ export const I18N_DE = {
   'settings.voiceEdge.label': 'Koordinaten groß am Rand',
   'settings.voiceEdge.hint':
     'Zeigt die Spalten-Buchstaben und Zeilen-Zahlen groß am Rand des Feldes an – wie beim Schachbrett – statt klein in der Ecke jedes Feldes.',
+  'settings.voiceQueenFirst.label': 'Koordinate setzt zuerst eine Dame',
+  'settings.voiceQueenFirst.hint':
+    'Nur eine Koordinate zu sagen („C4“) schaltet in der Reihenfolge Dame → Punkt → leer statt Punkt → Dame → leer. Tippen auf ein Feld bleibt, wie es ist.',
   'settings.debug.label': 'Debug-Modus',
   'settings.debug.hint':
     'Zeigt einen Button, der alle Infos zum aktuellen Spielstand (inkl. Hinweis) in die Zwischenablage kopiert – hilfreich beim Melden von Problemen.',

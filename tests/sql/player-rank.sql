@@ -55,7 +55,7 @@ create or replace function pg_temp.add(
 ) returns bigint language sql as $$
   insert into public.scores (name, size, difficulty, seconds, hints, mistakes, score, created_at, submission_id)
   values (p_name, p_size, p_difficulty, p_seconds, 0, 0,
-          public.queens_score(p_seconds, 0, 0),
+          public.queens_score(p_seconds, 0, 0, 0, p_size),
           timestamptz '2026-01-01 00:00:00+00' + (p_min || ' minutes')::interval,
           p_submission_id)
   returning id;

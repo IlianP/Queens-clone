@@ -26,10 +26,12 @@ export const DEFAULTS = {
   debugExtended: false,
   introAnimation: true,
   nickname: '',
-  liveCheck: false,
   sound: true,
   voice: false,
   voiceEdgeLabels: false,
+  // A bare spoken coordinate cycles empty → queen → dot → empty instead of the
+  // tap order (empty → dot → queen). Voice-only; a tap is never affected.
+  voiceQueenFirst: false,
 };
 
 // Collapse whitespace and cap the length so a stored nickname is always a tidy
@@ -65,11 +67,12 @@ export function loadSettings() {
       introAnimation:
         typeof s.introAnimation === 'boolean' ? s.introAnimation : DEFAULTS.introAnimation,
       nickname: sanitizeNickname(s.nickname),
-      liveCheck: typeof s.liveCheck === 'boolean' ? s.liveCheck : DEFAULTS.liveCheck,
       sound: typeof s.sound === 'boolean' ? s.sound : DEFAULTS.sound,
       voice: typeof s.voice === 'boolean' ? s.voice : DEFAULTS.voice,
       voiceEdgeLabels:
         typeof s.voiceEdgeLabels === 'boolean' ? s.voiceEdgeLabels : DEFAULTS.voiceEdgeLabels,
+      voiceQueenFirst:
+        typeof s.voiceQueenFirst === 'boolean' ? s.voiceQueenFirst : DEFAULTS.voiceQueenFirst,
     };
   } catch (e) {
     return { ...DEFAULTS };

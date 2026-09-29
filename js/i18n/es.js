@@ -46,15 +46,17 @@ export const I18N_ES = {
   'ui.settings': 'Ajustes',
   'ui.board': 'Tablero de juego',
   'ui.check': '🔎 Comprobar',
+  'ui.check.title': ({ seconds }) =>
+    `Cada comprobación suma ${seconds}\u00a0segundos a tu tiempo: un segundo por fila. Volver a comprobar el mismo tablero es gratis.`,
   'ui.hint': '💡 Pista',
   // The price tag on the hint button (bracketed, it trails a label) and the
   // pill that flies off it when a hint is actually charged (bare, it stands
-  // alone). Two presentations, one number — both are handed HINT_PENALTY, so
+  // alone). Two presentations, one number — both are handed the same hintPenalty(N), so
   // the label, the animation and the score cannot quote different figures.
   'ui.hint.cost': ({ seconds }) => `+${seconds}\u00a0s`,
   'ui.hint.costLabel': ({ seconds }) => `(+${seconds}\u00a0s)`,
   'ui.hint.title': ({ seconds }) =>
-    `Una pista nueva suma ${seconds}\u00a0segundos a tu tiempo. Volver a abrir la misma pista es gratis.`,
+    `Una pista nueva suma ${seconds}\u00a0segundos a tu tiempo: tres segundos por fila. Volver a abrir la misma pista es gratis.`,
   'ui.undo': '↶ Deshacer',
   'ui.reset': '🔄 Reiniciar',
   'ui.debugCopy': '🐞 Copiar depuración',
@@ -90,8 +92,8 @@ export const I18N_ES = {
   // the fallback only catches a caller passing something else entirely.
   'score.age': ({ value, unit }) => esRelTime.format(-value, typeof unit === 'string' ? unit : 'day'),
   'score.rowDate': ({ at }) => `Registrado: ${esDateTime.format(new Date(at))}`,
-  'score.rowTitle': ({ time, hints, mistakes, penalty }) =>
-    `Tiempo de juego ${time} · ${esPlural(hints, 'pista', 'pistas')}${hints ? ` (+${penalty})` : ''} · ${esPlural(mistakes, 'error', 'errores')}`,
+  'score.rowTitle': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Tiempo de juego ${time} · ${esPlural(hints, 'pista', 'pistas')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${esPlural(checks, 'comprobación', 'comprobaciones')} (+${checkPenalty})` : ''} · ${esPlural(mistakes, 'error', 'errores')}`,
 
   // ---------- win card ----------
   'win.title': '🎉 ¡Resuelto!',
@@ -109,8 +111,8 @@ export const I18N_ES = {
   'win.newGame': 'Partida nueva',
   'win.settings': '⚙ Ajustes',
   'win.debugCopy': '📋 Copiar estado de depuración',
-  'win.breakdown': ({ time, hints, mistakes, penalty }) =>
-    `Tiempo de juego ${time} · ${esPlural(hints, 'pista', 'pistas')}${hints ? ` (+${penalty})` : ''} · ${esPlural(mistakes, 'error', 'errores')}`,
+  'win.breakdown': ({ time, hints, mistakes, penalty, checks, checkPenalty }) =>
+    `Tiempo de juego ${time} · ${esPlural(hints, 'pista', 'pistas')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${esPlural(checks, 'comprobación', 'comprobaciones')} (+${checkPenalty})` : ''} · ${esPlural(mistakes, 'error', 'errores')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   'win.personal.first': ({ bucket }) =>
@@ -176,9 +178,6 @@ export const I18N_ES = {
   'settings.quick.label': 'Modo rápido',
   'settings.quick.hint':
     'Al colocar una reina se marcan automáticamente con un punto su fila, su columna, su región de color y las casillas contiguas.',
-  'settings.live.label': 'Comprobación en directo',
-  'settings.live.hint':
-    'Muestra de forma continua un indicador de si tu tablero sigue sin errores, sin revelar dónde está el error. Aparece poco después de tu última jugada. Sin esta opción, el estado se puede consultar en cualquier momento con «Comprobar».',
   'settings.intro.label': 'Animación de inicio',
   'settings.intro.hint':
     'Mientras se genera un tablero, las regiones de color se despliegan animadas mientras el tablero gira: así se llena la espera en los tableros grandes.',
@@ -194,6 +193,9 @@ export const I18N_ES = {
   'settings.voiceEdge.label': 'Coordenadas grandes en el borde',
   'settings.voiceEdge.hint':
     'Muestra las letras de columna y los números de fila en grande en el borde del tablero, como en un tablero de ajedrez, en lugar de en pequeño en la esquina de cada casilla.',
+  'settings.voiceQueenFirst.label': 'Una coordenada coloca primero una reina',
+  'settings.voiceQueenFirst.hint':
+    'Decir solo una coordenada («C4») alterna reina → punto → vacío en lugar de punto → reina → vacío. Tocar una casilla no cambia.',
   'settings.debug.label': 'Modo de depuración',
   'settings.debug.hint':
     'Muestra un botón que copia al portapapeles toda la información del tablero actual (incluida la pista): útil para informar de un problema.',
