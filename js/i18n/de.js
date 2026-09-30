@@ -54,7 +54,7 @@ export const I18N_DE = {
   'ui.hint.title': ({ seconds }) =>
     `Ein neuer Hinweis zählt ${seconds}\u00a0Sekunden auf deine Zeit – drei Sekunden pro Zeile. Denselben Hinweis erneut zu öffnen ist frei.`,
   'ui.undo': '↶ Rückgängig',
-  'ui.reset': '🔄 Zurücksetzen',
+  'ui.reset': '🔄 Reset',
   'ui.debugCopy': '🐞 Debug kopieren',
   'ui.sound.mute': 'Ton stummschalten',
   'ui.sound.unmute': 'Ton einschalten',
