@@ -74,9 +74,9 @@ import {
 // dark-mode saturate/brightness filter) — the additions make nothing worse in
 // either theme. Measure again before adding a fifteenth.
 const PALETTE = [
-  '#ff8a8a', '#ffb26b', '#ffe066', '#c1e15b', '#7ed99a', '#66d9cd',
-  '#79c7ff', '#8aa2ff', '#bd93f9', '#ff9ed8', '#d0a679', '#c9cdd6',
-  '#c8e4be', '#f17ee7',
+  '#f26b63', '#f7a23c', '#f5d63d', '#a3d94a', '#3dbb78', '#2fc2c2',
+  '#55aef2', '#6a7cf0', '#a974f2', '#f26fc3', '#c4915a', '#aeb4c0',
+  '#7bd65b', '#e04fd8',
 ];
 
 const CROWN = `<svg class="queen" viewBox="0 0 24 24" aria-hidden="true">
@@ -204,10 +204,74 @@ function applyTranslations(root = document) {
       node.setAttribute(pair.slice(0, sep).trim(), t(pair.slice(sep + 1).trim()));
     }
   }
+  decorateIcons();
   decorateHintButton(); // data-i18n just wiped the button's children — see below
   decorateCheckButton();
   document.documentElement.lang = t('lang.htmlLang');
   document.documentElement.setAttribute('data-i18n-ready', '');
+}
+
+// ---------- Icons ----------
+// Line icons (2px stroke, currentColor) replace the emoji that the language
+// packs put in front of button labels. Stripping them here keeps all six packs
+// untouched; the pack text stays the single source of the label.
+const ICON = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  volume: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+  mute: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/>',
+  check: '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+  bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z"/>',
+  undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  done: '<path d="M5 12.5l4.5 4.5L19 7.5" stroke-width="3"/>',
+};
+function svgIcon(name, size = 22) {
+  return `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
+}
+function stripEmoji(s) {
+  return String(s).replace(/[\p{Extended_Pictographic}\uFE0F\u200D\u21B6]/gu, '').trim();
+}
+// Icon + label as two children. `hideLabel` keeps the text for screen readers
+// and the tooltip but shows the icon only.
+function iconize(btn, name, { hideLabel = false, size = 22 } = {}) {
+  if (!btn) return;
+  const text = stripEmoji(btn.textContent);
+  btn.innerHTML = svgIcon(name, size);
+  const label = document.createElement('span');
+  label.className = 'btn-label' + (hideLabel ? ' sr-only' : '');
+  label.textContent = text;
+  btn.append(label);
+  if (hideLabel) {
+    btn.setAttribute('aria-label', text);
+    btn.title = text;
+  }
+}
+function decorateIcons() {
+  iconize(dom.check, 'check');
+  iconize(dom.hint, 'bulb');
+  iconize(dom.undo, 'undo');
+  iconize(dom.resetBoard, 'reset');
+  iconize(dom.newGame, 'plus', { hideLabel: true });
+  if (dom.winSettings) dom.winSettings.textContent = stripEmoji(dom.winSettings.textContent);
+  if (dom.winTabGlobal) dom.winTabGlobal.textContent = stripEmoji(dom.winTabGlobal.textContent);
+  const winTitle = document.querySelector('#win-overlay .hint-card-title');
+  if (winTitle) {
+    const text = stripEmoji(winTitle.textContent);
+    winTitle.innerHTML = `<span class="win-badge">${svgIcon('done', 18)}</span>`;
+    winTitle.append(document.createTextNode(text));
+  }
+}
+
+// Short tick on the device when a queen lands or the puzzle is solved. Follows
+// the sound preference and is skipped under reduced motion.
+function haptic(pattern = 12) {
+  if (!settings.sound || !navigator.vibrate) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  try {
+    navigator.vibrate(pattern);
+  } catch (e) {
+    /* unsupported */
+  }
 }
 
 // The hint button carries its own price: "💡 Hinweis (+30 s)". Announcing the
@@ -255,13 +319,13 @@ function updateCostLabels() {
   const hintCost = dom.hint && dom.hint.querySelector('#hint-cost');
   if (hintCost) {
     const seconds = currentHintPenalty();
-    hintCost.textContent = t('ui.hint.costLabel', { seconds });
+    hintCost.textContent = t('ui.hint.cost', { seconds });
     dom.hint.title = t('ui.hint.title', { seconds });
   }
   const checkCost = dom.check && dom.check.querySelector('#check-cost');
   if (checkCost) {
     const seconds = currentCheckPenalty();
-    checkCost.textContent = t('ui.hint.costLabel', { seconds });
+    checkCost.textContent = t('ui.hint.cost', { seconds });
     dom.check.title = t('ui.check.title', { seconds });
   }
 }
@@ -587,6 +651,7 @@ async function newGame() {
   const myToken = ++genToken;
   hide(dom.winOverlay);
   clearWinConfetti();
+  dom.board.classList.remove('solved');
   dom.message.textContent = '';
   clearHint();
   clearCheckStatus();
@@ -899,7 +964,9 @@ function buildBoard(N, region, reveal = false) {
       div.dataset.coord = coordLabel(r, c);
       // Use background-COLOR (not the `background` shorthand) so a hint's
       // hatch (a background-image) can layer on top instead of being reset.
-      div.style.backgroundColor = colorMap[region[r][c]];
+      // Via a custom property so the dark theme can derive its own, darker
+      // tone in CSS (color-mix) instead of filtering the whole board.
+      div.style.setProperty('--reg', colorMap[region[r][c]]);
       // Strong borders on region boundaries.
       if (r > 0 && region[r - 1][c] !== region[r][c]) div.classList.add('bt');
       if (r < N - 1 && region[r + 1][c] !== region[r][c]) div.classList.add('bb');
@@ -968,6 +1035,7 @@ function updateBoard() {
       cell.classList.remove('pop');
       void cell.offsetWidth; // restart animation
       cell.classList.add('pop');
+      haptic(12);
     }
     lastPlaced = null;
   }
@@ -1362,6 +1430,9 @@ function onWin() {
 
   show(dom.winOverlay);
   fireWinConfetti();
+  dom.board.classList.add('solved', 'win-shine');
+  setTimeout(() => dom.board.classList.remove('win-shine'), 1400);
+  haptic([20, 40, 30]);
   playWin();
 }
 
@@ -1645,6 +1716,7 @@ function clearWinConfetti() {
   if (winConfettiTimer) clearTimeout(winConfettiTimer);
   winConfettiTimer = null;
   hide(dom.winConfetti);
+  dom.board.classList.remove('win-shine');
   dom.winConfetti.innerHTML = '';
 }
 
@@ -2989,7 +3061,7 @@ document.addEventListener('keydown', (e) => {
 function applySoundSetting() {
   setMuted(!settings.sound);
   const on = settings.sound;
-  dom.toggleSound.textContent = on ? '🔊' : '🔇';
+  dom.toggleSound.innerHTML = svgIcon(on ? 'volume' : 'mute');
   dom.toggleSound.setAttribute('aria-pressed', String(!on)); // pressed = muted
   dom.toggleSound.setAttribute('aria-label', on ? t('ui.sound.mute') : t('ui.sound.unmute'));
   dom.toggleSound.title = on ? t('ui.sound.on') : t('ui.sound.off');
@@ -3038,18 +3110,18 @@ const VOICE_ACTION_LABEL = {
 // Canonical colour key (from voice.js) → the palette colour it names. Kept in
 // sync with PALETTE; the parser only knows colour words, main.js owns the map.
 const COLOR_KEY_TO_HEX = {
-  red: '#ff8a8a',
-  orange: '#ffb26b',
-  yellow: '#ffe066',
-  lime: '#c1e15b',
-  green: '#7ed99a',
-  teal: '#66d9cd',
-  lightblue: '#79c7ff',
-  blue: '#8aa2ff',
-  purple: '#bd93f9',
-  pink: '#ff9ed8',
-  brown: '#d0a679',
-  gray: '#c9cdd6',
+  red: '#f26b63',
+  orange: '#f7a23c',
+  yellow: '#f5d63d',
+  lime: '#a3d94a',
+  green: '#3dbb78',
+  teal: '#2fc2c2',
+  lightblue: '#55aef2',
+  blue: '#6a7cf0',
+  purple: '#a974f2',
+  pink: '#f26fc3',
+  brown: '#c4915a',
+  gray: '#aeb4c0',
 };
 
 // Region ids currently rendered in the named colour (colorMap[id] = hex). Empty
