@@ -254,6 +254,7 @@ function decorateIcons() {
   iconize(dom.newGame, 'plus', { hideLabel: true });
   if (dom.winSettings) dom.winSettings.textContent = stripEmoji(dom.winSettings.textContent);
   if (dom.winTabGlobal) dom.winTabGlobal.textContent = stripEmoji(dom.winTabGlobal.textContent);
+  if (dom.lbTabGlobal) dom.lbTabGlobal.textContent = stripEmoji(dom.lbTabGlobal.textContent);
   const winTitle = document.querySelector('#win-overlay .hint-card-title');
   if (winTitle) {
     const text = stripEmoji(winTitle.textContent);
