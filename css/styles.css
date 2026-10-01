@@ -1273,8 +1273,13 @@ html[data-i18n-ready] .app {
 
 .win-card {
   border: none;
-  position: relative;
-  overflow: hidden;
+  /* No `position` here: .hint-card's `fixed` is what floats the card over the
+     board, and a fixed box already anchors the ::before bar. A `relative` here
+     once dropped the card into the page flow, below the board. */
+  overflow-x: hidden;
+  /* Last resort on very short viewports: the list shrinks first (flex), but if
+     the fixed parts alone outgrow the cap the controls stay reachable. */
+  overflow-y: auto;
   padding: 24px 22px 20px;
   /* Never grow over the top bar. The card is anchored at the bottom and its
      fixed parts (title, result, comparison, tabs, name field, status, buttons)
