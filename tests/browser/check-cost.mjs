@@ -53,9 +53,25 @@ const storage = {
   'queens-clone-settings': JSON.stringify({ size: 8, difficulty: 'medium', introAnimation: false }),
 };
 
+// Section 1 clicks "Eintragen", which submits to the global leaderboard. Left
+// unstubbed that is a real write to the live project (and, where a proxy breaks
+// the certificate, an intermittent "no console errors" failure). Answer every
+// leaderboard RPC locally; the play counters keep openGame's own stub.
+const stubLeaderboard = (page) =>
+  page.route('**/rest/v1/rpc/*', (route) => {
+    const url = route.request().url();
+    if (url.endsWith('/bump_stat')) return route.fallback();
+    const body = url.endsWith('/submit_score') ? [{ rank: 1, total: 1 }] : [];
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    });
+  });
+
 // --- 1) button: price label, free cases, charged cases, win-card arithmetic ---
 {
-  const { browser, page, errors } = await openGame({ baseUrl: BASE, locale: 'de-DE', storage });
+  const { browser, page, errors } = await openGame({ baseUrl: BASE, locale: 'de-DE', storage, routes: stubLeaderboard });
   try {
     const label = await page.$eval('#check', (el) => el.textContent);
     ok(/\+8\s?s/.test(label), `the check button announces 8 s on an 8×8: "${label}"`);
@@ -132,7 +148,7 @@ const storage = {
   const twelve = {
     'queens-clone-settings': JSON.stringify({ size: 12, difficulty: 'hard', introAnimation: false }),
   };
-  const { browser, page } = await openGame({ baseUrl: BASE, locale: 'de-DE', storage: twelve });
+  const { browser, page } = await openGame({ baseUrl: BASE, locale: 'de-DE', storage: twelve, routes: stubLeaderboard });
   try {
     const label = await page.$eval('#check', (el) => el.textContent);
     ok(/\+12\s?s/.test(label), `the price follows the board: "${label}"`);
@@ -146,7 +162,7 @@ for (const locale of ['de-DE', 'fr-FR', 'ru-RU', 'pt-BR', 'es-ES', 'en-US']) {
   const big = {
     'queens-clone-settings': JSON.stringify({ size: 14, difficulty: 'hard', introAnimation: false }),
   };
-  const { browser, page } = await openGame({ baseUrl: BASE, locale, storage: big });
+  const { browser, page } = await openGame({ baseUrl: BASE, locale, storage: big, routes: stubLeaderboard });
   try {
     for (const [w, h] of [[320, 640], [390, 844], [430, 932], [740, 420]]) {
       await page.setViewportSize({ width: w, height: h });
