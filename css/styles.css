@@ -17,7 +17,14 @@
   --danger-text: #c0243f;
   --shadow: 0 10px 30px rgba(31, 37, 68, 0.14);
   --cell-line: rgba(31, 37, 68, 0.28);
-  --cell-line-strong: #1f2544;
+  --cell-line-strong: #1b2040;
+  /* Board grid: hairline that survives a phone screen (was 0.5px / 28%). */
+  --grid-line: rgba(27, 32, 64, 0.16);
+  --queen-ink: #1b2040;
+  --queen-bad: #9c0f28;
+  --btn-shadow: 0 4px 14px rgba(31, 37, 68, 0.12);
+  --ok: #17a06a;
+  --ok-text: #0f7a4f;
   /* Dead-region outline. Deliberately more saturated than --danger so it
      stays legible on top of a reddish region. Shared across themes because
      the region palette is identical in light and dark. */
@@ -47,6 +54,11 @@
     --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
     --cell-line: rgba(0, 0, 0, 0.3);
     --cell-line-strong: #0f1220;
+    --grid-line: rgba(0, 0, 0, 0.28);
+    --queen-ink: #f4f6ff;
+    --queen-bad: #ffb3c0;
+    --btn-shadow: inset 0 0 0 1px rgba(205, 213, 245, 0.12);
+    --ok-text: #5ed7a2;
   }
 }
 
@@ -62,6 +74,37 @@
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   --cell-line: rgba(0, 0, 0, 0.3);
   --cell-line-strong: #0f1220;
+  --grid-line: rgba(0, 0, 0, 0.28);
+  --queen-ink: #f4f6ff;
+  --queen-bad: #ffb3c0;
+  --btn-shadow: inset 0 0 0 1px rgba(205, 213, 245, 0.12);
+  --ok-text: #5ed7a2;
+}
+
+/* Forced light on a dark-OS device: undo the media-query tokens. */
+:root[data-theme="light"] {
+  --cell-line-strong: #1b2040;
+  --grid-line: rgba(27, 32, 64, 0.16);
+  --queen-ink: #1b2040;
+  --queen-bad: #9c0f28;
+  --btn-shadow: 0 4px 14px rgba(31, 37, 68, 0.12);
+  --ok-text: #0f7a4f;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ico {
+  flex: none;
+  display: block;
 }
 
 * {
@@ -166,18 +209,18 @@ html[data-i18n-ready] .app {
 .status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 14%, transparent);
-  color: var(--muted);
-  font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.9rem;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .timer-icon {
-  font-size: 0.85em;
-  line-height: 1;
+  flex: none;
 }
 
 /* Phones: trim the row so it stays on ONE line at the common widths (375–430px)
@@ -196,13 +239,13 @@ html[data-i18n-ready] .app {
     font-size: clamp(1.2rem, 5vw, 1.9rem);
   }
   .toolbar {
-    gap: 4px;
+    gap: 6px;
   }
   .toolbar .btn {
-    padding: 9px;
+    padding: 0 12px;
   }
   .toolbar .btn.icon {
-    padding: 9px;
+    padding: 0;
   }
 }
 
@@ -219,10 +262,18 @@ html[data-i18n-ready] .app {
    so this deliberately buys its width back with font-size rather than adding
    a line. */
 .btn-cost {
-  margin-left: 2px;
-  font-size: 0.82em;
-  font-weight: 600;
-  opacity: 0.62;
+  position: absolute;
+  top: -7px;
+  /* Inside the button's box: a negative offset inflates scrollWidth, which
+     the fit tests (rightly) read as clipped content. */
+  right: 2px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 
@@ -287,23 +338,32 @@ html[data-i18n-ready] .app {
   font-weight: 600;
   color: var(--ink);
   background: var(--panel);
-  box-shadow: var(--shadow);
+  box-shadow: var(--btn-shadow);
   cursor: pointer;
   transition: transform 0.05s ease, filter 0.15s ease;
   touch-action: manipulation;
   white-space: nowrap;
+  position: relative;
 }
 .btn:active {
   transform: translateY(1px);
 }
 .btn.icon {
-  padding: 10px 12px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 1.15rem;
   line-height: 1;
 }
 .btn.primary {
   background: var(--accent);
   color: var(--accent-ink);
+}
+#new-game.btn.primary {
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 .btn.subtle {
   background: transparent;
@@ -386,20 +446,41 @@ html[data-i18n-ready] .app {
   width: min(94vw, 78vh, 640px);
 }
 
-/* The region palette is tuned for a light background; on the dark background
-   the same bright pastels glare. Dampen them board-wide (relative differences
-   stay intact) rather than shipping a second palette. The explicit light
-   override wins for a dark-OS device toggled back to light. */
+/* Intro placeholder cells carry no --reg; keep the old dampening for them. */
 @media (prefers-color-scheme: dark) {
-  .board {
+  .board .cell.intro-cell {
     filter: saturate(0.82) brightness(0.9);
   }
 }
-:root[data-theme="dark"] .board {
+:root[data-theme="dark"] .board .cell.intro-cell {
   filter: saturate(0.82) brightness(0.9);
 }
-:root[data-theme="light"] .board {
-  filter: none;
+
+/* Solved: green ring plus one light sweep across the board. */
+.board.solved {
+  box-shadow: 0 0 0 4px rgba(23, 160, 106, 0.55), var(--shadow);
+}
+.board.win-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.6) 50%, transparent 65%);
+  animation: board-shine 1.1s ease-out both;
+}
+@keyframes board-shine {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(110%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board.win-shine::after {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .cell {
@@ -407,9 +488,23 @@ html[data-i18n-ready] .app {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 0.5px solid var(--cell-line);
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--reg, transparent);
+  border: 1px solid var(--grid-line);
   cursor: pointer;
   touch-action: none;
+}
+
+/* Dark theme: a darker tone of the same hue, derived per cell, instead of
+   filtering the whole board (which greyed every colour equally). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cell {
+    background-color: color-mix(in srgb, var(--reg, transparent) 66%, #0f1220);
+  }
+}
+:root[data-theme="dark"] .cell {
+  background-color: color-mix(in srgb, var(--reg, transparent) 66%, #0f1220);
 }
 
 /* Children never intercept hit-testing, so elementFromPoint during a swipe
@@ -420,37 +515,54 @@ html[data-i18n-ready] .app {
 
 /* Thicker borders on region boundaries */
 .cell.bt {
-  border-top: 2.5px solid var(--cell-line-strong);
+  border-top: 3px solid var(--cell-line-strong);
 }
 .cell.br {
-  border-right: 2.5px solid var(--cell-line-strong);
+  border-right: 3px solid var(--cell-line-strong);
 }
 .cell.bb {
-  border-bottom: 2.5px solid var(--cell-line-strong);
+  border-bottom: 3px solid var(--cell-line-strong);
 }
 .cell.bl {
-  border-left: 2.5px solid var(--cell-line-strong);
+  border-left: 3px solid var(--cell-line-strong);
 }
 
 .cell .queen {
   width: 66%;
   height: 66%;
-  color: #1a1a1a;
+  color: var(--queen-ink);
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
 }
 
 .cell .dot {
-  width: 16%;
-  height: 16%;
+  width: 20%;
+  height: 20%;
   border-radius: 50%;
-  background: rgba(31, 37, 68, 0.5);
+  background: color-mix(in srgb, var(--queen-ink) 55%, transparent);
 }
 
+/* Conflict: a red ring plus a light red wash, pulsing slowly. The queen alone
+   turning red disappeared on red and orange regions. */
 .cell.conflict {
-  box-shadow: inset 0 0 0 3px var(--danger);
+  animation: conflict-pulse 1.4s ease-in-out infinite;
 }
 .cell.conflict .queen {
-  color: var(--danger);
+  color: var(--queen-bad);
+}
+@keyframes conflict-pulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 3px #d6203f, inset 0 0 0 40px rgba(214, 32, 63, 0.18);
+  }
+  50% {
+    box-shadow: inset 0 0 0 3px #ff5a73, inset 0 0 0 40px rgba(214, 32, 63, 0.04);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.conflict {
+    animation: none;
+    box-shadow: inset 0 0 0 3px #d6203f, inset 0 0 0 40px rgba(214, 32, 63, 0.14);
+  }
 }
 
 /* Dead region: fully dotted with no queen, so it can never hold one. Draw a
@@ -494,17 +606,46 @@ html[data-i18n-ready] .app {
 }
 
 .cell.pop .queen {
-  animation: pop 0.18s ease;
+  animation: queen-drop 0.36s cubic-bezier(0.2, 1.2, 0.4, 1) both;
 }
-@keyframes pop {
+/* Ring that spreads out from the landing queen. */
+.cell.pop:not(.hint-target)::after {
+  content: "";
+  position: absolute;
+  width: 90%;
+  height: 90%;
+  border-radius: 50%;
+  border: 2px solid var(--queen-ink);
+  pointer-events: none;
+  animation: queen-ripple 0.5s ease-out both;
+}
+@keyframes queen-drop {
   0% {
-    transform: scale(0.4);
+    transform: translateY(-70%) scale(1.25);
+    opacity: 0;
   }
-  70% {
-    transform: scale(1.12);
+  55% {
+    transform: translateY(6%) scale(0.94);
+    opacity: 1;
   }
   100% {
-    transform: scale(1);
+    transform: none;
+  }
+}
+@keyframes queen-ripple {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.pop .queen,
+  .cell.pop::after {
+    animation: none;
   }
 }
 
@@ -744,10 +885,50 @@ html[data-i18n-ready] .app {
 }
 
 .actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: min(460px, 100%);
+  margin-top: 6px;
+}
+.actions .btn,
+.actions .btn.subtle {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 5px;
+  min-height: 62px;
+  padding: 8px 2px;
+  border: none;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--btn-shadow);
+  font-size: 0.74rem;
+  line-height: 1.1;
+}
+.actions .btn .btn-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.01em;
+}
+.actions .btn[hidden] {
+  display: none;
+}
+#debug-copy {
+  grid-column: 1 / -1;
+}
+
+/* Narrowest phones (320px): the four action tiles are ~62px of text wide, and
+   "Rückgängig" / "Réinitialiser" / "Проверить" run 1-5px over at 0.74rem. A
+   smaller face fixes it without touching the labels; the ellipsis stays as the
+   last resort for anything longer. */
+@media (max-width: 340px) {
+  .actions .btn,
+  .actions .btn.subtle {
+    font-size: 0.68rem;
+  }
 }
 
 /* ---------- Landscape (tablets) ----------
@@ -771,20 +952,47 @@ html[data-i18n-ready] .app {
 
   /* Vertical, equal-width button column, vertically centred next to the board. */
   .actions {
+    display: flex;
     flex-direction: column;
     flex-wrap: nowrap;
     align-items: stretch;
     align-self: center;
-    gap: 12px;
-    /* 165px floor: both priced buttons ("Prüfen (+14 s)", "Hinweis (+30 s)")
+    gap: 10px;
+    margin-top: 0;
+    /* 165px floor: both priced buttons ("Prüfen +14 s", "Hinweis +30 s")
        have to fit in every pack; Russian and Spanish were the widest at 740px. */
-    width: clamp(165px, 20vw, 210px);
+    width: clamp(175px, 20vw, 220px);
     flex: none;
   }
-  .actions .btn {
+  .actions .btn,
+  .actions .btn.subtle {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
     width: 100%;
-    text-align: center;
-    padding-inline: 10px;
+    min-height: 48px;
+    padding: 0 14px;
+    font-size: 0.95rem;
+    text-align: left;
+  }
+  .actions .btn .btn-label {
+    flex: 1;
+  }
+  .actions .btn-cost {
+    position: static;
+    background: none;
+    color: var(--muted);
+    padding: 0;
+    font-size: 0.75rem;
+  }
+  .actions #hint,
+  .actions #hint.subtle {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .actions #hint .btn-cost {
+    color: inherit;
+    opacity: 0.85;
   }
 }
 
@@ -1075,8 +1283,15 @@ html[data-i18n-ready] .app {
 }
 
 .win-card {
-  border: 2px solid rgba(23, 160, 106, 0.5);
-  padding: 20px 22px;
+  border: none;
+  /* No `position` here: .hint-card's `fixed` is what floats the card over the
+     board, and a fixed box already anchors the ::before bar. A `relative` here
+     once dropped the card into the page flow, below the board. */
+  overflow-x: hidden;
+  /* Last resort on very short viewports: the list shrinks first (flex), but if
+     the fixed parts alone outgrow the cap the controls stay reachable. */
+  overflow-y: auto;
+  padding: 24px 22px 20px;
   /* Never grow over the top bar. The card is anchored at the bottom and its
      fixed parts (title, result, comparison, tabs, name field, status, buttons)
      already add up to ~390px, so on a short phone it reached the header even
@@ -1099,19 +1314,97 @@ html[data-i18n-ready] .app {
   flex: 1 1 auto;
   min-height: 96px;
 }
+.win-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 5px;
+  background: linear-gradient(90deg, #17a06a, #5ed7a2);
+}
 .win-card .hint-card-title {
-  color: #17a06a;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ok-text);
   font-size: 1.35rem;
+  font-weight: 800;
   margin-bottom: 8px;
+}
+.win-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: #fff;
 }
 .win-card .hint-card-text {
   font-size: 1rem;
   margin-bottom: 14px;
 }
+.win-card .hint-card-buttons {
+  flex-direction: column;
+}
 .win-card .hint-card-buttons .btn {
-  padding: 14px 16px;
+  min-height: 44px;
+  padding: 12px 16px;
   font-size: 1.05rem;
   border-radius: 14px;
+}
+.win-card .hint-card-buttons .btn.primary {
+  min-height: 52px;
+  background: var(--ok);
+  color: #fff;
+  font-weight: 700;
+}
+.win-card .hint-card-buttons .btn.subtle {
+  border: none;
+  box-shadow: none;
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+.win-close-btn {
+  color: var(--muted);
+  box-shadow: none !important;
+  background: transparent !important;
+}
+/* Podium colours for the first three rows of any score list. */
+.score-row:nth-child(-n + 3) .score-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  color: #1b2040;
+}
+.score-row:nth-child(1) .score-rank {
+  background: #f5d63d;
+}
+.score-row:nth-child(2) .score-rank {
+  background: #aeb4c0;
+}
+.score-row:nth-child(3) .score-rank {
+  background: #d9a26b;
+}
+.score-row.me .score-name,
+.score-row.me .score-val {
+  font-weight: 800;
+}
+.win-personal-main {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.win-personal-main.best {
+  background: rgba(23, 160, 106, 0.14);
+  color: var(--ok-text);
 }
 
 /* Win confetti: reuses the .confetti pieces but as a full-screen fixed layer
@@ -1135,9 +1428,10 @@ html[data-i18n-ready] .app {
   margin-bottom: 12px;
 }
 .win-score {
-  font-size: 1.5rem;
+  font-size: 3rem;
+  line-height: 1.1;
   font-weight: 800;
-  color: #17a06a;
+  color: var(--ok-text);
   font-variant-numeric: tabular-nums;
 }
 .win-breakdown {

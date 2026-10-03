@@ -217,6 +217,18 @@ try {
 
   if (!(await solveViaHints())) throw new Error('could not reach a win via hints');
 
+  // --- 0. the card floats over the board, inside the viewport ---
+  // (A stray `position: relative` once dropped it into the page flow, below the
+  // fold — every DOM-value assertion below still passed.)
+  const pos = await page.$eval('#win-overlay', (el) => {
+    const r = el.getBoundingClientRect();
+    return { position: getComputedStyle(el).position, top: r.top, bottom: r.bottom, vh: innerHeight };
+  });
+  check(
+    `the win card is fixed and on screen (${pos.position}, ${Math.round(pos.top)}–${Math.round(pos.bottom)} of ${pos.vh})`,
+    pos.position === 'fixed' && pos.top >= 0 && pos.bottom <= pos.vh + 1
+  );
+
   // --- 1. the personal line compares against the seeded past, not nothing ---
   const personal = await page.textContent('#win-personal');
   console.log('    personal line:', JSON.stringify(personal));

@@ -328,6 +328,24 @@ only the body slice, so a lost hook would render blank).
   language follows the CI host. `voice-mode.mjs` must be German or the switch is
   disabled and nothing runs.
 
+### Visual language (2026-09 design pass)
+
+Icons are **line SVGs, not emoji**: `decorateIcons()` in `main.js` strips the
+emoji the language packs put in front of button labels (`stripEmoji`) and
+prepends an `svgIcon(...)`, so the packs stay untouched and the pack text stays
+the one source of the label. It must run **after** `data-i18n` (which resets
+`textContent`) and **before** `decorateHintButton`/`decorateCheckButton`.
+
+- Region colours reach the cell as the custom property `--reg`; the dark theme
+  derives its tone in CSS (`color-mix`) rather than filtering the whole board.
+  `PALETTE` and `COLOR_KEY_TO_HEX` (Voice Mode colour words) must stay in step.
+- The hint/check price is a **badge** (`ui.hint.cost`, `+24 s`), not bracketed
+  text (`ui.hint.costLabel`, now unused by the buttons). Keep it *inside* the
+  button's box — a negative offset inflates `scrollWidth` and the fit tests read
+  it as clipped.
+- Solved state (`.board.solved`, one `win-shine` sweep) and `haptic()` follow the
+  sound preference and `prefers-reduced-motion`.
+
 ### Difficulty ↔ solver ↔ hint (keep these aligned)
 
 Difficulty is defined by the deduction techniques a puzzle *requires*, and the

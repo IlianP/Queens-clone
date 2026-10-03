@@ -58,7 +58,7 @@ const storage = {
   const { browser, page, errors } = await openGame({ baseUrl: BASE, locale: 'de-DE', storage });
   try {
     const label = await page.$eval('#check', (el) => el.textContent);
-    ok(/\(\+8\s?s\)/.test(label), `the check button announces 8 s on an 8×8: "${label}"`);
+    ok(/\+8\s?s/.test(label), `the check button announces 8 s on an 8×8: "${label}"`);
     ok(/8/.test(await page.$eval('#check', (el) => el.title)), 'its title spells the rule out');
 
     let before = await clock(page);
@@ -135,7 +135,7 @@ const storage = {
   const { browser, page } = await openGame({ baseUrl: BASE, locale: 'de-DE', storage: twelve });
   try {
     const label = await page.$eval('#check', (el) => el.textContent);
-    ok(/\(\+12\s?s\)/.test(label), `the price follows the board: "${label}"`);
+    ok(/\+12\s?s/.test(label), `the price follows the board: "${label}"`);
   } finally {
     await browser.close();
   }
