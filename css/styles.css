@@ -920,6 +920,17 @@ html[data-i18n-ready] .app {
   grid-column: 1 / -1;
 }
 
+/* Narrowest phones (320px): the four action tiles are ~62px of text wide, and
+   "Rückgängig" / "Réinitialiser" / "Проверить" run 1-5px over at 0.74rem. A
+   smaller face fixes it without touching the labels; the ellipsis stays as the
+   last resort for anything longer. */
+@media (max-width: 340px) {
+  .actions .btn,
+  .actions .btn.subtle {
+    font-size: 0.68rem;
+  }
+}
+
 /* ---------- Landscape (tablets) ----------
    On a wide landscape screen the board is height-limited (min(…, 70vh, …)),
    so stacking the action buttons *below* it pushes them off the bottom while
