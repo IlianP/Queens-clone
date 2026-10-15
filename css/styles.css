@@ -120,6 +120,12 @@ body {
      (e.g. a transiently oversized element during the intro spin) so a swipe
      off the board can never wiggle the page left/right. */
   overflow-x: clip;
+  /* No double-tap zoom anywhere. iOS Safari has ignored user-scalable=no in the
+     viewport meta since iOS 10, so a quick second tap (empty -> dot -> queen is
+     exactly that) zoomed the page mid-game. The effective touch-action is the
+     intersection over ancestors, so setting it here covers every element;
+     manipulation keeps pinch-zoom for anyone who needs to enlarge the page. */
+  touch-action: manipulation;
 }
 
 body {

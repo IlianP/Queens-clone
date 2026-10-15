@@ -2136,6 +2136,20 @@ function endDrag(e) {
 window.addEventListener('pointerup', endDrag);
 window.addEventListener('pointercancel', endDrag);
 
+// iOS Safari still zooms on a quick double tap on the board — the CSS
+// touch-action there is not enough on its own once two taps land in quick
+// succession (empty -> dot -> queen). Cancelling touchend is what WebKit's
+// double-tap recognizer respects. Input runs entirely on pointer events, which
+// have already fired by now; the only thing lost is the synthetic click, and
+// nothing on the board listens for one. Must be non-passive to be cancelable.
+dom.board.addEventListener(
+  'touchend',
+  (e) => {
+    if (e.cancelable) e.preventDefault();
+  },
+  { passive: false },
+);
+
 // ---------- Hints ----------
 function collectQueens() {
   const out = [];
