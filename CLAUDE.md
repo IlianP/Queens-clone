@@ -142,6 +142,11 @@ before re-deriving how to drive things:
   colliding submits, that `score_counts` agrees with the windowed list, and that
   re-running the file keeps existing rows. The header carries the initdb
   commands. Run it after any change to that SQL file.
+- `tests/browser/double-tap-zoom.mjs` — iOS zoomed the page on a quick double
+  tap on a cell (iOS ignores `user-scalable=no`). Guarded by `touch-action:
+  manipulation` on `<html>` plus a non-passive `touchend` on the board that
+  cancels the event; Chromium never zooms here, so the test asserts those two
+  guards (and that taps still land) rather than the zoom itself.
 - `tests/browser/` — Playwright driving the real DOM. Playwright + Chromium are
   **environment-provided** (fixed `/opt` paths, no repo dependency), so these run
   only in that kind of environment. `board-helpers.mjs` encapsulates the fiddly
