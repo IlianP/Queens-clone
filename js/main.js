@@ -3,7 +3,7 @@ import { generatePuzzle } from './generator.js';
 import { drawLevel } from './levels.js';
 import { Game } from './game.js';
 import { computeHint } from './hint.js';
-import { loadSettings, saveSettings, clampSize, sanitizeNickname, MAX_SIZE } from './settings.js';
+import { loadSettings, saveSettings, clampSize, sanitizeNickname, MAX_SIZE, DEFAULTS } from './settings.js';
 import {
   computeScore,
   sanitizeName,
@@ -12,6 +12,7 @@ import {
   previewRank,
   recordSolve,
   getPersonalStats,
+  loadSolveHistory,
   globalPercentile,
   seedSolveHistory,
   matchOwnEntry,
@@ -123,6 +124,18 @@ const dom = {
   winConfetti: el('win-confetti'),
   winTime: el('win-time'),
   winPersonal: el('win-personal'),
+  winTip: el('win-tip'),
+  tutorialWelcome: el('tutorial-welcome'),
+  tutorialStart: el('tutorial-start'),
+  tutorialSkip: el('tutorial-skip'),
+  tutorialCard: el('tutorial-card'),
+  tutorialTitle: el('tutorial-title'),
+  tutorialText: el('tutorial-text'),
+  tutorialNudge: el('tutorial-nudge'),
+  tutorialProgress: el('tutorial-progress'),
+  tutorialNext: el('tutorial-next'),
+  tutorialExit: el('tutorial-exit'),
+  settingsTutorial: el('settings-tutorial'),
   winTabs: el('win-tabs'),
   winTabLocal: el('win-tab-local'),
   winTabGlobal: el('win-tab-global'),
@@ -648,6 +661,7 @@ function generateAsync(N, difficulty, budgetMs) {
 }
 
 async function newGame() {
+  endTutorial(); // every route to a real board leaves the tutorial
   flushPendingWin(); // record the last solve locally if it wasn't submitted
   const myToken = ++genToken;
   hide(dom.winOverlay);
@@ -782,6 +796,20 @@ const intro = (() => {
   }
 
   return {
+    // Abandon whatever the intro is doing and put the board back upright, for a
+    // caller that replaces the board without going through newGame() (the
+    // tutorial). Invalidating the generation via genToken is not enough: the
+    // rAF loop would keep spinning and shrinking whatever board is shown next.
+    // A newGame() parked in reveal() is released so it can see its stale token.
+    stop() {
+      const pending = revealResolve;
+      cancel();
+      placeholder = [];
+      dom.board.classList.remove('intro-revealing');
+      dom.board.style.setProperty('--intro-rot', '0deg');
+      dom.board.style.setProperty('--intro-scale', '1');
+      if (pending) pending();
+    },
     computeElapsed() {
       return performance.now() - computeStart;
     },
@@ -1045,6 +1073,7 @@ function updateBoard() {
   maybeParty();
   clearCheckStatus(); // a verdict is about the board it was asked for — any move retires it
   updateActionButtons(); // freeze undo/reset the instant the board is solved
+  tutorialOnBoard();
 }
 
 // Paint (or clear) the board's error feedback from the live game state: red
@@ -1372,6 +1401,7 @@ function onWin() {
   if (winHandled) return; // fire once per solve (updateBoard can re-run while won)
   winHandled = true;
   clearHint();
+  if (tutorial) return tutorialWin(); // practice board: nothing is scored or counted
   stopTimer();
   // Counted for every solve, submitted or not — that gap is precisely what the
   // leaderboard alone could never show. It is NOT a submission counter; those
@@ -1420,6 +1450,7 @@ function onWin() {
   // pendingWin so the debug export can show exactly what the card was told.
   pendingWin.personal = getPersonalStats(game.N, settings.difficulty, score);
   renderPersonalFeedback(pendingWin.personal, game.N, settings.difficulty);
+  renderDiscoveryTip();
 
   dom.winNickname.value = settings.nickname || '';
   globalSubmitInFlight = false;
@@ -1435,6 +1466,23 @@ function onWin() {
   setTimeout(() => dom.board.classList.remove('win-shine'), 1400);
   haptic([20, 40, 30]);
   playWin();
+}
+
+// Nudge new players towards the other sizes/difficulties: once on their very
+// first solve, and once more on the fifth if they still play the defaults.
+// "Solves so far" is the solve history (read before this solve is recorded),
+// so players who predate this tip don't get congratulated on a "first" win.
+const DISCOVERY_SECOND_AT = 5;
+function renderDiscoveryTip() {
+  if (!dom.winTip) return;
+  let prior = 0;
+  for (const list of Object.values(loadSolveHistory())) prior += list.length;
+  const onDefaults = settings.size === DEFAULTS.size && settings.difficulty === DEFAULTS.difficulty;
+  let key = null;
+  if (prior === 0) key = 'win.tip.first';
+  else if (prior === DISCOVERY_SECOND_AT - 1 && onDefaults) key = 'win.tip.again';
+  dom.winTip.textContent = key ? t(key) : '';
+  dom.winTip.hidden = !key;
 }
 
 function selectWinTab(tab) {
@@ -1903,6 +1951,7 @@ function paintModeForStart(r, c) {
 
 function paintCell(r, c) {
   if (game.queen[r][c]) return false;
+  if (!tutorialAllows(r, c, drag.mode)) return false;
   const want = drag.mode === 'mark';
   if (game.mark[r][c] === want) return false;
   if (!drag.snapshotted) {
@@ -2000,6 +2049,7 @@ function resolveTapCell(x, y, defR, defC) {
 dom.board.addEventListener('pointerdown', (e) => {
   if (!game || hintActive) return;
   if (game.isWon()) {
+    if (tutorial) return; // no win card behind a solved tutorial board
     // Solved board is locked to input, but a tap still does something useful:
     // bring the win card back if it was dismissed to admire the board.
     if (dom.winOverlay.hidden) {
@@ -2097,6 +2147,11 @@ function endDrag(e) {
     // (or near) a forced cell is redirected onto it via its grown target.
     const target = resolveTapCell(drag.downX, drag.downY, drag.startR, drag.startC);
     const { r, c } = target;
+    if (!tutorialAllows(r, c, 'tap')) {
+      tutorialNudge();
+      drag = null;
+      return;
+    }
     pushUndo();
     const wasQueen = game.queen[r][c];
     const wasMark = game.mark[r][c];
@@ -2724,6 +2779,7 @@ function closeSettings() {
 
 function openSettings() {
   clearHint();
+
   dom.languageSelect.value = settings.language;
   dom.sizeRange.value = settings.size;
   dom.sizeValue.textContent = settings.size;
@@ -2741,6 +2797,11 @@ function openSettings() {
   dom.debugExtended.checked = settings.debugExtended;
   updateDebugSubOptions();
   show(dom.settingsOverlay);
+  // Always open at the top, where size and difficulty live — the card is its
+  // own scroll container and would otherwise remember the last position. Reset
+  // after show(): a scrollTop set while display:none doesn't stick.
+  const card = dom.settingsOverlay.querySelector('.overlay-card');
+  if (card) card.scrollTop = 0;
 }
 
 // ---------- Language ----------
@@ -3055,6 +3116,10 @@ dom.lbTabPeriod.addEventListener('click', () => selectLbTab('period'));
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (!dom.tutorialWelcome.hidden) {
+      answerTutorialWelcome(false);
+      return;
+    }
     // The QR code layers over the settings, so it takes Escape first —
     // otherwise one key would close both and drop the player back at the board.
     if (!dom.qrOverlay.hidden) {
@@ -3762,6 +3827,272 @@ dom.voiceHelpOverlay.addEventListener('click', (e) => {
 });
 
 // ---------- helpers ----------
+// ---------- Tutorial ----------
+// A one-minute guided first game on a fixed 5x5 board. It runs on the REAL
+// board, Game and input code — the tutorial only decides which cells a tap may
+// touch during the guided steps, highlights them, and narrates. Every step is
+// driven by board STATE (re-read after each updateBoard), not by counting taps,
+// so undo, reset, a swipe or an applied hint all land in a sensible step.
+// Nothing is scored: no timer, no stats ping, no solve history, no win card.
+//
+// The board (verified unique, rated easy, naked-single reach 5):
+//   A B B C C      A is a single cell -> the first queen is forced at a1.
+//   D B B C C      Its row/column/neighbours then leave B one free cell (c2),
+//   D D D C C      which in turn leaves C one free cell (e3) — from there the
+//   D D E E E      player finishes alone.
+//   D D E E E
+const TUT_N = 5;
+const TUT_REGION = ['ABBCC', 'DBBCC', 'DDDCC', 'DDEEE', 'DDEEE'].map((s) =>
+  [...s].map((ch) => 'ABCDE'.indexOf(ch)),
+);
+const TUT_SOLUTION = [0, 2, 4, 1, 3];
+const TUT_FIRST = [0, 0]; // the one-cell region
+const TUT_SECOND = [1, 2]; // B's last free cell once a1 holds a queen
+// The cells of region B the first queen blocks — the ones step 3 asks to mark.
+const TUT_MARKS = [
+  [0, 1],
+  [0, 2],
+  [1, 1],
+];
+const TUT_STEPS = ['goal', 'first', 'block', 'second', 'free', 'done'];
+const TUT_COUNTED = 5; // 'done' carries no "step n of 5"
+const TUTORIAL_KEY = 'queens-clone-tutorial';
+
+let tutorial = null; // { step, nudgeTimer } while the tutorial runs
+
+function tutorialSeen() {
+  try {
+    return localStorage.getItem(TUTORIAL_KEY) === 'seen';
+  } catch (e) {
+    return true; // no storage: don't nag on every visit
+  }
+}
+function markTutorialSeen() {
+  try {
+    localStorage.setItem(TUTORIAL_KEY, 'seen');
+  } catch (e) {
+    /* private mode — the offer may come back next visit, which is harmless */
+  }
+}
+
+// Offered once, to a device that has never solved anything. Automated browsers
+// are skipped (as js/stats.js tags them) so the browser tests boot straight into
+// a game; `?tutorial` in the URL forces the offer for testing either way.
+function shouldOfferTutorial() {
+  try {
+    if (/[?&]tutorial\b/.test(location.search)) return true;
+    if (navigator.webdriver) return false;
+  } catch (e) {
+    /* fall through */
+  }
+  if (tutorialSeen()) return false;
+  const history = loadSolveHistory();
+  return !Object.values(history).some((l) => l.length > 0);
+}
+
+function openTutorialWelcome() {
+  show(dom.tutorialWelcome);
+  dom.tutorialStart.focus();
+}
+function answerTutorialWelcome(start) {
+  markTutorialSeen();
+  hide(dom.tutorialWelcome);
+  if (start) startTutorial();
+  else newGame();
+}
+
+function startTutorial() {
+  playUi();
+  markTutorialSeen();
+  flushPendingWin();
+  ++genToken; // cancel any board still being generated …
+  intro.stop(); // … and the animation that was filling the wait
+  hide(dom.winOverlay);
+  hide(dom.loading);
+  clearWinConfetti();
+  clearHint();
+  clearCheckStatus();
+  dom.board.classList.remove('solved');
+  dom.message.textContent = '';
+  buildBoard(TUT_N, TUT_REGION, false);
+  game = new Game(TUT_N, TUT_REGION, false); // no auto-dots: every tap does exactly what the card says
+  currentSolution = TUT_SOLUTION;
+  undoStack = [];
+  lastVoiceReplayKeys = null;
+  lastVoiceFill = null;
+  startTimer(); // resets the counters and the win guard …
+  untick(); // … but the clock never runs in the tutorial
+  timerRunStart = 0;
+  timerDone = true;
+  document.documentElement.classList.add('tutorial-on');
+  tutorial = { step: -1, nudgeTimer: 0 };
+  enterTutorialStep('goal');
+  updateActionButtons();
+  updateBoard();
+}
+
+// Leaves the tutorial state. Called by newGame() whenever ANY path starts a real
+// board (the card's button, "Neues Spiel", settings), so there is one exit.
+function endTutorial() {
+  if (!tutorial) return;
+  clearTimeout(tutorial.nudgeTimer);
+  tutorial = null;
+  document.documentElement.classList.remove('tutorial-on');
+  dom.board.classList.remove('tut-guided');
+  dom.hint.classList.remove('tut-pulse');
+  clearTutorialMarks();
+  hide(dom.tutorialCard);
+}
+
+function clearTutorialMarks() {
+  for (const row of cells)
+    for (const cell of row) cell.classList.remove('tut-focus', 'tut-blocked', 'tut-region');
+}
+
+const tutQueen = ([r, c]) => !!game && game.queen[r][c];
+
+// Every cell the first queen rules out (row, column, king neighbours).
+function tutBlockedCells() {
+  const [qr, qc] = TUT_FIRST;
+  const out = [];
+  for (let r = 0; r < TUT_N; r++)
+    for (let c = 0; c < TUT_N; c++) {
+      if (r === qr && c === qc) continue;
+      if (r === qr || c === qc || (Math.abs(r - qr) <= 1 && Math.abs(c - qc) <= 1)) out.push([r, c]);
+    }
+  return out;
+}
+
+function enterTutorialStep(name) {
+  const step = TUT_STEPS.indexOf(name);
+  if (step === tutorial.step) return;
+  tutorial.step = step;
+  dom.tutorialNudge.textContent = '';
+  dom.hint.classList.toggle('tut-pulse', name === 'free');
+  renderTutorialStep();
+  show(dom.tutorialCard);
+}
+
+function renderTutorialStep() {
+  const name = TUT_STEPS[tutorial.step];
+  clearTutorialMarks();
+  const guided = name === 'first' || name === 'block' || name === 'second';
+  dom.board.classList.toggle('tut-guided', guided);
+  const focus = (list) => list.forEach(([r, c]) => cells[r][c].classList.add('tut-focus'));
+
+  let text = t(`tut.${name}.text`);
+  if (name === 'first') {
+    focus([TUT_FIRST]);
+    const [r, c] = TUT_FIRST;
+    if (game.mark[r][c]) text = t('tut.first.dot');
+  } else if (name === 'block') {
+    for (const [r, c] of tutBlockedCells()) cells[r][c].classList.add('tut-blocked');
+    focus(TUT_MARKS.filter(([r, c]) => !game.mark[r][c]));
+    const done = TUT_MARKS.filter(([r, c]) => game.mark[r][c]).length;
+    text = t('tut.block.text', { done, total: TUT_MARKS.length });
+  } else if (name === 'second') {
+    for (const [r, c] of TUT_MARKS) cells[r][c].classList.add('tut-region');
+    focus([TUT_SECOND]);
+    const [r, c] = TUT_SECOND;
+    if (game.mark[r][c]) text = t('tut.first.dot');
+  }
+  dom.tutorialTitle.textContent = t(`tut.${name}.title`);
+  dom.tutorialText.textContent = text;
+  dom.tutorialProgress.textContent =
+    tutorial.step < TUT_COUNTED ? t('tut.progress', { n: tutorial.step + 1, total: TUT_COUNTED }) : '';
+  const primary = { goal: 'tut.next', free: 'tut.free.ok', done: 'tut.done.play' }[name];
+  dom.tutorialNext.hidden = !primary;
+  if (primary) dom.tutorialNext.textContent = t(primary);
+  dom.tutorialExit.hidden = name === 'done';
+}
+
+// Re-read after every board change.
+function tutorialOnBoard() {
+  if (!tutorial || !game) return;
+  const name = TUT_STEPS[tutorial.step];
+  if (name === 'goal' || name === 'free' || name === 'done') return;
+  if (tutQueen(TUT_SECOND) && tutQueen(TUT_FIRST)) return enterTutorialStep('free');
+  if (!tutQueen(TUT_FIRST)) {
+    if (name !== 'first') enterTutorialStep('first');
+    else renderTutorialStep(); // dot appeared/vanished: update the wording
+    return;
+  }
+  if (name === 'first') enterTutorialStep('block');
+  if (TUT_STEPS[tutorial.step] === 'block' && TUT_MARKS.every(([r, c]) => game.mark[r][c]))
+    return enterTutorialStep('second');
+  renderTutorialStep();
+}
+
+// Input gate for the guided steps. `action` is 'tap', 'mark' or 'clear' (the
+// last two are a swipe's paint modes). Free play and the goal card allow all.
+function tutorialAllows(r, c, action) {
+  if (!tutorial) return true;
+  const name = TUT_STEPS[tutorial.step];
+  const is = ([a, b]) => a === r && b === c;
+  if (name === 'goal' || name === 'done') return false;
+  if (name === 'first') return is(TUT_FIRST) && action === 'tap';
+  if (name === 'second') return is(TUT_SECOND) && action === 'tap';
+  if (name === 'block') {
+    // Only turning an empty blocked cell into a dot: a second tap on a dot
+    // would make it a queen, which is exactly what this step says not to do.
+    if (game.mark[r][c] || game.queen[r][c]) return false;
+    return action !== 'clear' && tutBlockedCells().some(is);
+  }
+  return true;
+}
+
+function tutorialNudge() {
+  if (!tutorial) return;
+  const name = TUT_STEPS[tutorial.step];
+  dom.tutorialNudge.textContent = t(name === 'goal' ? 'tut.nudge.goal' : 'tut.nudge');
+  for (const row of cells)
+    for (const cell of row)
+      if (cell.classList.contains('tut-focus')) {
+        cell.classList.remove('tut-shake');
+        void cell.offsetWidth;
+        cell.classList.add('tut-shake');
+      }
+  haptic([8, 30, 8]);
+  clearTimeout(tutorial.nudgeTimer);
+  tutorial.nudgeTimer = setTimeout(() => {
+    if (tutorial) dom.tutorialNudge.textContent = '';
+  }, 2600);
+}
+
+function tutorialWin() {
+  stopTimer();
+  dom.board.classList.add('solved', 'win-shine');
+  setTimeout(() => dom.board.classList.remove('win-shine'), 1400);
+  haptic([20, 40, 30]);
+  playWin();
+  enterTutorialStep('done');
+  dom.hint.classList.remove('tut-pulse');
+}
+
+dom.tutorialNext.addEventListener('click', () => {
+  if (!tutorial) return;
+  playUi();
+  const name = TUT_STEPS[tutorial.step];
+  if (name === 'goal') {
+    enterTutorialStep('first');
+    tutorialOnBoard();
+  } else if (name === 'free') hide(dom.tutorialCard);
+  else if (name === 'done') newGame();
+});
+dom.tutorialExit.addEventListener('click', () => {
+  playUi();
+  newGame();
+});
+dom.tutorialStart.addEventListener('click', () => answerTutorialWelcome(true));
+dom.tutorialSkip.addEventListener('click', () => {
+  playUi();
+  answerTutorialWelcome(false);
+});
+dom.settingsTutorial.addEventListener('click', () => {
+  closeSettings();
+  startTutorial();
+});
+
 function show(node) {
   node.hidden = false;
 }
@@ -3785,4 +4116,5 @@ applyVoiceSetting();
 // game_start and game_win it makes a funnel the leaderboard can't show on its
 // own; see js/stats.js for what is (not) sent.
 bumpStat('app_open');
-newGame();
+if (shouldOfferTutorial()) openTutorialWelcome();
+else newGame();

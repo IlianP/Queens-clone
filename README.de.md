@@ -42,6 +42,10 @@ Jedes erzeugte Rätsel hat **genau eine Lösung** und ist allein durch Logik lö
   keine Dame steht, wird rot pulsierend umrandet – dort ist keine Dame mehr
   möglich, also stimmt etwas nicht.
 
+### Tutorial
+
+Beim allerersten Besuch bietet das Spiel ein einminütiges, interaktives Tutorial an: ein festes 5×5-Übungsbrett, auf dem Regeln und Bedienung Schritt für Schritt erklärt werden (erste Dame setzen, gesperrte Felder markieren, Rest selbst lösen). Nichts davon wird gewertet. Später jederzeit über ⚙ → *Spielanleitung* erneut startbar. Nach dem ersten Sieg weist das Spiel zudem auf andere Größen und Schwierigkeiten hin.
+
 ## Einstellungen (⚙)
 
 - **Sprache:** Deutsch, Englisch, Französisch, Spanisch, Portugiesisch oder

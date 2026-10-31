@@ -39,6 +39,10 @@ Every generated puzzle has **exactly one solution** and is solvable by pure logi
   stands is outlined in pulsing red – no queen can go there any more, so
   something is wrong.
 
+### Tutorial
+
+On the very first visit the game offers a one-minute interactive tutorial: a fixed 5×5 practice board that walks through the rules and the controls step by step (place the first queen, mark blocked cells, finish on your own). Nothing is scored. It can be restarted any time from ⚙ → *How to play*. After the first win, the game also points out the other sizes and difficulties.
+
 ## Settings (⚙)
 
 - **Language:** English, German, French, Spanish, Portuguese or Russian; the

@@ -129,6 +129,7 @@
            Partien"): available instantly and offline, unlike the global
            placement, which only exists once the score has been submitted. -->
       <p class="win-personal" id="win-personal"></p>
+      <p class="win-tip" id="win-tip" hidden></p>
 
       <div class="score-panel">
         <div class="score-tabs" id="win-tabs" hidden>
@@ -292,6 +293,14 @@
           <input type="checkbox" id="debug-extended" class="switch" />
         </label>
 
+        <div class="field tutorial-field">
+          <span>
+            <span class="field-label" data-i18n="settings.tutorial.label">How to play</span>
+            <span class="field-hint" data-i18n="settings.tutorial.hint">A one-minute guided practice board.</span>
+          </span>
+          <button class="btn subtle" id="settings-tutorial" type="button" data-i18n="settings.tutorial.button">Tutorial</button>
+        </div>
+
         <p class="settings-note" data-i18n="settings.note">Changes to size or difficulty apply to the next new game.</p>
 
         <div class="settings-buttons">
@@ -451,6 +460,31 @@
          the timer's own aria-live already announces the new time. -->
     <div class="cost-fly" id="cost-fly" aria-hidden="true" hidden></div>
 
+    <!-- Tutorial: the first-visit offer, and the coach card that narrates the
+         guided 5x5 board (see "Tutorial" in js/main.js). -->
+    <div class="overlay" id="tutorial-welcome" hidden>
+      <div class="overlay-card tutorial-welcome-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-welcome-title">
+        <div class="tutorial-welcome-icon" aria-hidden="true">👑</div>
+        <h2 id="tutorial-welcome-title" data-i18n="tut.welcome.title">New to Queens?</h2>
+        <p data-i18n="tut.welcome.text">A one-minute tutorial shows you the rules and how to play – on a small practice board.</p>
+        <div class="settings-buttons">
+          <button class="btn primary" id="tutorial-start" type="button" data-i18n="tut.welcome.start">Start tutorial</button>
+          <button class="btn subtle" id="tutorial-skip" type="button" data-i18n="tut.welcome.skip">I know the game – just play</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint-card tutorial-card" id="tutorial-card" hidden aria-live="polite">
+      <div class="tutorial-head">
+        <span class="tutorial-progress" id="tutorial-progress"></span>
+        <button class="btn subtle tutorial-exit" id="tutorial-exit" type="button" data-i18n="tut.exit">Exit tutorial</button>
+      </div>
+      <div class="hint-card-title" id="tutorial-title"></div>
+      <p class="hint-card-text tutorial-text" id="tutorial-text"></p>
+      <p class="tutorial-nudge" id="tutorial-nudge"></p>
+      <div class="hint-card-buttons">
+        <button class="btn primary" id="tutorial-next" type="button" hidden></button>
+      </div>
+    </div>
     <div class="hint-card" id="hint-card" hidden>
       <div class="hint-card-title" id="hint-title"></div>
       <p class="hint-card-text" id="hint-text"></p>
