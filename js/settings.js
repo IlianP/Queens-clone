@@ -7,11 +7,11 @@
 const KEY = 'queens-clone-settings';
 
 export const MIN_SIZE = 5;
-// The largest board the game can build at all. Sizes above 12 exist only
-// because the 'strips' growth style generates them in a playable budget (see
-// js/generator.js); whether they are actually OFFERED is a second question that
-// depends on the screen — maxSizeForViewport() in js/main.js decides it, and
-// clampSize stays the absolute bound both it and any stored value must respect.
+// The largest board the game can build at all. Sizes above 12 are served from
+// precomputed blocky pools (a live 13x13 takes ~15 s, so the cost is paid
+// offline — see tools/generate-levels.mjs). Every size is offered on every
+// screen; js/main.js only warns when cells get small. clampSize stays the
+// absolute bound any stored value must respect.
 export const MAX_SIZE = 14;
 export const MAX_NICKNAME_LENGTH = 20;
 export const DEFAULTS = {

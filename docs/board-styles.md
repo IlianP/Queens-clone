@@ -26,6 +26,19 @@ node tools/compare-styles.mjs --erosion    # Rohwuchs vs. fertiges Brett
 node tools/compare-styles.mjs --show 8 hard
 ```
 
+> **Stand 2026-10: `strips` wird nicht mehr ausgeliefert.** Gemessen war der
+> Stil einwandfrei — eindeutig, fair, eigene Signatur (Shot C). Gespielt war er
+> zu leicht: Die 1 Feld breiten Segmente schließen auf einen Blick ganze Zeilen
+> und Spalten aus, und schon die Technik-Messung unten zeigt es (Confinement
+> 37 % der Schritte gegen 20–26 % bei organic/blocky, Crowding ~0 %) — jedes
+> Brett lief auf dasselbe einseitige Denken hinaus. Der Generator bleibt als
+> **experimenteller** Stil erhalten (messbar, als Testversion baubar, nie
+> gezogen), so wie `quilt` und `voronoi`. Die Pools enthalten keine
+> `strips`-Bretter mehr; 13×13 und 14×14 sind seitdem rein `blocky` (~15 s bzw.
+> ~60 s pro Brett, also nur vorab gebaut). `tests/logic/shipped-styles.mjs`
+> hält das fest. Die Zahlen zu `strips` weiter unten sind historisch und
+> bleiben als Messung gültig.
+
 ## Drei Ebenen, die getrennt bleiben
 
 Ein Stil ist nicht *eine* Zahl. Die drei Fragen unten haben unterschiedliche
@@ -324,8 +337,9 @@ Fehler des Growers.
 
 Bis N = 10 ist `frame` schneller als organic, ab N = 11 dreht sich das, und ab
 N = 12 liefert es innerhalb eines vernünftigen Budgets gar nichts mehr. Das ist
-dieselbe Wand, an der organic steht, und der Grund, warum `stylesFor` /
-`mixFor` Größen ab 13 ohnehin auf `strips` festnageln.
+dieselbe Wand, an der organic steht. (Größen ab 13 wurden damals auf `strips`
+festgenagelt; seit `strips` nicht mehr ausgeliefert wird, sind sie rein
+`blocky` und kommen ausschließlich aus vorab gebauten Pools — siehe oben.)
 
 **Ausgeliefert wird es deshalb für N ≤ 10** — genau der Bereich, in dem heute
 organic und blocky gemischt werden. `FRAME_MAX_SIZE` in `js/main.js`,

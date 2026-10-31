@@ -239,24 +239,27 @@ its turn (in memory only, nothing is persisted).
 ### Three shape languages
 
 The colour regions are built in **three different styles**, and every pool holds
-an even share of each:
+an even share of each style it has:
 
 - **organic** – amoeba-like regions with ragged borders.
-- **blocky** – regions grow in straight strips, giving long straight borders,
+- **blocky** – regions grow in straight runs, giving long straight borders,
   rectangular shapes and one large background colour.
-- **strips** – every colour but one is a straight, one-cell-wide segment, and
-  the one that isn't is a single background covering most of the board.
+- **frame** – a few colours own the outer ring of the board and the rest sit
+  landlocked in the middle (up to size 10, on *Easy* up to 9).
 
 Because every puzzle in a pool comes up once before anything repeats, the looks
 alternate evenly while playing. **The style changes nothing about the
 difficulty** – that depends solely on which thinking techniques a board demands.
-Two levels are exceptions, both for the same kind of reason: at *Easy* the
-blocky difference is barely noticeable (that level needs the small “gifted”
-regions that would be what makes the blocky look in the first place), and
-*Easy* has no **strips** puzzles at all, because the size floor that creates
-that look is exactly what removes easy's forced opening. Above size 12, strips
-is the only style – it is the one that generates a board of that size fast
-enough to exist at all.
+At *Easy* the blocky difference is barely noticeable: that level needs the small
+“gifted” regions that the blocky look would otherwise remove. Sizes 13 and 14
+are blocky only – it is the remaining style that builds a board that size in a
+reasonable time, and those pools are computed in advance.
+
+There used to be a fourth style, **strips** (every colour but one a straight,
+one-cell-wide segment). It was removed because it played too easy: the narrow
+segments rule out whole rows and columns at a glance, so every board came down
+to the same one-sided reasoning. The generator code is kept for measurement
+only; no pool contains such a board any more.
 
 If loading a pool fails (e.g. files changed offline), the game generates the
 puzzle live in the background as it used to – so there is always a board, then
