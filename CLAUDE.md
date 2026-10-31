@@ -142,6 +142,12 @@ before re-deriving how to drive things:
   colliding submits, that `score_counts` agrees with the windowed list, and that
   re-running the file keeps existing rows. The header carries the initdb
   commands. Run it after any change to that SQL file.
+- `tests/browser/onboarding-tips.mjs` — settings always reopen scrolled to the
+  top (`openSettings` resets `scrollTop` *after* `show()`), and the first solve
+  on a device shows the `win.tip.first` hint (`renderDiscoveryTip` in `main.js`;
+  a second one, `win.tip.again`, on the 5th solve while still on the default
+  size/difficulty — counted from the solve history, so pre-existing players
+  aren't greeted as newcomers).
 - `tests/browser/double-tap-zoom.mjs` — iOS zoomed the page on a quick double
   tap on a cell (iOS ignores `user-scalable=no`). Guarded by `touch-action:
   manipulation` on `<html>` plus a non-passive `touchend` on the board that

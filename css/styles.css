@@ -2110,3 +2110,14 @@ html[data-i18n-ready] .app {
     animation: none;
   }
 }
+
+/* One-off discovery tip on the win card (first solve, maybe the fifth). */
+.win-tip {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent, #4a7) 12%, transparent);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.win-tip[hidden] { display: none; }

@@ -111,6 +111,8 @@ export const I18N_DE = {
     `Spielzeit ${time} · ${dePlural(hints, 'Tipp', 'Tipps')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${dePlural(checks, 'Prüfung', 'Prüfungen')} (+${checkPenalty})` : ''} · ${dePlural(mistakes, 'Fehler', 'Fehler')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
+  'win.tip.first': 'Stark gespielt – dein erster Sieg! 👏 Lust auf mehr? In den ⚙ Einstellungen kannst du die Schwierigkeit erhöhen oder das Spielfeld vergrößern.',
+  'win.tip.again': 'Gut gemacht! Tipp: In den ⚙ Einstellungen kannst du eine höhere Schwierigkeit oder ein größeres Spielfeld wählen.',
   'win.personal.first': ({ bucket }) => `Deine erste Partie in ${bucket} – ab jetzt gibt es etwas zu schlagen.`,
   'win.personal.best': '🏆 Neue Bestzeit!',
   'win.personal.bestDetail': ({ delta, bucket }) => `${delta} besser als dein bisheriger Rekord · ${bucket}`,

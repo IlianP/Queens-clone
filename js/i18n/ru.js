@@ -173,6 +173,8 @@ export const I18N_RU = {
   // Relative feedback on the fresh solve (personal, offline, before any submit).
   // "из ${total} партий": after "из" the noun is genitive plural whatever the
   // number, so this one needs no plural helper.
+  'win.tip.first': 'Отлично – ваша первая победа! 👏 Хотите сложнее? В ⚙ Настройках можно повысить сложность или увеличить поле.',
+  'win.tip.again': 'Здорово! Совет: в ⚙ Настройках можно выбрать сложность выше или поле побольше.',
   'win.personal.first': ({ bucket }) =>
     `Твоя первая партия на ${bucket} — теперь есть результат, который можно побить.`,
   'win.personal.best': '🏆 Новый рекорд!',

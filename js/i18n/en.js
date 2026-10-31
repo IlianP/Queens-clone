@@ -116,6 +116,8 @@ export const I18N_EN = {
     `Playing time ${time} · ${enPlural(hints, 'hint', 'hints')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${enPlural(checks, 'check', 'checks')} (+${checkPenalty})` : ''} · ${enPlural(mistakes, 'mistake', 'mistakes')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
+  'win.tip.first': 'Well played – your first win! 👏 Fancy a challenge? In ⚙ Settings you can pick a harder difficulty or a bigger board.',
+  'win.tip.again': 'Nicely done! Tip: in ⚙ Settings you can switch to a harder difficulty or a bigger board.',
   'win.personal.first': ({ bucket }) => `Your first game at ${bucket} – from now on there's something to beat.`,
   'win.personal.best': '🏆 New best time!',
   'win.personal.bestDetail': ({ delta, bucket }) => `${delta} faster than your previous record · ${bucket}`,

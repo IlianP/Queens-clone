@@ -3,7 +3,7 @@ import { generatePuzzle } from './generator.js';
 import { drawLevel } from './levels.js';
 import { Game } from './game.js';
 import { computeHint } from './hint.js';
-import { loadSettings, saveSettings, clampSize, sanitizeNickname, MAX_SIZE } from './settings.js';
+import { loadSettings, saveSettings, clampSize, sanitizeNickname, MAX_SIZE, DEFAULTS } from './settings.js';
 import {
   computeScore,
   sanitizeName,
@@ -12,6 +12,7 @@ import {
   previewRank,
   recordSolve,
   getPersonalStats,
+  loadSolveHistory,
   globalPercentile,
   seedSolveHistory,
   matchOwnEntry,
@@ -123,6 +124,7 @@ const dom = {
   winConfetti: el('win-confetti'),
   winTime: el('win-time'),
   winPersonal: el('win-personal'),
+  winTip: el('win-tip'),
   winTabs: el('win-tabs'),
   winTabLocal: el('win-tab-local'),
   winTabGlobal: el('win-tab-global'),
@@ -1420,6 +1422,7 @@ function onWin() {
   // pendingWin so the debug export can show exactly what the card was told.
   pendingWin.personal = getPersonalStats(game.N, settings.difficulty, score);
   renderPersonalFeedback(pendingWin.personal, game.N, settings.difficulty);
+  renderDiscoveryTip();
 
   dom.winNickname.value = settings.nickname || '';
   globalSubmitInFlight = false;
@@ -1435,6 +1438,23 @@ function onWin() {
   setTimeout(() => dom.board.classList.remove('win-shine'), 1400);
   haptic([20, 40, 30]);
   playWin();
+}
+
+// Nudge new players towards the other sizes/difficulties: once on their very
+// first solve, and once more on the fifth if they still play the defaults.
+// "Solves so far" is the solve history (read before this solve is recorded),
+// so players who predate this tip don't get congratulated on a "first" win.
+const DISCOVERY_SECOND_AT = 5;
+function renderDiscoveryTip() {
+  if (!dom.winTip) return;
+  let prior = 0;
+  for (const list of Object.values(loadSolveHistory())) prior += list.length;
+  const onDefaults = settings.size === DEFAULTS.size && settings.difficulty === DEFAULTS.difficulty;
+  let key = null;
+  if (prior === 0) key = 'win.tip.first';
+  else if (prior === DISCOVERY_SECOND_AT - 1 && onDefaults) key = 'win.tip.again';
+  dom.winTip.textContent = key ? t(key) : '';
+  dom.winTip.hidden = !key;
 }
 
 function selectWinTab(tab) {
@@ -2724,6 +2744,7 @@ function closeSettings() {
 
 function openSettings() {
   clearHint();
+
   dom.languageSelect.value = settings.language;
   dom.sizeRange.value = settings.size;
   dom.sizeValue.textContent = settings.size;
@@ -2741,6 +2762,11 @@ function openSettings() {
   dom.debugExtended.checked = settings.debugExtended;
   updateDebugSubOptions();
   show(dom.settingsOverlay);
+  // Always open at the top, where size and difficulty live — the card is its
+  // own scroll container and would otherwise remember the last position. Reset
+  // after show(): a scrollTop set while display:none doesn't stick.
+  const card = dom.settingsOverlay.querySelector('.overlay-card');
+  if (card) card.scrollTop = 0;
 }
 
 // ---------- Language ----------

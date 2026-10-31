@@ -115,6 +115,8 @@ export const I18N_ES = {
     `Tiempo de juego ${time} · ${esPlural(hints, 'pista', 'pistas')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${esPlural(checks, 'comprobación', 'comprobaciones')} (+${checkPenalty})` : ''} · ${esPlural(mistakes, 'error', 'errores')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
+  'win.tip.first': '¡Bien jugado, tu primera victoria! 👏 ¿Quieres más? En ⚙ Ajustes puedes subir la dificultad o agrandar el tablero.',
+  'win.tip.again': '¡Muy bien! Consejo: en ⚙ Ajustes puedes elegir una dificultad mayor o un tablero más grande.',
   'win.personal.first': ({ bucket }) =>
     `Tu primera partida en ${bucket}: a partir de ahora hay una marca que batir.`,
   'win.personal.best': '🏆 ¡Nuevo récord!',

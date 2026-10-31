@@ -127,6 +127,8 @@ export const I18N_PT = {
     `Tempo de jogo ${time} · ${ptPlural(hints, 'dica', 'dicas')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${ptPlural(checks, 'verificação', 'verificações')} (+${checkPenalty})` : ''} · ${ptPlural(mistakes, 'erro', 'erros')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
+  'win.tip.first': 'Muito bem – a tua primeira vitória! 👏 Queres mais? Em ⚙ Definições podes aumentar a dificuldade ou o tamanho do tabuleiro.',
+  'win.tip.again': 'Boa! Dica: em ⚙ Definições podes escolher uma dificuldade maior ou um tabuleiro maior.',
   'win.personal.first': ({ bucket }) =>
     `Seu primeiro jogo em ${bucket} – a partir de agora há uma marca a bater.`,
   'win.personal.best': '🏆 Novo recorde!',

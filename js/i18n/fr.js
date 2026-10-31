@@ -117,6 +117,8 @@ export const I18N_FR = {
     `Temps de jeu ${time} · ${frPlural(hints, 'indice', 'indices')}${hints ? ` (+${penalty})` : ''}${checks ? ` · ${frPlural(checks, 'vérification', 'vérifications')} (+${checkPenalty})` : ''} · ${frPlural(mistakes, 'erreur', 'erreurs')}`,
 
   // Relative feedback on the fresh solve (personal, offline, before any submit).
+  'win.tip.first': 'Bien joué – ta première victoire ! 👏 Envie de plus ? Dans ⚙ Réglages, tu peux augmenter la difficulté ou agrandir la grille.',
+  'win.tip.again': 'Bravo ! Astuce : dans ⚙ Réglages, tu peux choisir une difficulté plus élevée ou une grille plus grande.',
   'win.personal.first': ({ bucket }) =>
     `Ta première partie en ${bucket} – il y a désormais un temps à battre.`,
   'win.personal.best': '🏆 Nouveau record !',
