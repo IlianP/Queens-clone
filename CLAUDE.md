@@ -423,6 +423,10 @@ independent. `generatePuzzle(N, difficulty, { style })` takes:
   `dominance`/`maxShare` (one designated background region grows to ~35–40% of
   the board on purpose). `makeUnique` takes `minSize` too — without it the
   uniqueness repair whittles a floor-sized region back down to one free cell.
+  The grower itself also rejects a board where a region never reached the floor:
+  a seed whose free neighbours were all taken by another run (usually a corner)
+  never reappears on the frontier and stayed a single cell in ~0.1 % of boards,
+  which made `blocky-style.mjs` fail at random in CI.
 - **`strips`** — `growRegionsStrips`, which grows a straight, one-cell-wide
   **segment through each queen** and hands everything left over to one background
   region. See "The strips style" below; it is different enough in construction

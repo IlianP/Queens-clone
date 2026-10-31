@@ -230,6 +230,13 @@ function growRegionsBlocky(
   }
 
   if (remaining > 0) return null; // board is connected, so this shouldn't happen
+  // Hungry regions grow first, but only through the frontier: a seed whose free
+  // neighbours were all taken by another region's run (typically a corner seed,
+  // with just two neighbours) never reappears there and stays a single cell.
+  // That is exactly the free queen the floor exists to prevent, so reject the
+  // board — the caller draws another. ~0.1 % of raw boards; it made
+  // tests/logic/blocky-style.mjs fail at random in CI.
+  if (size.some((s) => s < minSize)) return null;
   return region;
 }
 
