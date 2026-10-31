@@ -248,6 +248,11 @@ highlights cells, and narrates in a bottom coach card (`#tutorial-card`).
   history or win card; the clock is frozen and `.status`/price badges are hidden
   via `html.tutorial-on`. The tutorial Game runs with quick mode **off** so every
   tap does exactly what the card says; the done card then explains quick mode.
+- **Starting it must stop the intro**, not just bump `genToken`: the intro's rAF
+  loop isn't tied to the token, so a tutorial started from settings while a real
+  board was still in its compute phase kept spinning and shrinking the 5×5
+  forever. `startTutorial()` calls `intro.stop()`, which cancels the loop, puts
+  the board upright and releases a `newGame()` parked in `reveal()`.
 - **One exit**: `newGame()` calls `endTutorial()` first, so every route to a real
   board (card button, "Neues Spiel", settings) leaves the tutorial cleanly.
 - **The offer** (`#tutorial-welcome`) appears instead of the first board on a

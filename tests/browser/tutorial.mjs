@@ -114,6 +114,45 @@ async function run(viewport) {
   await page.close();
 }
 
+// Regression (review): starting the tutorial while a real game's intro is still
+// spinning must stop that animation — invalidating the generation alone left the
+// rAF loop rotating and shrinking the tutorial board forever.
+async function introInterrupted() {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, locale: 'de-DE' });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await stubStats(page);
+  await page.goto('http://localhost:8000/index.html');
+  await page.waitForFunction(() => document.querySelector('.cell')?.dataset.state !== undefined, null, { timeout: 15000 });
+  await page.click('#new-game');
+  // Still inside the compute phase (it lasts at least 540 ms).
+  const spinning = await page.evaluate(() => !!document.querySelector('.intro-cell'));
+  check(spinning, 'intro: compute phase was running when the tutorial started');
+  await page.evaluate(() => {
+    document.getElementById('open-settings').click();
+    document.getElementById('settings-tutorial').click();
+  });
+  await page.waitForTimeout(1500);
+  const st = await page.evaluate(() => {
+    const b = document.getElementById('board');
+    return {
+      rot: b.style.getPropertyValue('--intro-rot'),
+      scale: b.style.getPropertyValue('--intro-scale'),
+      revealing: b.classList.contains('intro-revealing'),
+      cells: document.querySelectorAll('.cell').length,
+      placeholders: document.querySelectorAll('.intro-cell').length,
+    };
+  });
+  check(st.cells === 25 && st.placeholders === 0, `intro: tutorial board replaced the placeholder (${JSON.stringify(st)})`);
+  check(st.rot === '0deg' && (st.scale === '' || st.scale === '1') && !st.revealing, `intro: board left rotated/scaled (${JSON.stringify(st)})`);
+  // And it stays put: the old game's generation must not take the board back.
+  await page.waitForTimeout(1500);
+  check((await page.$$('.cell')).length === 25, 'intro: superseded game did not replace the tutorial board');
+  check(errors.length === 0, `intro: page errors ${errors.join(' | ')}`);
+  await page.close();
+}
+
+await introInterrupted();
 await run({ width: 390, height: 844 });
 await run({ width: 375, height: 667 });
 await run({ width: 320, height: 568 });

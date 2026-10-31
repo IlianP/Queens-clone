@@ -796,6 +796,20 @@ const intro = (() => {
   }
 
   return {
+    // Abandon whatever the intro is doing and put the board back upright, for a
+    // caller that replaces the board without going through newGame() (the
+    // tutorial). Invalidating the generation via genToken is not enough: the
+    // rAF loop would keep spinning and shrinking whatever board is shown next.
+    // A newGame() parked in reveal() is released so it can see its stale token.
+    stop() {
+      const pending = revealResolve;
+      cancel();
+      placeholder = [];
+      dom.board.classList.remove('intro-revealing');
+      dom.board.style.setProperty('--intro-rot', '0deg');
+      dom.board.style.setProperty('--intro-scale', '1');
+      if (pending) pending();
+    },
     computeElapsed() {
       return performance.now() - computeStart;
     },
@@ -3891,7 +3905,8 @@ function startTutorial() {
   playUi();
   markTutorialSeen();
   flushPendingWin();
-  ++genToken; // cancel any board still being generated
+  ++genToken; // cancel any board still being generated …
+  intro.stop(); // … and the animation that was filling the wait
   hide(dom.winOverlay);
   hide(dom.loading);
   clearWinConfetti();
