@@ -2121,3 +2121,133 @@ html[data-i18n-ready] .app {
   line-height: 1.35;
 }
 .win-tip[hidden] { display: none; }
+
+/* ---------- Tutorial ---------- */
+html.tutorial-on .status,
+html.tutorial-on .btn-cost {
+  visibility: hidden; /* nothing is timed or charged on the practice board */
+}
+.tutorial-welcome-card {
+  text-align: center;
+}
+.tutorial-welcome-icon {
+  font-size: 2.4rem;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+.tutorial-welcome-card h2 {
+  margin: 0 0 8px;
+}
+.tutorial-welcome-card p {
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+.tutorial-card {
+  z-index: 24; /* a hint card (25) opened mid-tutorial sits on top */
+  border-top: 4px solid var(--accent);
+}
+.tutorial-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: -4px -6px 4px 0;
+}
+.tutorial-progress {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.btn.tutorial-exit {
+  padding: 4px 10px;
+  min-height: 0;
+  font-size: 0.8rem;
+}
+.tutorial-text {
+  color: var(--ink);
+}
+.tutorial-nudge {
+  margin: -4px 0 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--danger-text);
+  min-height: 0;
+}
+.tutorial-nudge:empty {
+  display: none;
+}
+.tutorial-card .hint-card-buttons:has(> [hidden]:only-child) {
+  display: none;
+}
+.tutorial-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tutorial-field .btn {
+  flex: none;
+}
+/* Guided steps dim everything the step isn't about. */
+.board.tut-guided .cell:not(.tut-focus):not(.tut-blocked):not(.tut-region):not([data-state='queen']) {
+  filter: saturate(0.45) brightness(0.82);
+  opacity: 0.6;
+}
+.cell.tut-blocked {
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in srgb, var(--danger, #c33) 22%, transparent) 0 3px,
+    transparent 3px 9px
+  );
+}
+.cell.tut-focus {
+  position: relative;
+  z-index: 2;
+  box-shadow:
+    inset 0 0 0 3px #f5b400,
+    0 0 0 3px color-mix(in srgb, #f5b400 45%, transparent);
+  animation: tut-pulse 1.3s ease-in-out infinite;
+}
+@keyframes tut-pulse {
+  50% {
+    box-shadow:
+      inset 0 0 0 3px #f5b400,
+      0 0 0 7px color-mix(in srgb, #f5b400 0%, transparent);
+  }
+}
+.cell.tut-shake {
+  animation: tut-shake 0.35s ease, tut-pulse 1.3s ease-in-out 0.35s infinite;
+}
+@keyframes tut-shake {
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+#hint.tut-pulse {
+  animation: tut-pulse-btn 1.4s ease-in-out infinite;
+}
+@keyframes tut-pulse-btn {
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, #f5b400 55%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell.tut-focus,
+  .cell.tut-shake,
+  #hint.tut-pulse {
+    animation: none;
+  }
+}
+/* A 5x5 practice board needs far less room than a real one, and the coach card
+   at the bottom needs that room on a short phone (320x568: the full-size board
+   ran 50 px under the card). */
+html.tutorial-on .board {
+  width: min(92vw, 46vh, 420px);
+}
+@media (max-height: 620px) {
+  .tutorial-card {
+    padding: 12px 14px;
+  }
+  .tutorial-card .hint-card-text {
+    font-size: 0.86rem;
+    margin-bottom: 6px;
+  }
+}

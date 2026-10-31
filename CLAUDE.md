@@ -148,6 +148,10 @@ before re-deriving how to drive things:
   a second one, `win.tip.again`, on the 5th solve while still on the default
   size/difficulty — counted from the solve history, so pre-existing players
   aren't greeted as newcomers).
+- `tests/browser/tutorial.mjs` — the guided tutorial end to end at 390/375/320 px
+  (see "The tutorial" below): offer → each guided step lets only its own taps
+  through → state-driven advance → nothing scored → exit starts a real game →
+  restart from settings; and that the coach card never overlaps the board.
 - `tests/browser/double-tap-zoom.mjs` — iOS zoomed the page on a quick double
   tap on a cell (iOS ignores `user-scalable=no`). Guarded by `touch-action:
   manipulation` on `<html>` plus a non-passive `touchend` on the board that
@@ -228,6 +232,30 @@ puzzle solution is `cols[r]` = the column of the queen in row `r`.
 | `js/voice.js` | Voice Mode (Beta): `parseVoiceCommand(transcript, N)` is a **pure** German-transcript → command parser (no DOM, no browser globals — Node-testable); `createVoiceController(...)` / `voiceSupported()` wrap the Web Speech API (`SpeechRecognition`) as a **recognition layer, no DOM** that fails soft where the API is missing. Grid notation is chess-like: column letter + row number ("C4" → col c, row r); several coordinates in one utterance ("Punkte auf A2, B2, C3") return a `batch` command, and whole-unit fills ("Punkte Spalte B und C außer Rot") a `fill` command (regions named by colour, which `main.js` resolves to region ids since it owns the shuffled palette; a region can also be named by a cell in it — "Region von C3"). Also wraps `SpeechSynthesis` (`voiceSpeak`) to read hints aloud, and parses `apply`/`dismiss`/`repeat` ("OK"/"Schließen"/"Wiederholen") for the hint pop-up. The queen verb also accepts the field mis-hearings `damit` and `deine`. A bare coordinate is a `toggle`; with the `voiceQueenFirst` setting (sub-option under Voice Mode, like the edge rulers) `main.js` routes it to `game.tapQueenFirst` — empty → queen → dot → empty — with per-cell undo like a queen. `dedupeReplayCells(cells, action, prevKeys)` is a **pure** guard against Chrome re-finalising the same utterance (final "i5" then "i5 i6"/"i5 Dame"): it compares parsed effect per cell — drop a repeated `(row,col,action)`, keep a same-cell/**different**-action (a verb upgrading a toggle to a queen), so verb-governed phrases survive where transcript prefix-stripping would corrupt them. `isRefinaliseExtension(prevText, newText)` is the **pure** detector for the other half of the same problem: Chrome finalising a sentence it cut short ("Punkte Zeile 1" before "… außer Region E1"). A premature **fill** can't be repaired by re-running the narrower one (marking only adds), so `main.js` rolls the earlier fill back — identity-checking its undo snapshot against the stack top — and applies the completed utterance. It is only a *detector*: the full new transcript is re-parsed, never stripped. Mirrors the audio/leaderboard layering |
 | `js/stats.js` | Anonymous play counters ("pings"): `bumpStat(kind, {size, difficulty})` posts a counter increment to `bump_stat`, `statsSource(env)` is the **pure**, Node-testable rule that decides whether a page counts as `web` / `test` / `dev`. **Network layer, no DOM**, fire-and-forget — returns nothing, so no caller can await a counter — and fails soft everywhere, including a one-shot latch that stops asking after a 404/401/403. Reads `js/leaderboard.js`'s exported `SUPABASE_*` config rather than keeping a second copy. See "The weekly activity report" |
 | `js/main.js` | Wires generator + game + hint + highscores + leaderboard + audio + voice to the DOM: rendering, input, timer, hint card, win/score screen, Bestenliste modal, sound toggle, QR share dialog, voice panel + coordinate labels (per-cell corner labels or an edge ruler — the `.board-stage` wraps the board so the rulers sit outside the intro rotation), the hint-cost surfaces (price tag on the button, the flying `+30 s` pill, the effective-time clock — see "Highscores / leaderboard"), debug export (with an optional `debugExtended` journal — the last 20 voice/board events: **every** heard final incl. ones that changed nothing (op `gehört`) plus effect entries, the raw voice transcript, replay-skips, and exactly what each undo removed; back-to-back coordinate finals also carry a short replay guard so a re-finalise doesn't double-apply). Voice commands route into the **same** internal calls a tap/button makes — no duplicate game logic |
+
+### The tutorial
+
+A one-minute guided first game in `main.js` ("Tutorial" block). It runs on the
+**real** board, `Game` and input code on a fixed 5×5 (`TUT_REGION`, verified
+unique and easy): the tutorial only gates which cells a tap/swipe may touch in
+the guided steps (`tutorialAllows`, called from `endDrag` and `paintCell`),
+highlights cells, and narrates in a bottom coach card (`#tutorial-card`).
+
+- **Steps advance from board state, not tap counts** — `tutorialOnBoard()` runs
+  at the end of every `updateBoard()`, so undo, reset, a swipe or an applied hint
+  land in a sensible step (removing the first queen drops back to step 2).
+- **Nothing is scored**: `onWin` hands off to `tutorialWin()` before any stat,
+  history or win card; the clock is frozen and `.status`/price badges are hidden
+  via `html.tutorial-on`. The tutorial Game runs with quick mode **off** so every
+  tap does exactly what the card says; the done card then explains quick mode.
+- **One exit**: `newGame()` calls `endTutorial()` first, so every route to a real
+  board (card button, "Neues Spiel", settings) leaves the tutorial cleanly.
+- **The offer** (`#tutorial-welcome`) appears instead of the first board on a
+  device with no solve history and no `queens-clone-tutorial` flag. It is skipped
+  under `navigator.webdriver` so every other browser test boots into a game;
+  `?tutorial` forces it. Re-entry: ⚙ → `#settings-tutorial`.
+- On short phones the 5×5 board is capped at 46vh in tutorial mode so the coach
+  card never covers it (320×568 overlapped by 50 px before).
 
 ### i18n (what is translated, and what deliberately isn't)
 
