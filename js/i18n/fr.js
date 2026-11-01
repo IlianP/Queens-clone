@@ -131,7 +131,7 @@ export const I18N_FR = {
   'tut.first.dot': 'Bien – c’est un point. Touche encore une fois : le point devient une dame.',
   'tut.block.title': 'Cases bloquées',
   'tut.block.text': ({ done, total }) =>
-    `La dame bloque sa ligne, sa colonne et toutes les cases voisines (hachurées). Marque les cases lumineuses d’une touche chacune – un point veut dire « pas de dame ici ». Glisser en marque plusieurs d’un coup. (${done}/${total})`,
+    `La dame bloque sa ligne, sa colonne et toutes les cases voisines (hachurées). Marque-les toutes d’une touche chacune – un point veut dire « pas de dame ici ». Glisser en marque plusieurs d’un coup. (${done}/${total})`,
   'tut.second.title': 'Plus qu’une case libre',
   'tut.second.text': 'Tout le reste de cette zone est bloqué – la dame va donc sur la case lumineuse. Touche-la deux fois.',
   'tut.free.title': 'À toi !',

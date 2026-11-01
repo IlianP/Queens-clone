@@ -2217,14 +2217,14 @@ html.tutorial-on .btn-cost {
   }
 }
 .cell.tut-shake {
-  animation: tut-shake 0.35s ease, tut-pulse 1.3s ease-in-out 0.35s infinite;
+  animation: tut-shake 0.35s ease 1; /* once: no pulse of its own (it used to loop forever) */
 }
 @keyframes tut-shake {
   25% { transform: translateX(-3px); }
   75% { transform: translateX(3px); }
 }
 #hint.tut-pulse {
-  animation: tut-pulse-btn 1.4s ease-in-out infinite;
+  animation: tut-pulse-btn 1.4s ease-in-out 3; /* noticed, not nagging */
 }
 @keyframes tut-pulse-btn {
   50% { box-shadow: 0 0 0 5px color-mix(in srgb, #f5b400 55%, transparent); }

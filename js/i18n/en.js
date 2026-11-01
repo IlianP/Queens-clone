@@ -130,7 +130,7 @@ export const I18N_EN = {
   'tut.first.dot': 'Good – that’s a dot. Tap once more and the dot becomes a queen.',
   'tut.block.title': 'Blocked cells',
   'tut.block.text': ({ done, total }) =>
-    `The queen blocks its row, its column and every neighbouring cell (hatched). Mark the glowing cells with one tap each – a dot means “no queen here”. Swiping marks several at once. (${done}/${total})`,
+    `The queen blocks its row, its column and every neighbouring cell (hatched). Mark all of them with one tap each – a dot means “no queen here”. Swiping marks several at once. (${done}/${total})`,
   'tut.second.title': 'Only one cell left',
   'tut.second.text': 'Everything else in this colour region is blocked – so the queen must go on the glowing cell. Tap it twice.',
   'tut.free.title': 'Your turn!',
