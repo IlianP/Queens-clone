@@ -42,8 +42,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Shipped styles first, then the experimental ones. docs/board-styles.md says
 // which is which and why the second group is not drawn by the game.
-export const SHIPPED_STYLES = ['organic', 'blocky', 'strips', 'frame'];
-export const EXPERIMENTAL_STYLES = ['quilt', 'voronoi'];
+export const SHIPPED_STYLES = ['organic', 'blocky', 'frame'];
+// 'strips' was shipped until it proved too easy to play (every board ran on
+// line<->region confinement); it stays measurable as screenshot C's construction.
+export const EXPERIMENTAL_STYLES = ['quilt', 'voronoi', 'strips'];
 const ALL_STYLES = [...SHIPPED_STYLES, ...EXPERIMENTAL_STYLES];
 
 // Re-exported so the older import sites keep working; the definitions moved to

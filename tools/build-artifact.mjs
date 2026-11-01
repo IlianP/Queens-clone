@@ -2,9 +2,9 @@
 // Artifact so a branch can be tested on a phone (see CLAUDE.md → "Testing a
 // branch on mobile"). Generated FROM the real sources so it mirrors the branch.
 //
-//   node tools/build-artifact.mjs [output.html] [--style blocky|strips]
+//   node tools/build-artifact.mjs [output.html] [--style blocky|organic|frame]
 //
-// --style blocky|strips|organic builds a *trial* bundle of one region-growth
+// --style blocky|organic|frame builds a *trial* bundle of one region-growth
 // style (see CLAUDE.md → "Region-growth styles") without touching what the site
 // serves: it
 // embeds the `levels/<N>-<difficulty>-blocky.json` pools under the plain keys
@@ -31,8 +31,9 @@ const style = styleIdx >= 0 ? argv[styleIdx + 1] : 'mixed';
 // The experimental styles (docs/board-styles.md) can be trialled too — that is
 // step 7 of the evaluation recipe, and the only step a number cannot do. They
 // have no pools by design, which is handled below.
-const EXPERIMENTAL = ['quilt', 'voronoi'];
-const SHIPPED = ['organic', 'blocky', 'strips', 'frame'];
+// 'strips' sits here since it stopped being shipped (too easy — see CLAUDE.md).
+const EXPERIMENTAL = ['quilt', 'voronoi', 'strips'];
+const SHIPPED = ['organic', 'blocky', 'frame'];
 if (![...SHIPPED, ...EXPERIMENTAL, 'mixed'].includes(style)) {
   console.error(`--style must be one of: ${[...SHIPPED, ...EXPERIMENTAL, 'mixed'].join(', ')}`);
   process.exit(1);
@@ -132,9 +133,9 @@ main = main.replace(workerExpr, 'new Worker(__WORKER_URL__)');
 // one function covers all of them. Guarded: a rename must fail the build rather
 // than silently leave the bundle mixed.
 // A single-style bundle overrides the *pool* randomStyle() draws from, not the
-// draw itself, so the rule that 'strips' has no easy boards still applies: a
+// draw itself, so a style's own limits still apply: an experimental
 // `--style strips` trial bundle on easy returns an honestly-rated medium board
-// rather than a mislabelled easy one.
+// (strips has no easy boards) rather than a mislabelled easy one.
 if (style !== 'mixed') {
   const pick = '  const pool = stylesFor(N, difficulty);';
   if (!main.includes(pick)) {

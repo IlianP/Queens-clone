@@ -258,25 +258,28 @@ nicht alle an der Reihe waren (nur im Speicher, nichts wird persistiert).
 ### Drei Formensprachen
 
 Die Farbregionen werden in **drei verschiedenen Stilen** gebaut, und jeder Pool
-enthält von jedem einen gleich großen Anteil:
+enthält von jedem Stil, den er hat, einen gleich großen Anteil:
 
 - **organisch** – amöbenartige Regionen mit ausgefransten Grenzen.
-- **blockig** – Regionen wachsen in geraden Streifen, dadurch lange gerade
+- **blockig** – Regionen wachsen in geraden Bahnen, dadurch lange gerade
   Grenzen, rechteckige Formen und eine große Hintergrundfarbe.
-- **Streifen** – bis auf eine sind alle Farben gerade, ein Feld breite Segmente;
-  die eine Ausnahme ist ein einzelner Hintergrund, der den Großteil des Bretts
-  einnimmt.
+- **Rahmen** – einige wenige Farben besetzen den äußeren Ring des Bretts, die
+  übrigen liegen eingeschlossen in der Mitte (bis Größe 10, bei *Leicht* bis 9).
 
 Weil jedes Rätsel eines Pools einmal an die Reihe kommt, bevor sich etwas
 wiederholt, wechseln sich die Looks beim Spielen gleichmäßig ab. **An der
 Schwierigkeit ändert der Stil nichts** – sie hängt allein davon ab, welche
-Denktechniken ein Brett verlangt. Zwei Stufen sind Ausnahmen, und zwar aus
-demselben Grund: Bei *Leicht* fällt der blockige Unterschied kaum auf (diese
-Stufe braucht die kleinen „geschenkten" Regionen, die den blockigen Look erst
-ausmachen würden), und *Leicht* hat gar keine **Streifen**-Rätsel, weil genau die
-Mindestgröße, die den Look erzeugt, der Stufe ihren erzwungenen Einstieg nimmt.
-Oberhalb von Feldgröße 12 ist Streifen der einzige Stil – er ist der, der ein
-Brett dieser Größe überhaupt schnell genug erzeugt.
+Denktechniken ein Brett verlangt. Bei *Leicht* fällt der blockige Unterschied
+kaum auf: Diese Stufe braucht die kleinen „geschenkten" Regionen, die der
+blockige Look sonst beseitigt. Die Größen 13 und 14 sind rein blockig – das ist
+der verbliebene Stil, der ein Brett dieser Größe in vertretbarer Zeit erzeugt,
+und diese Pools werden vorab berechnet.
+
+Früher gab es einen vierten Stil, **Streifen** (bis auf eine alle Farben gerade,
+ein Feld breite Segmente). Er wurde entfernt, weil er zu leicht spielte: Die
+schmalen Segmente schließen auf einen Blick ganze Zeilen und Spalten aus, sodass
+jedes Brett auf dasselbe einseitige Denken hinauslief. Der Generator-Code bleibt
+nur zu Messzwecken erhalten; kein Pool enthält mehr ein solches Brett.
 
 Schlägt das Laden eines Pools fehl (z. B. offline geänderte Dateien), erzeugt das
 Spiel das Rätsel wie früher live im Hintergrund – es gibt also immer ein Brett,

@@ -22,7 +22,9 @@ import { decodePuzzle, transformPuzzle, canonicalKey, isValidSolution } from '..
 // The styles a pool entry may be tagged with. An entry tagged with anything else
 // is a bug in the builder, not a new style — this list is what makes adding one
 // a deliberate act rather than something that slips through in a rebuild.
-const SHIPPED_STYLES = ['organic', 'blocky', 'strips', 'frame'];
+// 'strips' was removed from the pools (too easy); a strips-tagged entry is now a
+// leftover and fails here.
+const SHIPPED_STYLES = ['organic', 'blocky', 'frame'];
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const LEVELS_DIR = join(ROOT, 'levels');

@@ -353,10 +353,11 @@ function updateCostLabels() {
 // to "Schwer" (and forces it) whenever the slider sits there or above.
 const HARD_ONLY_SIZE = 12;
 
-// From here up 'strips' is the only growth style that produces a board inside a
-// playable budget (see stylesFor / js/generator.js). Measured per accepted hard
-// 13x13: strips ~0.3 s, organic ~12 s.
-const STRIPS_ONLY_SIZE = 13;
+// From here up boards are blocky only (see stylesFor). The 'strips' style that
+// used to carry these sizes was dropped as too easy, and of what is left blocky
+// is the fastest at this size — measured per accepted hard 13x13: blocky ~15 s,
+// organic ~70 s. The pools cover 13/14, so that cost is paid offline.
+const BLOCKY_ONLY_SIZE = 13;
 
 // Up to here 'frame' is drawn too (the screenshot-D look: a few regions own the
 // outer ring, the rest sit landlocked in the middle). Above it the uniqueness
@@ -617,8 +618,9 @@ function freshWorker() {
 //
 // The exceptions are properties of the styles, not preferences (see
 // js/generator.js and tools/generate-levels.mjs, which splits the pools the same
-// way): 'strips' has no easy boards at all, and above size 12 it is the only
-// style that produces a board inside a playable budget at all.
+// way): above size 12 only blocky finishes in anything like a usable time.
+// 'strips' is not drawn at all any more: its one-wide segments made every board
+// run on line<->region confinement, so it played too easy (see CLAUDE.md).
 //
 // 'frame' has a ceiling of its own, and it is a cost ceiling rather than a
 // shape one — the construction still delivers the look at every size, measured
@@ -629,8 +631,8 @@ function freshWorker() {
 // big outer regions produce few of them: 2 s per easy board at 9, but ~47 s at
 // 10 (2 boards in 94 s), which is too slow to fill a pool bucket.
 function stylesFor(N, difficulty) {
-  if (N >= STRIPS_ONLY_SIZE) return ['strips'];
-  const pool = difficulty === 'easy' ? ['organic', 'blocky'] : ['organic', 'blocky', 'strips'];
+  if (N >= BLOCKY_ONLY_SIZE) return ['blocky'];
+  const pool = ['organic', 'blocky'];
   if (N <= (difficulty === 'easy' ? FRAME_MAX_EASY_SIZE : FRAME_MAX_SIZE)) pool.push('frame');
   return pool;
 }
@@ -676,11 +678,13 @@ async function newGame() {
 
   const N = settings.size;
   const difficulty = settings.difficulty;
-  // Only ever spent when the pool draw misses. The big sizes get more because
-  // they need it (a hard 14x14 takes ~1 s of strips generation at the median,
-  // ~3.4 s at the tail) — not because they are slower per attempt.
+  // Only ever spent when the pool draw misses (every bucket has a pool, so in
+  // practice: when the pool file failed to load). 13/14 are blocky-only since
+  // strips went, and a blocky board there takes ~15 s (13) and ~60 s (14) at the
+  // median — a shorter budget would only drop into the generator's organic
+  // last-resort loop, which is slower still at that size. Slow, but rare.
   const budgetMs =
-    N >= 14 ? 8000 : N >= 13 ? 6500 : N >= 12 ? 5200 : N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
+    N >= 14 ? 60000 : N >= 13 ? 20000 : N >= 12 ? 5200 : N >= 11 ? 3800 : N >= 10 ? 2400 : N >= 8 ? 1400 : 900;
   const animate = introEnabled();
 
   if (animate) intro.startCompute(N);
