@@ -3848,8 +3848,10 @@ const TUT_REGION = ['ABBCC', 'DBBCC', 'DDDCC', 'DDEEE', 'DDEEE'].map((s) =>
 const TUT_SOLUTION = [0, 2, 4, 1, 3];
 const TUT_FIRST = [0, 0]; // the one-cell region
 const TUT_SECOND = [1, 2]; // B's last free cell once a1 holds a queen
-// The cells of region B the first queen blocks — the ones step 3 asks to mark.
-const TUT_MARKS = [
+// Region B minus its last free cell: the cells step 4 points at to show that
+// only c2 is left. (Step 3 asks for ALL blocked cells, not just these — the text
+// explains row, column and diagonal, so the board has to ask for all of them.)
+const TUT_REGION_B = [
   [0, 1],
   [0, 2],
   [1, 1],
@@ -3946,7 +3948,7 @@ function endTutorial() {
 
 function clearTutorialMarks() {
   for (const row of cells)
-    for (const cell of row) cell.classList.remove('tut-focus', 'tut-blocked', 'tut-region');
+    for (const cell of row) cell.classList.remove('tut-focus', 'tut-blocked', 'tut-region', 'tut-shake');
 }
 
 const tutQueen = ([r, c]) => !!game && game.queen[r][c];
@@ -3986,12 +3988,13 @@ function renderTutorialStep() {
     const [r, c] = TUT_FIRST;
     if (game.mark[r][c]) text = t('tut.first.dot');
   } else if (name === 'block') {
-    for (const [r, c] of tutBlockedCells()) cells[r][c].classList.add('tut-blocked');
-    focus(TUT_MARKS.filter(([r, c]) => !game.mark[r][c]));
-    const done = TUT_MARKS.filter(([r, c]) => game.mark[r][c]).length;
-    text = t('tut.block.text', { done, total: TUT_MARKS.length });
+    const blocked = tutBlockedCells();
+    for (const [r, c] of blocked) cells[r][c].classList.add('tut-blocked');
+    focus(blocked.filter(([r, c]) => !game.mark[r][c]));
+    const done = blocked.filter(([r, c]) => game.mark[r][c]).length;
+    text = t('tut.block.text', { done, total: blocked.length });
   } else if (name === 'second') {
-    for (const [r, c] of TUT_MARKS) cells[r][c].classList.add('tut-region');
+    for (const [r, c] of TUT_REGION_B) cells[r][c].classList.add('tut-region');
     focus([TUT_SECOND]);
     const [r, c] = TUT_SECOND;
     if (game.mark[r][c]) text = t('tut.first.dot');
@@ -4018,7 +4021,7 @@ function tutorialOnBoard() {
     return;
   }
   if (name === 'first') enterTutorialStep('block');
-  if (TUT_STEPS[tutorial.step] === 'block' && TUT_MARKS.every(([r, c]) => game.mark[r][c]))
+  if (TUT_STEPS[tutorial.step] === 'block' && tutBlockedCells().every(([r, c]) => game.mark[r][c]))
     return enterTutorialStep('second');
   renderTutorialStep();
 }
@@ -4051,6 +4054,10 @@ function tutorialNudge() {
         cell.classList.remove('tut-shake');
         void cell.offsetWidth;
         cell.classList.add('tut-shake');
+        // One shake, then the class goes: it used to stay on the cell and carry
+        // its own infinite pulse, so a cell nudged once kept blinking through
+        // every later step and past the end of the tutorial.
+        cell.addEventListener('animationend', () => cell.classList.remove('tut-shake'), { once: true });
       }
   haptic([8, 30, 8]);
   clearTimeout(tutorial.nudgeTimer);
@@ -4068,6 +4075,10 @@ function tutorialWin() {
   enterTutorialStep('done');
   dom.hint.classList.remove('tut-pulse');
 }
+
+// The hint button only pulses to be noticed: three beats (CSS), and none at all
+// once it has been used.
+dom.hint.addEventListener('click', () => dom.hint.classList.remove('tut-pulse'));
 
 dom.tutorialNext.addEventListener('click', () => {
   if (!tutorial) return;

@@ -141,7 +141,7 @@ export const I18N_PT = {
   'tut.first.dot': 'Boa – isso é um ponto. Toca mais uma vez e o ponto passa a rainha.',
   'tut.block.title': 'Casas bloqueadas',
   'tut.block.text': ({ done, total }) =>
-    `A rainha bloqueia a sua linha, a sua coluna e todas as casas vizinhas (tracejadas). Marca as casas iluminadas com um toque cada – um ponto quer dizer «aqui não há rainha». Deslizar marca várias de uma vez. (${done}/${total})`,
+    `A rainha bloqueia a sua linha, a sua coluna e todas as casas vizinhas (tracejadas). Marca-as todas com um toque cada – um ponto quer dizer «aqui não há rainha». Deslizar marca várias de uma vez. (${done}/${total})`,
   'tut.second.title': 'Só resta uma casa',
   'tut.second.text': 'Tudo o resto nesta região está bloqueado – a rainha vai para a casa iluminada. Toca duas vezes.',
   'tut.free.title': 'Agora tu!',

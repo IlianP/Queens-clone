@@ -125,7 +125,7 @@ export const I18N_DE = {
   'tut.first.dot': 'Gut – das ist ein Punkt. Tippe noch einmal: Aus dem Punkt wird eine Dame.',
   'tut.block.title': 'Gesperrte Felder',
   'tut.block.text': ({ done, total }) =>
-    `Die Dame sperrt ihre Zeile, ihre Spalte und alle Nachbarfelder (schraffiert). Markiere die leuchtenden Felder mit je einem Tipp – ein Punkt heißt „hier keine Dame“. Wischen markiert mehrere auf einmal. (${done}/${total})`,
+    `Die Dame sperrt ihre Zeile, ihre Spalte und alle Nachbarfelder (schraffiert). Markiere alle mit je einem Tipp – ein Punkt heißt „hier keine Dame“. Wischen markiert mehrere auf einmal. (${done}/${total})`,
   'tut.second.title': 'Nur noch ein Feld frei',
   'tut.second.text': 'In diesem Farbfeld ist alles andere gesperrt – die Dame muss also auf das leuchtende Feld. Tippe es zweimal an.',
   'tut.free.title': 'Jetzt du!',

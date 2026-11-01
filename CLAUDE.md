@@ -253,6 +253,15 @@ highlights cells, and narrates in a bottom coach card (`#tutorial-card`).
   board was still in its compute phase kept spinning and shrinking the 5×5
   forever. `startTutorial()` calls `intro.stop()`, which cancels the loop, puts
   the board upright and releases a `newGame()` parked in `reveal()`.
+- **Highlights must end.** A wrong tap shakes the glowing cells (`tut-shake`):
+  one shake, removed on `animationend` and by `clearTutorialMarks()`. It used to
+  carry its own *infinite* pulse and never be removed, so a nudged cell kept
+  blinking through every later step and past the end. The hint button's pulse in
+  free play is three beats and stops on first use. `tutorial.mjs` fails on any
+  endless animation left on the finished board.
+- **Step 3 asks for every blocked cell** (all 9: row, column, diagonal), not just
+  the three in region B — the card explains all three rules, so the board must
+  ask for them; region B is only pointed at in step 4 (`TUT_REGION_B`).
 - **One exit**: `newGame()` calls `endTutorial()` first, so every route to a real
   board (card button, "Neues Spiel", settings) leaves the tutorial cleanly.
 - **The offer** (`#tutorial-welcome`) appears instead of the first board on a
