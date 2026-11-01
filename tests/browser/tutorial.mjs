@@ -61,15 +61,22 @@ async function run(viewport) {
   await tapCell(page, idx(0, 0));
   check((await cellState(page, idx(0, 0))) === 'queen', `${tag}: second tap = queen`);
 
-  // Step 3: mark the three blocked cells of the blue region; a dot can't be re-tapped into a queen.
+  // Step 3: mark ALL nine blocked cells (row, column and the diagonal neighbour)
+  // — the text explains all three, so the board asks for all of them, not just
+  // the three in the neighbouring region (reported: "why only three?").
+  // A dot can't be re-tapped into a queen here.
   check((await title()) === 'Gesperrte Felder', `${tag}: step 3 title`);
   const hatched = await page.$$eval('.cell.tut-blocked', (cs) => cs.length);
   check(hatched === 9, `${tag}: 9 blocked cells hatched (got ${hatched})`);
+  const glowing = await page.$$eval('.cell.tut-focus', (cs) => cs.length);
+  check(glowing === 9, `${tag}: all 9 blocked cells glow, not just the neighbouring region (got ${glowing})`);
   await tapCell(page, idx(0, 1));
   await tapCell(page, idx(0, 1));
   check((await cellState(page, idx(0, 1))) === 'dot', `${tag}: dot not upgraded during step 3`);
-  await tapCell(page, idx(0, 2));
-  check(/2\/3/.test(await page.textContent('#tutorial-text')), `${tag}: progress 2/3`);
+  check(/1\/9/.test(await page.textContent('#tutorial-text')), `${tag}: progress 1/9`);
+  const rest = [[0, 2], [0, 3], [0, 4], [1, 0], [2, 0], [3, 0], [4, 0], [1, 1]];
+  for (const [r, c] of rest.slice(0, -1)) await tapCell(page, idx(r, c));
+  check((await title()) === 'Gesperrte Felder', `${tag}: step 3 waits for the last blocked cell`);
   await tapCell(page, idx(1, 1));
 
   // Step 4: c2, twice.
@@ -80,6 +87,10 @@ async function run(viewport) {
   // Step 5: free play; the card gets out of the way.
   check((await title()) === 'Jetzt du!', `${tag}: step 5 title`);
   check(await page.$eval('#hint', (b) => b.classList.contains('tut-pulse')), `${tag}: hint button pulses`);
+  check(
+    await page.$eval('#hint', (b) => b.getAnimations().every((a) => a.effect.getTiming().iterations !== Infinity)),
+    `${tag}: hint pulse is finite, not for the whole of free play`
+  );
   await page.click('#tutorial-next');
   check(!(await visible('tutorial-card')), `${tag}: card hidden in free play`);
   for (const [r, c] of [[2, 4], [3, 1], [4, 3]]) {
@@ -90,6 +101,19 @@ async function run(viewport) {
   // Done: no win card, no score, no history.
   await page.waitForSelector('#tutorial-card:not([hidden])');
   check((await title()) === '🎉 Geschafft!', `${tag}: done title`);
+  // Regression (reported): a cell nudged after a wrong tap in step 2 kept a
+  // never-ending pulse through every later step and past the end, and the hint
+  // button pulsed for the whole of free play. Nothing may still be looping now.
+  const looping = await page.evaluate(() =>
+    [...document.querySelectorAll('.cell, #hint')]
+      .filter((el) => el.getAnimations().some((a) => a.playState === 'running' && a.effect.getTiming().iterations === Infinity))
+      .map((el) => el.dataset.coord || el.id)
+  );
+  check(looping.length === 0, `${tag}: no endless animation left after the tutorial (${looping.join(', ')})`);
+  check(
+    (await page.$$eval('.cell.tut-shake, .cell.tut-focus', (cs) => cs.length)) === 0,
+    `${tag}: no tutorial highlight left on the finished board`
+  );
   check(!(await visible('win-overlay')), `${tag}: no win card`);
   const stored = await page.evaluate(() => [localStorage.getItem('queens-clone-solves'), localStorage.getItem('queens-clone-scores')]);
   check(!stored[0] && !stored[1], `${tag}: nothing recorded (${stored})`);

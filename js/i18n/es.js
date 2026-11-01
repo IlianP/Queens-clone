@@ -129,7 +129,7 @@ export const I18N_ES = {
   'tut.first.dot': 'Bien, eso es un punto. Toca una vez más y el punto se convierte en reina.',
   'tut.block.title': 'Casillas bloqueadas',
   'tut.block.text': ({ done, total }) =>
-    `La reina bloquea su fila, su columna y todas las casillas vecinas (rayadas). Marca las casillas brillantes con un toque cada una: un punto significa «aquí no hay reina». Deslizar marca varias a la vez. (${done}/${total})`,
+    `La reina bloquea su fila, su columna y todas las casillas vecinas (rayadas). Márcalas todas con un toque cada una: un punto significa «aquí no hay reina». Deslizar marca varias a la vez. (${done}/${total})`,
   'tut.second.title': 'Solo queda una casilla',
   'tut.second.text': 'Todo lo demás en esta región está bloqueado, así que la reina va en la casilla brillante. Tócala dos veces.',
   'tut.free.title': '¡Ahora tú!',
