@@ -1376,7 +1376,17 @@ issue a week summarising the global leaderboard; GitHub's notification mail *is*
 the weekly mail (no SMTP, no third party, no password to rotate). Setup and the
 full rationale live in `docs/weekly-report.md`.
 
-Four things that are load-bearing:
+Five things that are load-bearing:
+
+- **The issue lives in a separate PRIVATE repository, never here.** This repo is
+  public, and so are its issues, job summaries and logs — while the report holds
+  player names and device counts. The workflow reads `vars.REPORT_REPO` and
+  writes with the fine-grained token `secrets.REPORT_GITHUB_TOKEN` (Issues:
+  read/write on that one repo only). It **fails** when either is missing or
+  when `REPORT_REPO` equals this repo — there is deliberately no fallback to
+  `GITHUB_TOKEN`/`context.repo`, since a silent fallback is the leak. For the
+  same reason `dry_run` logs only a character count, never the text, and the
+  live path logs the issue number, not title or body.
 
 - **It is deliberately deterministic** — same rows plus same window produce
   byte-identical text. That rules out `Intl`, `toLocaleString` and local time:
@@ -1509,9 +1519,10 @@ file's own `AUSROLLEN` block rather than the whole file.
 - Deployment: `.github/workflows/deploy.yml` publishes to GitHub Pages on push
   to `main` (or `master`). It's a static upload of the repo root — no build.
 - `.github/workflows/weekly-report.yml` runs every Monday 06:00 UTC and files
-  the activity report as an issue (see above). It needs the
-  `SUPABASE_SERVICE_KEY` secret; `workflow_dispatch` with `dry_run` renders it
-  into the job summary without posting or advancing the window. GitHub disables
+  the activity report as an issue in a separate private repo (see above). It
+  needs the `SUPABASE_SERVICE_KEY` and `REPORT_GITHUB_TOKEN` secrets and the
+  `REPORT_REPO` variable; `workflow_dispatch` with `dry_run` only checks that a
+  report can be built (no text is logged, nothing posted, window not advanced). GitHub disables
   scheduled workflows after 60 days without repository activity — if the mail
   stops, check that first.
 - `main` has a **branch protection rule**: PRs need the `logic-tests` status

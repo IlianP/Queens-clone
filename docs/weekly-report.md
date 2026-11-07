@@ -4,10 +4,17 @@ Einmal pro Woche legt GitHub Actions ein Issue mit einem Aktivitätsbericht an;
 die Benachrichtigungsmail von GitHub ist die wöchentliche Mail. Kein SMTP, kein
 Drittanbieter, kein Passwort, das ablaufen kann.
 
+> **Das Issue entsteht in einem separaten, privaten Repository — nie hier.**
+> Dieses Repository ist öffentlich; Issues, Job-Zusammenfassungen und Logs
+> kann jeder lesen, und der Bericht enthält Spielernamen und Gerätezahlen. Ohne
+> `REPORT_REPO` und `REPORT_GITHUB_TOKEN` bricht der Lauf ab, statt öffentlich
+> zu posten. Auch der Testlauf schreibt den Berichtstext nicht in die
+> Zusammenfassung.
+
 | Teil | Datei |
 |------|-------|
 | Bericht (Auswertung + Text) | `tools/weekly-report.mjs` |
-| Zeitplan, Zustand, Issue | `.github/workflows/weekly-report.yml` |
+| Zeitplan, Zustand, Issue (im privaten Repo) | `.github/workflows/weekly-report.yml` |
 | Test | `tests/logic/weekly-report.mjs` (läuft in CI mit) |
 | Lesezugriff | `docs/leaderboard-setup.sql`, Abschnitt 7 |
 | Anonyme Zähler | `js/stats.js`, `docs/leaderboard-setup.sql` Abschnitt 8 |
@@ -36,10 +43,25 @@ ergeben zeichengleichen Text. Keine KI im Spiel, keine Modellausgabe, kein
 3. **Secret setzen.** Im GitHub-Repo → Settings → Secrets and variables →
    Actions → New repository secret, Name `SUPABASE_SERVICE_KEY`, Wert der Key
    aus Schritt 2.
-4. **Testlauf.** Actions → „Wochenbericht" → Run workflow → `dry_run` auf
-   `true`. Der Bericht erscheint dann in der Job-Zusammenfassung, es wird kein
-   Issue angelegt und der Zeitraum rückt nicht weiter.
-5. **Benachrichtigung prüfen.** Damit die Mail ankommt, muss das Repo auf
+4. **Privates Berichts-Repository anlegen.** GitHub → New repository →
+   *Private*, z. B. `queens-reports` (leer genügt, Issues müssen aktiv sein).
+   Hier landen die Berichte und die Benachrichtigungsmails.
+5. **Token anlegen.** GitHub → Settings → Developer settings → Personal access
+   tokens → *Fine-grained tokens*: Resource owner = du, *Only select
+   repositories* → nur das private Berichts-Repo, Berechtigung
+   **Issues: Read and write** (Metadata: Read-only kommt automatisch), sonst
+   nichts. Ablauf z. B. 1 Jahr — Kalendereintrag setzen, danach scheitert der
+   Lauf mit 401/404.
+6. **Im öffentlichen Repo eintragen.** Settings → Secrets and variables →
+   Actions: Secret `REPORT_GITHUB_TOKEN` (das Token) und unter *Variables* die
+   Variable `REPORT_REPO` = `owner/queens-reports`.
+7. **Testlauf.** Actions → „Wochenbericht" → Run workflow → `dry_run` auf
+   `true`. Das prüft Konfiguration, Supabase-Zugriff und Berichtserzeugung; das
+   Log nennt nur die Zeichenzahl, keinen Text. Es wird kein Issue angelegt und
+   der Zeitraum rückt nicht weiter. Den Text selbst siehst du lokal mit
+   `node tools/weekly-report.mjs --out-body bericht.md` (mit gesetztem
+   `SUPABASE_SERVICE_KEY`).
+8. **Benachrichtigung prüfen.** Das *private Berichts-Repo* muss auf
    *Watch → All Activity* (oder mindestens *Issues*) stehen und in den
    GitHub-Benachrichtigungseinstellungen „Email" aktiv sein.
 
@@ -68,7 +90,7 @@ als HTML-Kommentar am Ende jedes Bericht-Issues:
 <!-- queens-report-state: {"until":"2026-09-14T06:00:00.000Z","lastId":248} -->
 ```
 
-Der nächste Lauf sucht das jüngste Issue mit dem Label `wochenbericht`, liest
+Der nächste Lauf sucht im privaten Berichts-Repo das jüngste Issue mit dem Label `wochenbericht`, liest
 den Marker und rechnet ab dort weiter. Daraus folgt:
 
 - **Fällt ein Lauf aus, geht nichts verloren** — der nächste Bericht deckt beide
