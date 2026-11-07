@@ -4,6 +4,13 @@ name: Wochenbericht
 # anlegen; die Benachrichtigungsmail von GitHub IST die wöchentliche Mail. Kein
 # SMTP, kein Drittanbieter, kein Passwort, das ablaufen kann.
 #
+# PRIVAT: dieses Repository ist öffentlich — Issues, Job-Zusammenfassungen und
+# Logs darin kann jeder lesen. Der Bericht enthält Spielernamen und Gerätezahlen
+# und geht deshalb ausschließlich in ein separates, PRIVATES Repository
+# (Repository-Variable REPORT_REPO). Ist es nicht gesetzt, bricht der Lauf ab —
+# er fällt bewusst NICHT auf dieses Repository zurück. Aus demselben Grund
+# schreibt der Testlauf (dry_run) den Berichtstext nicht in die Zusammenfassung.
+#
 # Der Bericht selbst entsteht in tools/weekly-report.mjs und ist deterministisch
 # (gleiche Zeilen + gleiches Fenster = gleicher Text). Dieser Workflow tut nur
 # drei Dinge: den letzten Bericht finden, das Skript laufen lassen, das Ergebnis
@@ -11,17 +18,21 @@ name: Wochenbericht
 #
 # ZUSTAND: der ausgewertete Zeitraum beginnt dort, wo der letzte Bericht endete.
 # Dieser Zeitpunkt steht als HTML-Kommentar im Text des letzten Bericht-Issues
-# (Schritt "Letzten Bericht suchen" holt ihn, das Skript liest ihn). Absichtlich
+# (Schritt "Letzten Bericht suchen" holt ihn, das Skript liest ihn; beides im
+# privaten Berichts-Repository). Absichtlich
 # nicht als Datei im Repo: `main` ist geschützt, ein Bot-Push scheitert dort am
 # Statuscheck, und ein Commit auf `main` würde über deploy.yml jede Woche die
 # Seite neu ausrollen. Der Zeitraum rückt so außerdem genau dann weiter, wenn
 # ein Bericht auch wirklich zugestellt wurde: bricht ein Lauf vorher ab, deckt
 # der nächste beide Wochen ab statt eine zu verlieren.
 #
-# EINRICHTUNG: ein einziges Repository-Secret, SUPABASE_SERVICE_KEY — ein
-# Secret key (`sb_secret_…`, bevorzugt) oder der Legacy-service_role-Key des
-# Supabase-Projekts; beide funktionieren. Er umgeht RLS und darf deshalb NIE
-# in den Browser — nur hier. Details in docs/weekly-report.md.
+# EINRICHTUNG (Details in docs/weekly-report.md):
+#  - Secret SUPABASE_SERVICE_KEY — ein Secret key (`sb_secret_…`, bevorzugt)
+#    oder der Legacy-service_role-Key des Supabase-Projekts. Er umgeht RLS und
+#    darf deshalb NIE in den Browser — nur hier.
+#  - Variable REPORT_REPO — das private Berichts-Repository, `owner/name`.
+#  - Secret REPORT_GITHUB_TOKEN — Fine-grained Personal Access Token, nur auf
+#    REPORT_REPO, Berechtigung "Issues: Read and write" (sonst nichts).
 
 on:
   schedule:
@@ -42,7 +53,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: weekly-report
@@ -60,18 +70,34 @@ jobs:
         with:
           node-version: 22
 
-      - name: Secret vorhanden?
+      - name: Konfiguration vorhanden?
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          REPORT_GITHUB_TOKEN: ${{ secrets.REPORT_GITHUB_TOKEN }}
+          REPORT_REPO: ${{ vars.REPORT_REPO }}
         run: |
           if [ -z "$SUPABASE_SERVICE_KEY" ]; then
             echo "::error::Das Repository-Secret SUPABASE_SERVICE_KEY fehlt. Siehe docs/weekly-report.md."
             exit 1
           fi
+          if [ -z "$REPORT_REPO" ] || [ -z "$REPORT_GITHUB_TOKEN" ]; then
+            echo "::error::Variable REPORT_REPO und/oder Secret REPORT_GITHUB_TOKEN fehlen. Der Bericht geht nur in ein privates Repository, nie in dieses. Siehe docs/weekly-report.md."
+            exit 1
+          fi
+          case "$REPORT_REPO" in
+            "${GITHUB_REPOSITORY}")
+              echo "::error::REPORT_REPO ist dieses (öffentliche) Repository. Es muss ein separates, privates sein."
+              exit 1 ;;
+            */*) ;;
+            *) echo "::error::REPORT_REPO muss die Form owner/name haben."; exit 1 ;;
+          esac
 
       - name: Letzten Bericht suchen
         uses: actions/github-script@v7
+        env:
+          REPORT_REPO: ${{ vars.REPORT_REPO }}
         with:
+          github-token: ${{ secrets.REPORT_GITHUB_TOKEN }}
           script: |
             // Der jüngste Bericht liefert den Startzeitpunkt des Fensters. Gesucht
             // wird über das Label, nicht über den Titel: ein Label lässt sich nicht
@@ -79,9 +105,10 @@ jobs:
             // gelöscht), bleibt die Datei leer und das Skript fällt auf sein
             // Standardfenster zurück.
             const fs = require('fs');
+            const [owner, repo] = process.env.REPORT_REPO.split('/');
             const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner,
+              repo,
               state: 'all',
               labels: 'wochenbericht',
               sort: 'created',
@@ -105,37 +132,39 @@ jobs:
       - name: Issue anlegen
         if: ${{ inputs.dry_run != true }}
         uses: actions/github-script@v7
+        env:
+          REPORT_REPO: ${{ vars.REPORT_REPO }}
         with:
+          github-token: ${{ secrets.REPORT_GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const title = fs.readFileSync('/tmp/report-title.txt', 'utf8').trim();
             const body = fs.readFileSync('/tmp/report-body.md', 'utf8');
+            const [owner, repo] = process.env.REPORT_REPO.split('/');
+            const target = { owner, repo };
             // Das Label trägt den Zustand von Woche zu Woche — es muss existieren,
             // sonst findet der nächste Lauf seinen Vorgänger nicht mehr.
             try {
-              await github.rest.issues.getLabel({ ...context.repo, name: 'wochenbericht' });
+              await github.rest.issues.getLabel({ ...target, name: 'wochenbericht' });
             } catch (err) {
               if (err.status !== 404) throw err;
               await github.rest.issues.createLabel({
-                ...context.repo,
+                ...target,
                 name: 'wochenbericht',
                 color: '0e8a16',
                 description: 'Automatischer Wochenbericht zur Spielaktivität',
               });
             }
             const issue = await github.rest.issues.create({
-              ...context.repo, title, body, labels: ['wochenbericht'],
+              ...target, title, body, labels: ['wochenbericht'],
             });
-            core.info(`Bericht angelegt: ${issue.data.html_url}`);
-            await core.summary.addHeading(title).addRaw(body).write();
+            // Nur die Nummer ins (öffentliche) Log, nie Titel oder Text.
+            core.info(`Bericht angelegt: Issue #${issue.data.number} im privaten Berichts-Repository.`);
 
-      - name: Nur anzeigen (dry run)
+      - name: Nur prüfen (dry run)
         if: ${{ inputs.dry_run == true }}
         run: |
-          {
-            echo "## $(cat /tmp/report-title.txt)"
-            echo
-            echo '> Testlauf — es wurde kein Issue angelegt, der Zeitraum ist nicht weitergerückt.'
-            echo
-            cat /tmp/report-body.md
-          } >> "$GITHUB_STEP_SUMMARY"
+          # Bewusst ohne Berichtstext: Logs und Job-Zusammenfassungen dieses
+          # öffentlichen Repositories kann jeder lesen.
+          echo "Testlauf OK — Bericht erzeugt ($(wc -c < /tmp/report-body.md) Zeichen), nichts angelegt, Zeitraum nicht weitergerückt."
+          echo "Den Text siehst du lokal mit: node tools/weekly-report.mjs --out-body bericht.md"
