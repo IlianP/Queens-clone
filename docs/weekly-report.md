@@ -8,13 +8,17 @@ Drittanbieter, kein Passwort, das ablaufen kann.
 > Dieses Repository ist öffentlich; Issues, Job-Zusammenfassungen und Logs
 > kann jeder lesen, und der Bericht enthält Spielernamen und Gerätezahlen. Ohne
 > `REPORT_REPO` und `REPORT_GITHUB_TOKEN` bricht der Lauf ab, statt öffentlich
-> zu posten. Auch der Testlauf schreibt den Berichtstext nicht in die
+> zu posten. Und der Lauf fragt beim Ziel nach, ob es wirklich privat ist: ein
+> zweites *öffentliches* Repo, oder ein später öffentlich gestelltes, wäre
+> sonst durchgegangen — „nicht dieses Repository" ist nicht dasselbe wie
+> „privat". Auch der Testlauf schreibt den Berichtstext nicht in die
 > Zusammenfassung.
 
 | Teil | Datei |
 |------|-------|
 | Bericht (Auswertung + Text) | `tools/weekly-report.mjs` |
 | Zeitplan, Zustand, Issue (im privaten Repo) | `.github/workflows/weekly-report.yml` |
+| Prüfung, dass das Ziel privat ist | `.github/scripts/report-target.js`, `tests/logic/report-target.mjs` |
 | Test | `tests/logic/weekly-report.mjs` (läuft in CI mit) |
 | Lesezugriff | `docs/leaderboard-setup.sql`, Abschnitt 7 |
 | Anonyme Zähler | `js/stats.js`, `docs/leaderboard-setup.sql` Abschnitt 8 |
@@ -49,8 +53,8 @@ ergeben zeichengleichen Text. Keine KI im Spiel, keine Modellausgabe, kein
 5. **Token anlegen.** GitHub → Settings → Developer settings → Personal access
    tokens → *Fine-grained tokens*: Resource owner = du, *Only select
    repositories* → nur das private Berichts-Repo, Berechtigung
-   **Issues: Read and write** (Metadata: Read-only kommt automatisch), sonst
-   nichts. Ablauf z. B. 1 Jahr — Kalendereintrag setzen, danach scheitert der
+   **Issues: Read and write** (Metadata: Read-only kommt automatisch — die
+   Sichtbarkeitsprüfung braucht genau dieses Leserecht), sonst nichts. Ablauf z. B. 1 Jahr — Kalendereintrag setzen, danach scheitert der
    Lauf mit 401/404.
 6. **Im öffentlichen Repo eintragen.** Settings → Secrets and variables →
    Actions: Secret `REPORT_GITHUB_TOKEN` (das Token) und unter *Variables* die
