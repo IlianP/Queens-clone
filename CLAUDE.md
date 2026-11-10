@@ -98,6 +98,15 @@ before re-deriving how to drive things:
   and sources still match the lists `bump_stat` accepts — it reads them out of
   `docs/leaderboard-setup.sql`, because that function drops anything else
   *silently*. Run it after touching `js/stats.js` or that SQL block.
+- `tests/logic/report-target.mjs` — the guard that keeps the weekly report out
+  of a public repo (`.github/scripts/report-target.js`): that a public
+  destination is refused, that **every way of not knowing** the visibility
+  (404, 403, 5xx, a statusless throw, a body with no `private` field) refuses
+  too rather than falling through to the publish step, that a malformed
+  `REPORT_REPO` never reaches the API, and — read out of the workflow, not
+  restated — that the guard runs before `issues.create` and that its early step
+  is unconditional so `dry_run` checks the destination as well. Run it after
+  touching that script or `.github/workflows/weekly-report.yml`.
 - `tests/logic/weekly-report.mjs` — the weekly activity report: window
   boundaries, the record comparison, the new/returning name split, the state
   marker, and the two properties nobody would notice regressing — that the
@@ -1387,6 +1396,25 @@ Five things that are load-bearing:
   `GITHUB_TOKEN`/`context.repo`, since a silent fallback is the leak. For the
   same reason `dry_run` logs only a character count, never the text, and the
   live path logs the issue number, not title or body.
+
+  **"Not this repo" is not "private"**, which is the gap the first version
+  shipped with: a second *public* repo, or a private one later flipped to
+  public, passed that check and would have published the report. So
+  `.github/scripts/report-target.js` asks the destination itself
+  (`repos.get` → `private === true`) and **not knowing counts as not private** —
+  a 404 (repo gone, or the token lost access), any other HTTP error, and a body
+  without a `private` field all stop the run. A `catch` that logged and carried
+  on would read as defensive while publishing anyway. It runs twice on purpose:
+  an early unconditional step (so `dry_run` surfaces a misconfigured
+  destination) and again immediately before `issues.create`, because a guard
+  that sits after the write protects nothing. One shared file, so the two
+  cannot drift; required by **absolute `GITHUB_WORKSPACE` path**, since a
+  relative `require` in `actions/github-script` resolves against the action's
+  own directory, not the checkout. `tests/logic/report-target.mjs` pins all of
+  it and reads the ordering out of the workflow rather than restating it; it
+  was checked to fail with the visibility check removed, with the API error
+  swallowed, with the write-step guard dropped, and with the early step made
+  conditional.
 
 - **It is deliberately deterministic** — same rows plus same window produce
   byte-identical text. That rules out `Intl`, `toLocaleString` and local time:

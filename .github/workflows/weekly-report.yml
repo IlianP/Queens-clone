@@ -8,8 +8,11 @@ name: Wochenbericht
 # Logs darin kann jeder lesen. Der Bericht enthält Spielernamen und Gerätezahlen
 # und geht deshalb ausschließlich in ein separates, PRIVATES Repository
 # (Repository-Variable REPORT_REPO). Ist es nicht gesetzt, bricht der Lauf ab —
-# er fällt bewusst NICHT auf dieses Repository zurück. Aus demselben Grund
-# schreibt der Testlauf (dry_run) den Berichtstext nicht in die Zusammenfassung.
+# er fällt bewusst NICHT auf dieses Repository zurück. Dass das Ziel wirklich
+# privat ist, wird am Ziel selbst nachgefragt, nicht aus dem Namen geschlossen:
+# ein zweites *öffentliches* Repository wäre sonst genauso durchgegangen, und
+# „nicht erreichbar" gilt dabei als nicht privat. Aus demselben Grund schreibt
+# der Testlauf (dry_run) den Berichtstext nicht in die Zusammenfassung.
 #
 # Der Bericht selbst entsteht in tools/weekly-report.mjs und ist deterministisch
 # (gleiche Zeilen + gleiches Fenster = gleicher Text). Dieser Workflow tut nur
@@ -92,6 +95,21 @@ jobs:
             *) echo "::error::REPORT_REPO muss die Form owner/name haben."; exit 1 ;;
           esac
 
+      - name: Zielrepository privat?
+        uses: actions/github-script@v7
+        env:
+          REPORT_REPO: ${{ vars.REPORT_REPO }}
+        with:
+          github-token: ${{ secrets.REPORT_GITHUB_TOKEN }}
+          script: |
+            // "nicht dieses Repository" ist nicht dasselbe wie "privat": ein
+            // zweites öffentliches Repo, oder eines, das nachträglich öffentlich
+            // gestellt wurde, würde den Bericht samt Spielernamen publizieren.
+            // Also am Ziel nachfragen. Früh im Job, damit auch der Testlauf die
+            // Fehlkonfiguration zeigt, statt sie bis zum Montag zu verstecken.
+            const { assertPrivate } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/report-target.js`);
+            await assertPrivate(github, core, process.env.REPORT_REPO);
+
       - name: Letzten Bericht suchen
         uses: actions/github-script@v7
         env:
@@ -140,7 +158,11 @@ jobs:
             const fs = require('fs');
             const title = fs.readFileSync('/tmp/report-title.txt', 'utf8').trim();
             const body = fs.readFileSync('/tmp/report-body.md', 'utf8');
-            const [owner, repo] = process.env.REPORT_REPO.split('/');
+            // Zweite Prüfung unmittelbar vor dem Schreiben: der Schritt oben ist
+            // die schnelle, deutliche Fehlermeldung, diese hier ist das Gatter,
+            // das bestehen bleibt, wenn jemand Schritte dazwischen einfügt.
+            const { assertPrivate } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/report-target.js`);
+            const { owner, repo } = await assertPrivate(github, core, process.env.REPORT_REPO);
             const target = { owner, repo };
             // Das Label trägt den Zustand von Woche zu Woche — es muss existieren,
             // sonst findet der nächste Lauf seinen Vorgänger nicht mehr.
