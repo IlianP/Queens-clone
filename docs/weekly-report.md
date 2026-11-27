@@ -19,6 +19,7 @@ Drittanbieter, kein Passwort, das ablaufen kann.
 | Bericht (Auswertung + Text) | `tools/weekly-report.mjs` |
 | Zeitplan, Zustand, Issue (im privaten Repo) | `.github/workflows/weekly-report.yml` |
 | Prüfung, dass das Ziel privat ist | `.github/scripts/report-target.js`, `tests/logic/report-target.mjs` |
+| Ältere Berichte schließen | `.github/scripts/close-older-reports.js`, `tests/logic/close-older-reports.mjs` |
 | Test | `tests/logic/weekly-report.mjs` (läuft in CI mit) |
 | Lesezugriff | `docs/leaderboard-setup.sql`, Abschnitt 7 |
 | Anonyme Zähler | `js/stats.js`, `docs/leaderboard-setup.sql` Abschnitt 8 |
@@ -93,6 +94,15 @@ als HTML-Kommentar am Ende jedes Bericht-Issues:
 ```html
 <!-- queens-report-state: {"until":"2026-09-14T06:00:00.000Z","lastId":248} -->
 ```
+
+**Nur der neueste Bericht bleibt offen.** Nach dem Anlegen schließt der Lauf
+alle älteren offenen Issues mit dem Label `wochenbericht`, damit die
+Standardansicht (offene Issues) genau einen Bericht zeigt — den aktuellen.
+Geschlossene Berichte bleiben vollständig lesbar. Das ist reine Darstellung:
+der Zeitraum-Marker wird mit `state: 'all'` gesucht und also auch in einem
+geschlossenen Issue gefunden. Scheitert das Schließen, bleibt der Lauf grün
+(der Bericht ist zugestellt) und der nächste Lauf holt es nach, weil er immer
+*alle* älteren offenen schließt, nicht nur den der Vorwoche.
 
 Der nächste Lauf sucht im privaten Berichts-Repo das jüngste Issue mit dem Label `wochenbericht`, liest
 den Marker und rechnet ab dort weiter. Daraus folgt:
