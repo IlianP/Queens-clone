@@ -182,6 +182,11 @@ jobs:
             });
             // Nur die Nummer ins (öffentliche) Log, nie Titel oder Text.
             core.info(`Bericht angelegt: Issue #${issue.data.number} im privaten Berichts-Repository.`);
+            // Ältere Berichte schließen, damit die Standardansicht (offene
+            // Issues) nur den neuesten zeigt. Erst NACH dem Anlegen, und nie
+            // fehlschlagend: der Bericht ist zugestellt, das hier ist Kosmetik.
+            const { closeOlderReports } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/close-older-reports.js`);
+            await closeOlderReports(github, core, target, issue.data.number);
 
       - name: Nur prüfen (dry run)
         if: ${{ inputs.dry_run == true }}

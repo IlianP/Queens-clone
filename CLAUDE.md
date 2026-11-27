@@ -107,6 +107,15 @@ before re-deriving how to drive things:
   restated — that the guard runs before `issues.create` and that its early step
   is unconditional so `dry_run` checks the destination as well. Run it after
   touching that script or `.github/workflows/weekly-report.yml`.
+- `tests/logic/close-older-reports.mjs` — the step that leaves only the newest
+  weekly report open (`.github/scripts/close-older-reports.js`): that the new
+  issue is never closed, that only labelled issues are (a hand-written note and
+  a PR in the same private repo stay open), that it never throws — a failing
+  listing or one unclosable issue warns and the rest still close — and, read out
+  of the workflow, that it runs *after* `issues.create`, that the label it
+  filters by is the one the workflow applies, and that the state lookup still
+  uses `state: 'all'`. That last one is the coupling: on `'open'` the window
+  marker would vanish with the close and silently reset to 7 days.
 - `tests/logic/weekly-report.mjs` — the weekly activity report: window
   boundaries, the record comparison, the new/returning name split, the state
   marker, and the two properties nobody would notice regressing — that the
@@ -1416,6 +1425,20 @@ Five things that are load-bearing:
   swallowed, with the write-step guard dropped, and with the early step made
   conditional.
 
+- **Only the newest report stays open.** The whole point of the issue list is
+  to open it and see this week, so after creating the new issue the run closes
+  every older *open* issue carrying the `wochenbericht` label
+  (`.github/scripts/close-older-reports.js`). Three properties hold it up. It
+  runs **after** `issues.create`, or it would close the week it means to keep.
+  It **never fails the run**: the report is already delivered by then, a red run
+  over a display detail would misreport that, and since every run closes *all*
+  older open reports rather than just last week's, a failed close heals itself
+  next week — it warns instead. And the window does **not** depend on open
+  state: "Letzten Bericht suchen" reads `state: 'all'`, so the
+  `queens-report-state` marker is still found in a closed issue. Switch that to
+  `'open'` and the window silently resets to the default 7 days every week;
+  `tests/logic/close-older-reports.mjs` reads it out of the workflow for exactly
+  that reason.
 - **It is deliberately deterministic** — same rows plus same window produce
   byte-identical text. That rules out `Intl`, `toLocaleString` and local time:
   everything is UTC by construction with hand-written formatters, because a
